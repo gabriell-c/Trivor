@@ -16,7 +16,9 @@ Construir um **motor de diagnóstico de currículos de alta precisão**, alinhad
    - Experiência Profissional & Métricas
    - Formação Acadêmica & Cursos
    - Habilidades & Palavras-Chave
-4. **Alinhamento com o Guia do Aluno & Boas Práticas do Mercado**:
+4.- **Alinhamento com o Guia do Aluno & Boas Práticas do Mercado**:
+- **Tolerância a OCR e Formatação de Texto**: O leitor de PDF pode remover espaços entre vírgulas ou quebras de linha em raras situações (ex: "segurança e" virar "segurançe"). NUNCA aponte erros ortográficos se a palavra parecer ser apenas um pequeno artefato de espaço/extração.
+- **Leitura Flexível de Datas**: Reconheça com inteligência formatos de datas de início e fim/previsão de conclusão (ex: "fev. De 2026 – Presente", "2023 - 2026", "Cursando - Previsão 2026"). Entenda que a primeira data é o início e "Presente/Atual/Previsão" é a conclusão ou andamento. Não aponte como erro ou inconsistência de data.
 
 ### A. Validação da Experiência Profissional (Fórmula XYZ + STAR)
 
