@@ -16,6 +16,9 @@ data/*.pdf
 data/*.db
 !data/.gitkeep
 
+# Documentation / Internal Docs
+docs/
+
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
