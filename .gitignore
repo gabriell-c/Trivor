@@ -1,0 +1,31 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Data & SQLite
+data/*.pdf
+*.db
+data/*.db
+!data/.gitkeep
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.pnpm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# System & OS
+.DS_Store
+Thumbs.db
+*.log
