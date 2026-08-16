@@ -137,6 +137,8 @@ cd Trivor
 
 ### 2. Configurar o Backend (FastAPI)
 
+> **Importante**: execute estes comandos a partir da **raiz do projeto** (a pasta que contém o `backend/`), não de dentro de `backend/`.
+
 ```bash
 # Criar e ativar o ambiente virtual (Windows PowerShell)
 python -m venv venv
@@ -145,7 +147,7 @@ python -m venv venv
 # Instalar dependências
 pip install -r backend/requirements.txt
 
-# Iniciar o servidor backend
+# Iniciar o servidor backend (a partir da raiz do projeto)
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -159,8 +161,12 @@ cd frontend
 # Instalar dependências
 npm install
 
+```
+
 # Iniciar o servidor frontend
+
 npm run dev
+
 ```
 
 Abra o navegador em `http://localhost:3000`.
@@ -181,3 +187,4 @@ Abra o navegador em `http://localhost:3000`.
 <p align="center">
   Desenvolvido com 💜 e foco em alta precisão técnica.
 </p>
+```

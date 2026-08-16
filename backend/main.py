@@ -1,12 +1,20 @@
+import sys
+import re
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
-import sqlite3, json, os, uuid, ctypes
+import sqlite3, json, os, uuid
+
+# Adiciona o diretório backend ao Python path para importar export_utils
+backend_path = Path(__file__).parent
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
+
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
-from pathlib import Path
-from backend.export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
+from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
 
 app = FastAPI(title="Trivor")
 
@@ -55,7 +63,16 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             page_text = text_page.get_text_range()
             found_links = set()
 
-            # 1. Extrai WebLinks (URLs explícitas)
+            # 0. Busca URLs implícitas no texto (como "Abelウェアۃ LinkedIn" contendo link的功能)
+            try:
+                link_pattern = re.compile(r'(?i)(?:https?://|www\.|linkedin\.com|github\.com|github\.io)[^\s<>"]+', re.IGNORECASE)
+                for match in link_pattern.finditer(page_text):
+                    url = match.group()
+                    found_links.add(url)
+            except Exception:
+                pass
+
+            # 1. Extrai WebLinks (URLs explícitas via PDFium)
             try:
                 weblinks = pdfium_c.FPDFLink_LoadWebLinks(text_page.raw)
                 count = pdfium_c.FPDFLink_CountWebLinks(weblinks)
@@ -113,6 +130,14 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     except Exception as e:
         raise RuntimeError(f"Erro na extração de conteúdo do PDF: {str(e)}")
 
+@app.get('/')
+async def root():
+    return {"status": "ok", "message": "Trivor Backend is running"}
+
+@app.get('/health')
+async def health_check():
+    return {"status": "healthy"}
+
 @app.post('/api/test-connection')
 async def test_connection(
     api_key: str = Header(None, alias="api_key"),
@@ -139,10 +164,10 @@ async def test_connection(
 
 @app.post('/api/analyze')
 async def analyze(
-    file: UploadFile = File(...), 
-    api_key: str = Header(None, alias="api_key"),
-    api_url: str = Header(None, alias="api_url"),
-    model_name: str = Header(None, alias="model_name"),
+    file: UploadFile = File(...),
+    api_key: str = Form(...),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
     job: str = Form(None),
     job_level: str = Form(None)
 ):
@@ -183,7 +208,7 @@ async def analyze(
             "3. CHECKLIST DE ERROS GRAVÍSSIMOS: Penalize severamente a presença de 'barras de porcentagem' de habilidades (ex: Python 80%), fotos desnecessárias, ou endereço residencial completo.\n"
             "4. REGRAS DE RESUMO PROFISSIONAL: Se o resumo contiver frases clichês vagas como 'apaixonado por inovação' sem apresentar números ou stack, recomende remoção imediata.\n"
             "5. ADEQUAÇÃO DA EDUCAÇÃO À SENIORIDADE: Para seniores/plenos, a seção de educação deve ser ultrassintética (1-2 linhas). Para juniores/estagiários, detalhe matérias e TCC se relevante.\n"
-            "6. ACESSIBILIDADE DE HIPERLINKS: Verifique a seção 'Hiperlinks Clicáveis / Ancorados Detectados no Documento'. Se o candidato colocou links ativos e limpos (LinkedIn, GitHub), reconheça positivamente em 'dados_pessoais'.\n\n"
+            "6. ACESSIBILIDADE DE HIPERLINKS: Verifique atentamente a seção 'Hiperlinks Clicáveis / Ancorados Detectados no Documento' e o texto do CV. Se houver links do LinkedIn, GitHub ou Portfólio (seja via URL visível ou link embutido/ancorado), CONSIDERE COMO LINK VÁLIDO E CLICÁVEL em 'dados_pessoais'. NÃO alegue que o link é apenas texto simples se houver URLs extraídas ou detectadas no documento.\n\n"
             "Sua resposta DEVE SER EXCLUSIVAMENTE um objeto JSON válido (sem cercas ```json).\n"
             "A estrutura do JSON deve conter exatamente os seguintes campos:\n"
             "1. 'nota': número de 0 a 10.\n"
@@ -215,7 +240,9 @@ async def analyze(
         if not base_url or 'openai.com' in base_url:
             create_kwargs["response_format"] = {'type': 'json_object'}
 
+        start_time = time.time()
         comp = client.chat.completions.create(**create_kwargs)
+        response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = comp.choices[0].message.content or ""
         cleaned_content = raw_content.strip()
@@ -246,6 +273,11 @@ async def analyze(
                 'prompt_tokens': comp.usage.prompt_tokens,
                 'completion_tokens': comp.usage.completion_tokens,
                 'total_tokens': comp.usage.total_tokens
+            }
+            data['api_info'] = {
+                'model': comp.model,
+                'request_id': comp.id,
+                'response_time_ms': round(response_time_ms, 2)
             }
 
         conn = sqlite3.connect(DB_FILE)

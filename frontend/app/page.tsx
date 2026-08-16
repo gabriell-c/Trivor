@@ -64,6 +64,11 @@ interface AnalysisResult {
     completion_tokens: number
     total_tokens: number
   }
+  api_info?: {
+    model: string
+    request_id: string
+    response_time_ms: number
+  }
   error?: string
 }
 
@@ -100,7 +105,8 @@ export default function Home() {
   const [jobLevel, setJobLevel] = useState('Sem nível específico')
   const [isSelectOpen, setIsSelectOpen] = useState(false)
 
-  // Visibilidade e Teste de Conexão da API Key
+  // State para o box de métricas da IA
+  const [showMetrics, setShowMetrics] = useState(false)
   const [showFullApiKey, setShowFullApiKey] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<{ type: 'success' | 'error'; message: string; savedUntil?: string } | null>(null)
@@ -290,16 +296,13 @@ export default function Home() {
     formData.set('job', jobTitle)
     formData.set('job_level', jobLevel)
 
-    const headers: Record<string, string> = {
-      'api_key': apiKey.trim()
-    }
-    if (apiUrl.trim()) headers['api_url'] = apiUrl.trim()
-    if (modelName.trim()) headers['model_name'] = modelName.trim()
+    formData.set('api_key', apiKey.trim())
+    if (apiUrl.trim()) formData.set('api_url', apiUrl.trim())
+    if (modelName.trim()) formData.set('model_name', modelName.trim())
 
     try {
       const response = await fetch('http://127.0.0.1:8000/api/analyze', {
         method: 'POST',
-        headers,
         body: formData
       })
 
@@ -946,35 +949,91 @@ export default function Home() {
               </div>
             )}
 
-            {/* Métricas de Uso de Tokens */}
+            {/* Métricas de Uso de Tokens e Performance da IA */}
             {res.uso_tokens && (
-              <div className="p-5 rounded-3xl bg-slate-950/50 backdrop-blur-xl border border-indigo-500/20 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400">
-                    <BarChart3 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Consumo de Tokens da IA</h4>
-                    <p className="text-[11px] text-slate-400">Métricas exatas consumidas nesta requisição</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 w-full md:w-auto">
-                    <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                      <span className="block text-[10px] text-slate-400 font-medium uppercase">Entrada</span>
-                      <span className="text-xs font-black text-indigo-300 font-mono">{formatTokens(res.uso_tokens.prompt_tokens)}</span>
+              <div className="rounded-3xl bg-slate-950/50 backdrop-blur-xl border border-indigo-500/20 overflow-hidden transition-all duration-300">
+                {/* Header Clicável (Minimizado por padrão) */}
+                <button
+                  onClick={() => setShowMetrics(!showMetrics)}
+                  className="w-full p-5 flex items-center justify-between gap-4 text-left hover:bg-slate-900/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400">
+                      <BarChart3 className="w-5 h-5" />
                     </div>
-
-                    <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
-                      <span className="block text-[10px] text-slate-400 font-medium uppercase">Resposta</span>
-                      <span className="text-xs font-black text-purple-300 font-mono">{formatTokens(res.uso_tokens.completion_tokens)}</span>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-indigo-600/15 border border-indigo-500/30 text-center">
-                      <span className="block text-[10px] text-indigo-400 font-bold uppercase">Total</span>
-                      <span className="text-xs font-black text-white font-mono">{formatTokens(res.uso_tokens.total_tokens)}</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        Consumo de Tokens e Performance da IA
+                        <span className="text-[10px] normal-case bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                          {formatTokens(res.uso_tokens.total_tokens)} tokens
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">Clique para ver métricas detalhadas da requisição</p>
                     </div>
                   </div>
+                  <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400">
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showMetrics ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
+
+                {/* Conteúdo Expansível */}
+                <AnimatePresence>
+                  {showMetrics && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="border-t border-slate-800/60 p-5 space-y-4 bg-slate-950/40"
+                    >
+                      {/* Métricas de Tokens */}
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Consumo de Tokens</span>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-center">
+                            <span className="block text-[10px] text-slate-400 font-medium uppercase">Entrada (Prompt)</span>
+                            <span className="text-sm font-black text-indigo-300 font-mono">{formatTokens(res.uso_tokens.prompt_tokens)}</span>
+                          </div>
+
+                          <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-center">
+                            <span className="block text-[10px] text-slate-400 font-medium uppercase">Resposta (Output)</span>
+                            <span className="text-sm font-black text-purple-300 font-mono">{formatTokens(res.uso_tokens.completion_tokens)}</span>
+                          </div>
+
+                          <div className="p-3 rounded-2xl bg-indigo-600/15 border border-indigo-500/30 text-center">
+                            <span className="block text-[10px] text-indigo-400 font-bold uppercase">Total Geral</span>
+                            <span className="text-sm font-black text-white font-mono">{formatTokens(res.uso_tokens.total_tokens)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Métricas Técnicas da API */}
+                      {res.api_info && (
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Dados da API</span>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80">
+                              <span className="block text-[10px] text-slate-400 font-medium uppercase">Modelo Utilizado</span>
+                              <span className="text-xs font-bold text-slate-200 font-mono truncate block" title={res.api_info.model}>{res.api_info.model}</span>
+                            </div>
+
+                            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80">
+                              <span className="block text-[10px] text-slate-400 font-medium uppercase">Tempo de Resposta</span>
+                              <span className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-1">
+                                <Zap className="w-3 h-3" /> {(res.api_info.response_time_ms / 1000).toFixed(2)}s ({res.api_info.response_time_ms} ms)
+                              </span>
+                            </div>
+
+                            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800/80">
+                              <span className="block text-[10px] text-slate-400 font-medium uppercase">ID da Requisição</span>
+                              <span className="text-xs font-bold text-slate-300 font-mono truncate block" title={res.api_info.request_id}>{res.api_info.request_id || 'N/A'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </motion.div>
