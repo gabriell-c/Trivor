@@ -7,8 +7,8 @@
   <style>
     :root {
       --bg: #070a12;
-      --card-bg: rgba(15, 23, 42, 0.85);
-      --border: rgba(99, 102, 241, 0.25);
+      --card-bg: rgba(15, 23, 42, 0.95);
+      --border: rgba(99, 102, 241, 0.3);
       --primary: #6366f1;
       --primary-hover: #4f46e5;
       --accent: #a855f7;
@@ -16,6 +16,7 @@
       --text-muted: #94a3b8;
       --success: #10b981;
       --error: #f43f5e;
+      --warning: #f59e0b;
     }
 
     * {
@@ -26,14 +27,13 @@
     }
 
     body {
-      width: 360px;
-      min-height: 480px;
+      width: 400px;
       background-color: var(--bg);
       color: var(--text);
       padding: 16px;
       display: flex;
-      flex-col: column;
-      gap: 12px;
+      flex-direction: column;
+      gap: 14px;
     }
 
     .header {
@@ -47,55 +47,63 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .brand-icon {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       background: linear-gradient(135deg, var(--primary), var(--accent));
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 14px;
+      font-size: 16px;
       color: #fff;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
     }
 
     .brand-title {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: -0.5px;
     }
 
     .badge {
-      font-size: 10px;
-      padding: 2px 6px;
+      font-size: 11px;
+      padding: 3px 8px;
       border-radius: 12px;
       background: rgba(99, 102, 241, 0.2);
       color: #a5b4fc;
       border: 1px solid rgba(99, 102, 241, 0.4);
+      font-weight: 600;
     }
 
     .status-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
+      border-radius: 14px;
+      padding: 14px;
       font-size: 12px;
       color: var(--text-muted);
-      line-height: 1.4;
+      line-height: 1.5;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
     }
 
     .status-card strong {
       color: var(--text);
     }
 
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
     .btn {
-      width: 100%;
-      padding: 10px 14px;
-      border-radius: 10px;
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 12px;
       border: none;
       font-size: 13px;
       font-weight: 600;
@@ -103,14 +111,14 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
       transition: all 0.2s ease;
     }
 
     .btn-primary {
       background: linear-gradient(135deg, var(--primary), #4338ca);
       color: #fff;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
     }
 
     .btn-primary:hover {
@@ -118,14 +126,32 @@
       transform: translateY(-1px);
     }
 
+    .btn-stop {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .btn-stop:hover {
+      background: rgba(244, 63, 94, 0.25);
+    }
+
+    .btn-stop:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
     .btn-secondary {
-      background: rgba(30, 41, 59, 0.8);
+      background: rgba(30, 41, 59, 0.9);
       color: var(--text);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 10px 12px;
+      font-size: 12px;
     }
 
     .btn-secondary:hover {
-      background: rgba(51, 65, 85, 0.8);
+      background: rgba(51, 65, 85, 0.9);
+      border-color: rgba(99, 102, 241, 0.4);
     }
 
     .btn:disabled {
@@ -134,20 +160,14 @@
       transform: none;
     }
 
-    .actions-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
     .result-box {
       background: rgba(15, 23, 42, 0.95);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px;
+      border-radius: 14px;
+      padding: 14px;
       display: none;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
     }
 
     .result-box.active {
@@ -156,14 +176,15 @@
 
     textarea {
       width: 100%;
-      height: 120px;
-      background: rgba(2, 6, 23, 0.8);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 8px;
-      padding: 8px;
+      height: 140px;
+      background: rgba(2, 6, 23, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 10px;
       color: #cbd5e1;
-      font-family: monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
+      line-height: 1.4;
       resize: none;
     }
 
@@ -172,32 +193,39 @@
       border-color: var(--primary);
     }
 
+    .actions-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     .toast {
-      font-size: 11px;
-      padding: 8px;
-      border-radius: 8px;
+      font-size: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
       display: none;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+      font-weight: 500;
     }
 
     .toast.success {
       display: flex;
       background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      border: 1px solid rgba(16, 185, 129, 0.35);
       color: #6ee7b7;
     }
 
     .toast.error {
       display: flex;
       background: rgba(244, 63, 94, 0.15);
-      border: 1px solid rgba(244, 63, 94, 0.3);
+      border: 1px solid rgba(244, 63, 94, 0.35);
       color: #fca5a5;
     }
 
     .loader {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
       border: 2px solid rgba(255, 255, 255, 0.3);
       border-radius: 50%;
       border-top-color: #fff;
@@ -209,10 +237,10 @@
     }
 
     .info-footer {
-      margin-top: auto;
-      font-size: 10px;
+      font-size: 10.5px;
       color: #64748b;
       text-align: center;
+      padding-top: 4px;
     }
   </style>
 </head>
@@ -223,16 +251,21 @@
       <div class="brand-icon">T</div>
       <div class="brand-title">Trivor Exporter</div>
     </div>
-    <span class="badge">v1.0.0</span>
+    <span class="badge">v3.4.0</span>
   </div>
 
   <div id="statusCard" class="status-card">
     <span id="statusText">Abra seu próprio perfil no LinkedIn para iniciar a exportação.</span>
   </div>
 
-  <button id="btnExtract" class="btn btn-primary">
-    <span>⚡ Exportar Meu Perfil</span>
-  </button>
+  <div class="btn-group">
+    <button id="btnExtract" class="btn btn-primary">
+      <span>⚡ Exportar Meu Perfil</span>
+    </button>
+    <button id="btnStop" class="btn btn-stop" disabled>
+      <span>⏹ Parar</span>
+    </button>
+  </div>
 
   <div id="toast" class="toast"></div>
 
@@ -243,12 +276,12 @@
         📋 Copiar JSON
       </button>
       <button id="btnDownloadJson" class="btn btn-secondary">
-        💾 Baixar JSON
+        💾 Baixar JSON (.json)
+      </button>
+      <button id="btnDownloadMd" class="btn btn-secondary">
+        📝 Baixar Markdown (.md)
       </button>
     </div>
-    <button id="btnDownloadMd" class="btn btn-secondary" style="width: 100%;">
-      📝 Baixar Markdown (.md)
-    </button>
   </div>
 
   <div class="info-footer">

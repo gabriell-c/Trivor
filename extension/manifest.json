@@ -1,16 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Trivor — LinkedIn Profile Exporter",
-  "version": "1.0.0",
-  "description": "Exporte seu próprio perfil do LinkedIn como JSON ou Markdown para análise avançada por IA (currículo, ATS, carreira).",
+  "version": "3.6.0",
+  "description": "Exporte seu próprio perfil do LinkedIn como JSON ou Markdown para análise avançada por IA.",
   "permissions": ["activeTab", "scripting", "storage", "downloads"],
-  "host_permissions": [
-    "https://www.linkedin.com/*",
-    "https://*.linkedin.com/*"
-  ],
-  "background": {
-    "service_worker": "src/background.js"
-  },
+  "host_permissions": ["https://www.linkedin.com/*", "https://*.linkedin.com/*"],
+  "background": { "service_worker": "src/background.js" },
   "action": {
     "default_popup": "src/popup.html",
     "default_title": "Trivor — Exportar perfil LinkedIn",
@@ -23,10 +18,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.linkedin.com/in/*",
-        "https://www.linkedin.com/feed/*"
-      ],
+      "matches": ["https://www.linkedin.com/in/*", "https://www.linkedin.com/feed/*"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }

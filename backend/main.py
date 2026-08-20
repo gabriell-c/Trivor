@@ -16,6 +16,7 @@ if str(backend_path) not in sys.path:
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
+from market_service import run_market_analysis, init_market_db, TECH_SYNONYMS
 
 app = FastAPI(title="Trivor")
 
@@ -247,6 +248,10 @@ async def analyze(
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = comp.choices[0].message.content or ""
+        
+        # Remove a tag <think>...</think> produzida por Modelos Pensadores (DeepSeek, etc)
+        raw_content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL)
+        
         cleaned_content = raw_content.strip()
         if cleaned_content.startswith("```"):
             cleaned_content = cleaned_content.split("\n", 1)[-1]
@@ -341,3 +346,41 @@ async def export_analysis(
             raise HTTPException(status_code=400, detail="Formato não suportado.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {str(e)}")
+
+@app.post('/api/market/analyze')
+async def analyze_market(
+    api_key: str = Form(...),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
+    job_title: str = Form(...),
+    target_stack: str = Form(""),
+    seniority: str = Form("Pleno"),
+    location: str = Form("Remoto Nacional"),
+    time_window: str = Form("90 dias")
+):
+    key = api_key or os.getenv("OPENAI_API_KEY")
+    if not key or key.strip() == "":
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+    selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
+    base_url = api_url if (api_url and api_url.strip()) else None
+
+    try:
+        client = OpenAI(api_key=key, base_url=base_url)
+        report = run_market_analysis(
+            db_file=DB_FILE,
+            client=client,
+            selected_model=selected_model,
+            job_title=job_title,
+            target_stack=target_stack,
+            seniority=seniority,
+            location=location,
+            time_window=time_window
+        )
+        return {"success": True, "report": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar inteligência de mercado: {str(e)}")
+
+@app.get('/api/market/synonyms')
+async def get_synonyms():
+    return {"synonyms": TECH_SYNONYMS, "total": len(TECH_SYNONYMS)}

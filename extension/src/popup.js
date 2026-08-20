@@ -1,12 +1,12 @@
 /**
  * Trivor — LinkedIn Profile Exporter
- * Popup Logic
+ * Popup Logic — Extração em UMA página (sem navegar para /details/)
  */
-
 'use strict';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const btnExtract = document.getElementById('btnExtract');
+  const btnStop = document.getElementById('btnStop');
   const btnCopy = document.getElementById('btnCopy');
   const btnDownloadJson = document.getElementById('btnDownloadJson');
   const btnDownloadMd = document.getElementById('btnDownloadMd');
@@ -16,162 +16,191 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toast = document.getElementById('toast');
 
   let extractedData = null;
+  let isRunning = false;
+  let shouldStop = false;
 
   function showToast(msg, type = 'success') {
     toast.className = `toast ${type}`;
     toast.textContent = msg;
-    setTimeout(() => {
-      toast.className = 'toast';
-    }, 3500);
+    setTimeout(() => { toast.className = 'toast'; }, 4000);
   }
 
-  // Verifica aba ativa
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   if (!tab || !tab.url || !tab.url.includes('linkedin.com')) {
-    statusText.innerHTML = '⚠️ Nenhuma página do <strong>LinkedIn</strong> detectada nesta aba. Acesse seu perfil para continuar.';
+    statusText.innerHTML = '⚠️ Abra uma aba do <strong>LinkedIn</strong> e tente novamente.';
     btnExtract.disabled = true;
     return;
   }
 
-  if (tab.url.includes('linkedin.com/in/')) {
-    statusText.innerHTML = '✅ Perfil detectado! Clique no botão abaixo para iniciar a exportação dos seus dados.';
-  } else {
-    statusText.innerHTML = '💡 Navegue até o seu perfil (ex: <code>linkedin.com/in/seu-perfil</code>) para obter os dados completos.';
-  }
+  statusText.innerHTML = '✅ LinkedIn detectado! Clique em <strong>Exportar Meu Perfil Completo</strong>.';
 
-  // Ação de extração
-  btnExtract.addEventListener('click', async () => {
-    btnExtract.disabled = true;
-    btnExtract.innerHTML = '<div class="loader"></div> <span>Expandindo seções e coletando...</span>';
-    statusText.innerHTML = '⏳ Coletando dados do perfil. Aguarde alguns segundos...';
+  let accumulated = {};
 
-    try {
-      // Garante injeção do content script
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['src/content.js']
-      }).catch(() => {}); // Ignora se já injetado
-
-      // Envia mensagem ao content.js
-      chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_PROFILE' }, (response) => {
-        btnExtract.disabled = false;
-        btnExtract.innerHTML = '⚡ Exportar Meu Perfil';
-
+  function sendAndWait(tabId, msg, timeout = 120000) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        resolve({ success: false, error: `Timeout (${timeout / 1000}s)` });
+      }, timeout);
+      chrome.tabs.sendMessage(tabId, msg, (response) => {
+        clearTimeout(timer);
         if (chrome.runtime.lastError) {
-          statusText.innerHTML = '❌ Erro ao se comunicar com a página. Recarregue o LinkedIn e tente novamente.';
-          showToast('Falha na comunicação com a aba.', 'error');
-          return;
-        }
-
-        if (response && response.success && response.data) {
-          extractedData = response.data;
-          const jsonStr = JSON.stringify(extractedData, null, 2);
-          jsonOutput.value = jsonStr;
-          resultBox.classList.add('active');
-          statusText.innerHTML = '🎉 Perfil exportado com sucesso! Escolha o formato desejado abaixo.';
-          showToast('Exportação concluída!', 'success');
+          resolve({ success: false, error: chrome.runtime.lastError.message });
         } else {
-          statusText.innerHTML = `❌ Erro: ${response?.error || 'Não foi possível extrair os dados.'}`;
-          showToast('Erro durante a extração.', 'error');
+          resolve(response || { success: false, error: 'Resposta vazia' });
         }
       });
+    });
+  }
+
+  async function injectScript(tabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['src/content.js']
+      });
+    } catch {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  function stopExtraction() {
+    shouldStop = true;
+    isRunning = false;
+    btnExtract.disabled = false;
+    btnStop.disabled = true;
+    btnExtract.innerHTML = '⚡ Exportar Meu Perfil Completo';
+    statusText.innerHTML = '❌ Extração cancelada.';
+    showToast('Cancelado.', 'error');
+  }
+
+  async function runExtraction() {
+    if (isRunning) return;
+    isRunning = true;
+    shouldStop = false;
+    accumulated = {};
+    btnExtract.disabled = true;
+    btnStop.disabled = false;
+    btnExtract.innerHTML = '<div class="loader"></div> <span>Coletando…</span>';
+    resultBox.classList.remove('active');
+
+    try {
+      statusText.innerHTML = '⏳ Injetando script…';
+      await injectScript(tab.id);
+      await new Promise(r => setTimeout(r, 500));
+
+      statusText.innerHTML = '⏳ Extraindo perfil completo (expandido + scroll)…';
+      const result = await sendAndWait(tab.id, { action: 'EXTRACT_STEP', step: 'MAIN' });
+
+      if (shouldStop) return;
+
+      if (!result.success) {
+        statusText.innerHTML = `❌ Erro: ${result.error}`;
+        showToast(`Erro: ${result.error}`, 'error');
+        return;
+      }
+
+      accumulated = { ...result.data };
+
+      extractedData = {
+        fonte: 'trivor_linkedin_exporter',
+        versao: '3.6.0',
+        url: tab.url,
+        idioma_detectado: 'pt',
+        extraido_em: new Date().toISOString(),
+        perfil: {
+          nome: accumulated.nome || '',
+          headline: accumulated.headline || '',
+          localizacao: accumulated.localizacao || '',
+          sobre: accumulated.sobre || '',
+          preferencias_emprego: accumulated.preferencias_emprego || '',
+          experiencias: accumulated.experiencias || [],
+          atividades: accumulated.atividades || [],
+          educacao: accumulated.educacao || [],
+          certificacoes: accumulated.certificacoes || [],
+          projetos: accumulated.projetos || [],
+          habilidades: accumulated.habilidades || [],
+          cursos: accumulated.cursos || [],
+          idiomas: accumulated.idiomas || [],
+          expansoes_realizadas: accumulated.expansoes || 0
+        }
+      };
+
+      const jsonStr = JSON.stringify(extractedData, null, 2);
+      jsonOutput.value = jsonStr;
+      resultBox.classList.add('active');
+      statusText.innerHTML = `🎉 Perfil de <strong>${extractedData.perfil.nome || 'Usuário'}</strong> exportado!`;
+      showToast('Exportação concluída!', 'success');
 
     } catch (err) {
+      if (!shouldStop) {
+        statusText.innerHTML = `❌ Erro: ${err.message}`;
+        showToast('Erro na extração.', 'error');
+      }
+    } finally {
+      isRunning = false;
       btnExtract.disabled = false;
-      btnExtract.innerHTML = '⚡ Exportar Meu Perfil';
-      statusText.innerHTML = `❌ Ocorreu um erro: ${err.message}`;
-      showToast('Erro inesperado.', 'error');
+      btnStop.disabled = true;
+      btnExtract.innerHTML = '⚡ Exportar Meu Perfil Completo';
     }
-  });
+  }
 
-  // Copiar JSON
+  btnExtract.addEventListener('click', runExtraction);
+  btnStop?.addEventListener('click', stopExtraction);
+
   btnCopy.addEventListener('click', async () => {
     if (!jsonOutput.value) return;
-    try {
-      await navigator.clipboard.writeText(jsonOutput.value);
-      showToast('JSON copiado para a área de transferência!', 'success');
-    } catch {
-      showToast('Erro ao copiar JSON.', 'error');
-    }
+    try { await navigator.clipboard.writeText(jsonOutput.value); showToast('Copiado!', 'success'); }
+    catch { showToast('Erro ao copiar.', 'error'); }
   });
 
-  // Download JSON
   btnDownloadJson.addEventListener('click', () => {
     if (!extractedData) return;
     const blob = new Blob([JSON.stringify(extractedData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    const name = extractedData.dados?.nome ? extractedData.dados.nome.replace(/\s+/g, '_') : 'perfil';
-    a.download = `LinkedIn_Perfil_${name}_Trivor.json`;
-    a.click();
+    const name = extractedData.perfil?.nome?.replace(/\s+/g, '_') || 'perfil';
+    a.href = url; a.download = `LinkedIn_${name}_Trivor.json`; a.click();
     URL.revokeObjectURL(url);
-    showToast('Download do JSON iniciado!', 'success');
+    showToast('Download JSON iniciado!', 'success');
   });
 
-  // Download Markdown
   btnDownloadMd.addEventListener('click', () => {
     if (!extractedData) return;
-    const mdContent = generateMarkdown(extractedData);
-    const blob = new Blob([mdContent], { type: 'text/markdown' });
+    const md = generateMarkdown(extractedData);
+    const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    const name = extractedData.dados?.nome ? extractedData.dados.nome.replace(/\s+/g, '_') : 'perfil';
-    a.download = `LinkedIn_Perfil_${name}_Trivor.md`;
-    a.click();
+    const name = extractedData.perfil?.nome?.replace(/\s+/g, '_') || 'perfil';
+    a.href = url; a.download = `LinkedIn_${name}_Trivor.md`; a.click();
     URL.revokeObjectURL(url);
-    showToast('Download do Markdown iniciado!', 'success');
+    showToast('Download Markdown iniciado!', 'success');
   });
 
-  function generateMarkdown(profile) {
-    const d = profile.dados || {};
-    const lines = [];
-    lines.push(`# Perfil LinkedIn — ${d.nome || 'Usuário'}`);
+  function generateMarkdown(p) {
+    const d = p.perfil || {};
+    const lines = ['# Perfil LinkedIn — ' + (d.nome || 'Usuário'), ''];
+    lines.push('> Exportado via **Trivor Exporter** em ' + new Date(p.extraido_em).toLocaleString('pt-BR'));
     lines.push('');
-    lines.push(`> Exportado via **Trivor Exporter** em ${new Date(profile.extraido_em).toLocaleString('pt-BR')}`);
-    lines.push(`> Idioma detectado: \`${profile.idioma_detectado}\` | Fonte: [${profile.url}](${profile.url})`);
-    lines.push('');
-    if (d.headline) lines.push(`**Headline:** ${d.headline}\n`);
-    if (d.localizacao) lines.push(`**Localização:** ${d.localizacao}\n`);
-
-    if (d.about) {
-      lines.push('## Sobre');
-      lines.push(d.about);
-      lines.push('');
-    }
-
-    if (Array.isArray(d.experiencias_detalhadas) && d.experiencias_detalhadas.length) {
-      lines.push('## Experiências Profissionais');
-      d.experiencias_detalhadas.forEach((e) => {
-        lines.push(`- ${e.texto_bruto}`);
-      });
-      lines.push('');
-    }
-
-    const sectionsMap = {
-      education: 'Formação Acadêmica',
-      certifications: 'Licenças e Certificações',
-      projects: 'Projetos',
-      courses: 'Cursos',
-      skills: 'Competências e Habilidades',
-      languages: 'Idiomas',
-      volunteer: 'Trabalho Voluntário',
-      publications: 'Publicações',
-      recommendations: 'Recomendações',
-      honors: 'Prêmios e Honrarias',
-      organizations: 'Organizações',
-      featured: 'Destaques',
-      activity: 'Atividade Recente'
-    };
-
-    for (const [key, title] of Object.entries(sectionsMap)) {
-      const val = d[key];
-      if (val && typeof val === 'string' && val.trim()) {
-        lines.push(`## ${title}`);
-        lines.push(val);
-        lines.push('');
+    if (d.headline) lines.push('**Headline:** ' + d.headline + '\n');
+    if (d.localizacao) lines.push('**Localização:** ' + d.localizacao + '\n');
+    if (d.sobre) { lines.push('---\n## Sobre\n'); lines.push(d.sobre + '\n'); }
+    if (d.preferencias_emprego) { lines.push('---\n## Preferências de Busca de Emprego\n'); lines.push(d.preferencias_emprego + '\n'); }
+    if (d.experiencias?.length) { lines.push('---\n## Experiências Profissionais\n'); d.experiencias.forEach(e => lines.push('- ' + e)); lines.push(''); }
+    const secs = [
+      ['educacao', 'Formação Acadêmica'],
+      ['certificacoes', 'Licenças e Certificações'],
+      ['projetos', 'Projetos'],
+      ['habilidades', 'Competências e Habilidades'],
+      ['cursos', 'Cursos'],
+      ['idiomas', 'Idiomas'],
+      ['atividades', 'Atividades Recentes']
+    ];
+    for (const [k, title] of secs) {
+      const val = d[k];
+      if (val && (Array.isArray(val) ? val.length : (typeof val === 'string' && val.trim()))) {
+        lines.push('---\n## ' + title + '\n');
+        if (Array.isArray(val)) val.forEach(item => lines.push('- ' + item));
+        else lines.push(val + '\n');
       }
     }
     return lines.join('\n');
