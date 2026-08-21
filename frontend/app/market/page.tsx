@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
@@ -17,10 +17,13 @@ import {
   RefreshCw,
   Zap,
   Activity,
-  ChevronDown,
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react'
+import { CustomInput } from '../components/CustomInput'
+import { CustomSelect } from '../components/CustomSelect'
+import { CustomButton } from '../components/CustomButton'
+import { loadProviders, getBestProvider, IAProvider } from '../hooks/useIaProviders'
 
 interface AnalysisResult {
   success: boolean
@@ -55,119 +58,168 @@ interface MarketReport {
   sample_jobs: { title: string; company: string; is_relevant: boolean; req_techs: string[]; desirable_techs: string[] }[]
 }
 
-interface State {
-  jobTitle: string
-  targetStack: string
-  seniority: string
-  location: string
-  timeWindow: string
-  apiKey: string
-  apiUrl: string
-  modelName: string
-  activeTab: 'config' | 'results' | 'jobs'
-  loading: boolean
-  error: string | null
-  result: AnalysisResult | null
-}
+const BRAZILIAN_STATES = [
+  { value: 'AC', label: 'Acre' }, { value: 'AL', label: 'Alagoas' }, { value: 'AP', label: 'Amapá' },
+  { value: 'AM', label: 'Amazonas' }, { value: 'BA', label: 'Bahia' }, { value: 'CE', label: 'Ceará' },
+  { value: 'DF', label: 'Distrito Federal' }, { value: 'ES', label: 'Espírito Santo' }, { value: 'GO', label: 'Goiás' },
+  { value: 'MA', label: 'Maranhão' }, { value: 'MT', label: 'Mato Grosso' }, { value: 'MS', label: 'Mato Grosso do Sul' },
+  { value: 'MG', label: 'Minas Gerais' }, { value: 'PA', label: 'Pará' }, { value: 'PB', label: 'Paraíba' },
+  { value: 'PR', label: 'Paraná' }, { value: 'PE', label: 'Pernambuco' }, { value: 'PI', label: 'Piauí' },
+  { value: 'RJ', label: 'Rio de Janeiro' }, { value: 'RN', label: 'Rio Grande do Norte' },
+  { value: 'RS', label: 'Rio Grande do Sul' }, { value: 'RO', label: 'Rondônia' }, { value: 'RR', label: 'Roraima' },
+  { value: 'SC', label: 'Santa Catarina' }, { value: 'SP', label: 'São Paulo' }, { value: 'SE', label: 'Sergipe' },
+  { value: 'TO', label: 'Tocantins' },
+]
+
+const MAIN_COUNTRIES = [
+  'Estados Unidos', 'Canadá', 'Reino Unido', 'Alemanha', 'França', 'Irlanda', 'Espanha', 'Portugal',
+  'Holanda', 'Bélgica', 'Suíça', 'Austrália', 'Japão', 'Coreia do Sul', 'Singapura',
+  'Israel', 'Noruega', 'Suécia', 'Dinamarca', 'Finlândia', 'Nova Zelândia',
+  'Argentina', 'Chile', 'Colômbia', 'México', 'Brasil', 'Emirados Árabes',
+]
+
+type LocationMode = 'remoto' | 'estado' | 'pais' | 'outro'
 
 export default function MarketIntelligencePage() {
-  const [state, setState] = useState<State>({
-    jobTitle: '',
-    targetStack: '',
-    seniority: 'Pleno',
-    location: 'Remoto Nacional',
-    timeWindow: '90 dias',
-    apiKey: '',
-    apiUrl: '',
-    modelName: 'gpt-4o',
-    activeTab: 'config',
-    loading: false,
-    error: null,
-    result: null,
-  })
+  const [jobTitle, setJobTitle] = useState('')
+  const [targetStack, setTargetStack] = useState('')
+  const [seniority, setSeniority] = useState('Pleno')
+  const [timeWindow, setTimeWindow] = useState('90 dias')
+  const [activeTab, setActiveTab] = useState<'config' | 'results' | 'jobs'>('config')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<AnalysisResult | null>(null)
 
-  const update = (partial: Partial<State>) => setState(s => ({ ...s, ...partial }))
+  // Location state
+  const [locationMode, setLocationMode] = useState<LocationMode>('remoto')
+  const [locationValue, setLocationValue] = useState('Remoto Nacional')
+  const [customCountry, setCustomCountry] = useState('')
+  const [customState, setCustomState] = useState('')
+
+  // IA providers from global settings
+  const [availableProviders] = useState<IAProvider[]>(loadProviders)
+  const [selectedProviderId, setSelectedProviderId] = useState<string | ''>('')
+
+  useEffect(() => {
+    // Auto-select a provider for market analysis
+    const best = getBestProvider(['market'])
+    if (best) setSelectedProviderId(best.id)
+  }, [])
+
+  const getLocationValue = (): string => {
+    switch (locationMode) {
+      case 'remoto': return locationValue // 'Remoto Nacional' or 'Remoto Internacional'
+      case 'estado': return customState
+      case 'pais': return customCountry || 'Brasil'
+      case 'outro': return customCountry || 'Brasil'
+      default: return 'Remoto Nacional'
+    }
+  }
 
   const runAnalysis = async () => {
-    if (!state.jobTitle.trim() || !state.apiKey.trim()) {
-      update({ error: 'Preencha o título da vaga e a chave de API.' })
+    if (!jobTitle.trim()) { setError('Preencha o título da vaga.')
       return
     }
-    update({ loading: true, error: null, result: null })
+    const loc = getLocationValue()
+    if (!loc.trim()) { setError('Selecione o escopo geográfico.')
+      return
+    }
+
+    // Resolve provider credentials
+    let apiKey = ''
+    let apiUrl = ''
+    let modelName = 'gpt-4o'
+    let providerId = ''
+
+    if (selectedProviderId) {
+      const prov = availableProviders.find(p => p.id === selectedProviderId)
+      if (prov) {
+        apiKey = prov.apiKey
+        apiUrl = prov.apiUrl
+        modelName = prov.modelName
+        providerId = prov.id
+      }
+    }
+
+    if (!apiKey.trim()) { setError('Nenhuma IA configurada. Vá em "Config. IAs" na sidebar.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setResult(null)
 
     const formData = new FormData()
-    formData.set('api_key', state.apiKey.trim())
-    if (state.apiUrl.trim()) formData.set('api_url', state.apiUrl.trim())
-    if (state.modelName.trim()) formData.set('model_name', state.modelName.trim())
-    formData.set('job_title', state.jobTitle.trim())
-    formData.set('target_stack', state.targetStack.trim())
-    formData.set('seniority', state.seniority)
-    formData.set('location', state.location)
-    formData.set('time_window', state.timeWindow)
+    formData.set('api_key', apiKey)
+    if (apiUrl) formData.set('api_url', apiUrl)
+    if (modelName) formData.set('model_name', modelName)
+    if (providerId) formData.set('provider_id', providerId)
+    formData.set('job_title', jobTitle.trim())
+    formData.set('target_stack', targetStack.trim())
+    formData.set('seniority', seniority)
+    formData.set('location', loc)
+    formData.set('time_window', timeWindow)
 
     try {
       const res = await fetch('http://127.0.0.1:8000/api/market/analyze', { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || 'Erro na análise')
-      update({ result: data, activeTab: 'results' })
+      setResult(data)
+      setActiveTab('results')
     } catch (err: any) {
-      update({ error: err.message || 'Erro desconhecido' })
+      setError(err.message || 'Erro desconhecido')
     } finally {
-      update({ loading: false })
+      setLoading(false)
     }
   }
 
-  const R = state.result?.report
+  const R = result?.report
+
+  // Location options based on mode
+  const locationOptions = (() => {
+    switch (locationMode) {
+      case 'remoto': return [
+        { value: 'Remoto Nacional', label: 'Remoto Nacional' },
+        { value: 'Remoto Internacional', label: 'Remoto Internacional' },
+      ]
+      case 'estado': return BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))
+      case 'pais': return MAIN_COUNTRIES.map(c => ({ value: c, label: c }))
+      case 'outro': return [{ value: 'Outro', label: 'Outro (digitar)' }]
+      default: return []
+    }
+  })()
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 10 }}
-      className="w-full max-w-5xl z-10 space-y-6"
-    >
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full max-w-4xl z-10 space-y-6 mx-auto">
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-semibold tracking-wider">
           <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
           Intelligence
         </div>
-        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white">
-          Inteligência de Mercado
-        </h1>
-        <p className="text-slate-400 text-sm md:text-base max-w-lg mx-auto">
-          Analise vagas reais do mercado, identifique tendências e gaps de skill para seu perfil.
-        </p>
+        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white">Inteligência de Mercado</h1>
+        <p className="text-slate-400 text-sm md:text-base max-w-lg mx-auto">Analise vagas reais do mercado, identifique tendências e gaps de skill para seu perfil.</p>
       </div>
 
       {/* Tabs */}
       <div className="flex items-center justify-center gap-2">
-        {[
+        {([
           { id: 'config' as const, label: 'Configurar', icon: <Filter className="w-3.5 h-3.5" /> },
           { id: 'results' as const, label: 'Resultados', icon: <TrendingUp className="w-3.5 h-3.5" /> },
           { id: 'jobs' as const, label: 'Vagas Analisadas', icon: <Briefcase className="w-3.5 h-3.5" /> },
         ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => update({ activeTab: tab.id })}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-              state.activeTab === tab.id
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 border border-purple-500'
-                : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/60'
-            }`}
-          >
+              activeTab === tab.id ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 border border-purple-500' : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/60'
+            }`}>
             {tab.icon} {tab.label}
-            {tab.id === 'results' && R && (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-purple-500/30 text-[10px]">
-                {R.summary.relevant_jobs_analyzed}
-              </span>
-            )}
+            {tab.id === 'results' && R && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-purple-500/30 text-[10px]">{R.summary.relevant_jobs_analyzed}</span>}
           </button>
-        ))}
+        )))}
       </div>
 
       {/* Config Tab */}
-      {state.activeTab === 'config' && (
+      {activeTab === 'config' && (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8 space-y-6">
           <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">Parâmetros da Análise</h2>
 
@@ -175,141 +227,99 @@ export default function MarketIntelligencePage() {
             <label className="block text-xs font-semibold text-slate-400 mb-2">Área / Cargo-Alvo</label>
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Ex: Desenvolvedor Backend Python"
-                value={state.jobTitle}
-                onChange={e => update({ jobTitle: e.target.value })}
-                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 pl-11 pr-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/30"
-              />
+              <CustomInput type="text" placeholder="Ex: Desenvolvedor Backend Python" value={jobTitle} onChange={setJobTitle} className="w-full pl-11" />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2">Stack / Skills Principais</label>
-            <input
-              type="text"
-              placeholder="Ex: Python, FastAPI, PostgreSQL (separado por vírgula)"
-              value={state.targetStack}
-              onChange={e => update({ targetStack: e.target.value })}
-              className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/30"
-            />
+            <CustomInput type="text" placeholder="Ex: Python, FastAPI, PostgreSQL (separado por vírgula)" value={targetStack} onChange={setTargetStack} className="w-full" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Senioridade</label>
-              <select
-                value={state.seniority}
-                onChange={e => update({ seniority: e.target.value })}
-                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white focus:outline-none focus:border-purple-500/60"
-              >
-                {['Estagiário', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-2">Escopo Geográfico</label>
-              <select
-                value={state.location}
-                onChange={e => update({ location: e.target.value })}
-                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white focus:outline-none focus:border-purple-500/60"
-              >
-                {['Remoto Nacional', 'Remoto Internacional', 'São Paulo, SP', 'Rio de Janeiro, RJ', 'Brasil'].map(l => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
+              <CustomSelect value={seniority} onChange={setSeniority} options={['Estagiário', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => ({ value: s, label: s }))} placeholder="Nível..." />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Janela Temporal</label>
-              <select
-                value={state.timeWindow}
-                onChange={e => update({ timeWindow: e.target.value })}
-                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white focus:outline-none focus:border-purple-500/60"
-              >
-                {['30 dias', '60 dias', '90 dias'].map(w => (
-                  <option key={w} value={w}>{w}</option>
-                ))}
-              </select>
+              <CustomSelect value={timeWindow} onChange={setTimeWindow} options={['30 dias', '60 dias', '90 dias'].map(w => ({ value: w, label: w }))} placeholder="Período..." />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-2">IA para Mercado</label>
+              <CustomSelect value={selectedProviderId} onChange={setSelectedProviderId}
+                options={[
+                  { value: '', label: 'Selecione uma IA...' },
+                  ...availableProviders.filter(p => p.usedFor === 'all' || p.usedFor === 'market').map(p => ({ value: p.id, label: `${p.name} (${p.modelName})` })),
+                ]} placeholder="IA..." />
             </div>
           </div>
 
-          {/* IA Config */}
-          <div className="pt-2 border-t border-slate-800/60">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Configuração da IA</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Chave de API</label>
-                <input
-                  type="password"
-                  placeholder="sk-..."
-                  value={state.apiKey}
-                  onChange={e => update({ apiKey: e.target.value })}
-                  className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-2.5 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">Modelo</label>
-                  <input
-                    type="text"
-                    placeholder="gpt-4o"
-                    value={state.modelName}
-                    onChange={e => update({ modelName: e.target.value })}
-                    className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-2.5 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">Base URL</label>
-                  <input
-                    type="text"
-                    placeholder="Opcional"
-                    value={state.apiUrl}
-                    onChange={e => update({ apiUrl: e.target.value })}
-                    className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-2.5 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60"
-                  />
-                </div>
-              </div>
+          {/* Geographic scope */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-2">Escopo Geográfico</label>
+            <div className="flex gap-2 mb-3">
+              {[
+                { mode: 'remoto' as LocationMode, label: 'Remoto' },
+                { mode: 'estado' as LocationMode, label: 'Estado (BR)' },
+                { mode: 'pais' as LocationMode, label: 'País' },
+                { mode: 'outro' as LocationMode, label: 'Outro' },
+              ].map(opt => (
+                <button key={opt.mode} onClick={() => { setLocationMode(opt.mode); if (opt.mode === 'remoto') setLocationValue('Remoto Nacional') }}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${locationMode === opt.mode ? 'bg-purple-600 text-white border border-purple-500' : 'bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-slate-200'}`}>
+                  {opt.label}
+                </button>
+              ))}
             </div>
+
+            {locationMode === 'remoto' && (
+              <CustomSelect value={locationValue} onChange={setLocationValue}
+                options={[{ value: 'Remoto Nacional', label: 'Remoto Nacional' }, { value: 'Remoto Internacional', label: 'Remoto Internacional' }]}
+                placeholder="Tipo de remoto..." className="w-full" />
+            )}
+            {locationMode === 'estado' && (
+              <CustomSelect value={customState} onChange={setCustomState}
+                options={BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))}
+                placeholder="Selecione o estado..." className="w-full" />
+            )}
+            {(locationMode === 'pais' || locationMode === 'outro') && (
+              <CustomSelect value={customCountry} onChange={setCustomCountry}
+                options={[
+                  ...MAIN_COUNTRIES.map(c => ({ value: c, label: c })),
+                  { value: 'Outro', label: 'Outro (digitar abaixo)' },
+                ]} placeholder="Selecione o país..." className="w-full" />
+            )}
+            {(locationMode === 'outro' || (locationMode === 'pais' && customCountry === 'Outro')) && (
+              <div className="mt-2">
+                <CustomInput type="text" placeholder="Nome do país..." value={customCountry === 'Outro' ? '' : customCountry} onChange={v => { if (locationMode === 'outro' || customCountry === 'Outro') setCustomCountry(v) }} className="w-full" />
+              </div>
+            )}
           </div>
 
-          {/* Info */}
           <div className="flex items-start gap-3 p-4 rounded-2xl bg-purple-500/5 border border-purple-500/15">
             <Info className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-purple-300/80">
-              A análise utilizará IA para classificar relevância das vagas e extrair dados estruturados.
-              O resultado incluirá ranking de tecnologias, anos de experiência, modalidades e score de confiança.
+              A análise utilizará IA para classificar relevância das vagas e extrair dados estruturados. O resultado incluirá ranking de tecnologias, anos de experiência, modalidades e score de confiança.
             </div>
           </div>
 
-          {/* Error */}
-          {state.error && (
+          {error && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
               <XCircle className="w-4 h-4 flex-shrink-0" />
-              {state.error}
+              {error}
             </div>
           )}
 
-          {/* Run */}
-          <button
-            onClick={runAnalysis}
-            disabled={state.loading || !state.jobTitle.trim() || !state.apiKey.trim()}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-sm hover:from-purple-500 hover:to-indigo-500 transition-all shadow-lg shadow-purple-600/25 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {state.loading ? (
-              <><RefreshCw className="w-4 h-4 animate-spin" /> Analisando Mercado...</>
-            ) : (
-              <><TrendingUp className="w-4 h-4" /> Analisar Mercado</>
-            )}
-          </button>
+          <CustomButton onClick={runAnalysis} loading={loading} disabled={loading || !jobTitle.trim()} className="w-full">
+            <TrendingUp className="w-4 h-4" />
+            {loading ? 'Analisando Mercado...' : 'Analisar Mercado'}
+          </CustomButton>
         </div>
       )}
 
       {/* Results Tab */}
-      {state.activeTab === 'results' && R && (
+      {activeTab === 'results' && R && (
         <div className="space-y-6">
-          {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Vagas Analisadas</p>
@@ -318,10 +328,7 @@ export default function MarketIntelligencePage() {
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Confiança</p>
-              <p className={`text-2xl font-black mt-1 ${
-                R.summary.confidence_score === 'Alta' ? 'text-emerald-400' :
-                R.summary.confidence_score === 'Média' ? 'text-amber-400' : 'text-rose-400'
-              }`}>{R.summary.confidence_score}</p>
+              <p className={`text-2xl font-black mt-1 ${R.summary.confidence_score === 'Alta' ? 'text-emerald-400' : R.summary.confidence_score === 'Média' ? 'text-amber-400' : 'text-rose-400'}`}>{R.summary.confidence_score}</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Exp. Média (Anos)</p>
@@ -330,56 +337,40 @@ export default function MarketIntelligencePage() {
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tempo de Análise</p>
-              <p className="text-2xl font-black text-indigo-300 mt-1">
-                {state.result?.elapsed_seconds?.toFixed(1)}s
-              </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{state.result?.model}</p>
+              <p className="text-2xl font-black text-indigo-300 mt-1">{result?.elapsed_seconds?.toFixed(1)}s</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{result?.model}</p>
             </div>
           </div>
 
           {/* Required Technologies */}
           <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-              Tecnologias Mais Exigidas (Obrigatórias)
-            </h3>
+            <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2"><ArrowUpRight className="w-4 h-4 text-emerald-400" />Tecnologias Mais Exigidas (Obrigatórias)</h3>
             <div className="space-y-2">
               {R.statistics.required_technologies.map((tech, i) => (
                 <div key={tech.name} className="flex items-center gap-3">
                   <span className="text-xs text-slate-500 w-5 text-center">{i + 1}</span>
                   <span className="text-xs font-semibold text-slate-200 w-32 truncate">{tech.name}</span>
                   <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(tech.percentage, 100)}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
                   <span className="text-xs text-slate-400 w-16 text-right">{tech.percentage}%</span>
                   <span className="text-xs text-slate-600 w-12 text-right">{tech.count}</span>
                 </div>
               ))}
-              {R.statistics.required_technologies.length === 0 && (
-                <p className="text-xs text-slate-500">Nenhuma tecnologia obrigatória extraída.</p>
-              )}
+              {R.statistics.required_technologies.length === 0 && <p className="text-xs text-slate-500">Nenhuma tecnologia obrigatória extraída.</p>}
             </div>
           </div>
 
           {/* Desirable Technologies */}
           <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 space-y-4">
-            <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <ArrowDownRight className="w-4 h-4 text-amber-400" />
-              Tecnologias Diferenciais (Desejáveis)
-            </h3>
+            <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2"><ArrowDownRight className="w-4 h-4 text-amber-400" />Tecnologias Diferenciais (Desejáveis)</h3>
             <div className="space-y-2">
               {R.statistics.desirable_technologies.map((tech, i) => (
                 <div key={tech.name} className="flex items-center gap-3">
                   <span className="text-xs text-slate-500 w-5 text-center">{i + 1}</span>
                   <span className="text-xs font-semibold text-slate-200 w-32 truncate">{tech.name}</span>
                   <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(tech.percentage, 100)}%` }}
-                    />
+                    <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
                   <span className="text-xs text-slate-400 w-16 text-right">{tech.percentage}%</span>
                   <span className="text-xs text-slate-600 w-12 text-right">{tech.count}</span>
@@ -388,34 +379,24 @@ export default function MarketIntelligencePage() {
             </div>
           </div>
 
-          {/* Modalities & Experience Distribution */}
+          {/* Modalities & Experience */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
-              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-blue-400" />
-                Modalidades de Trabalho
-              </h3>
+              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-400" />Modalidades de Trabalho</h3>
               <div className="space-y-3">
                 {R.statistics.modalities.map(mod => (
                   <div key={mod.name} className="flex items-center gap-3">
                     <span className="text-xs text-slate-400 w-24 truncate">{mod.name}</span>
                     <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{ width: `${mod.percentage}%` }}
-                      />
+                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${mod.percentage}%` }} />
                     </div>
                     <span className="text-xs text-slate-500 w-12 text-right">{mod.percentage}%</span>
                   </div>
                 ))}
               </div>
             </div>
-
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
-              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-400" />
-                Distribuição de Experiência
-              </h3>
+              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2"><Clock className="w-4 h-4 text-orange-400" />Distribuição de Experiência</h3>
               <div className="grid grid-cols-2 gap-3">
                 {Object.entries(R.statistics.exp_years_distribution).map(([label, count]) => (
                   <div key={label} className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
@@ -437,12 +418,8 @@ export default function MarketIntelligencePage() {
               <h3 className="text-sm font-bold text-slate-200 mb-4">Soft Skills Mais Cobradas</h3>
               <div className="flex flex-wrap gap-2">
                 {R.statistics.top_soft_skills.length > 0 ? R.statistics.top_soft_skills.map(s => (
-                  <span key={s.name} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300">
-                    {s.name}
-                  </span>
-                )) : (
-                  <p className="text-xs text-slate-500">Nenhuma soft skill extraída.</p>
-                )}
+                  <span key={s.name} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300">{s.name}</span>
+                )) : <p className="text-xs text-slate-500">Nenhuma soft skill extraída.</p>}
               </div>
             </div>
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
@@ -453,14 +430,12 @@ export default function MarketIntelligencePage() {
                     <span className="text-xs text-slate-300">{c.name}</span>
                     <span className="text-[10px] text-slate-500">{c.count}x</span>
                   </div>
-                )) : (
-                  <p className="text-xs text-slate-500">Nenhuma certificação extraída.</p>
-                )}
+                )) : <p className="text-xs text-slate-500">Nenhuma certificação extraída.</p>}
               </div>
             </div>
           </div>
 
-          {/* Confidence reason */}
+          {/* Confidence */}
           <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60">
             <Activity className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
             <div>
@@ -472,12 +447,9 @@ export default function MarketIntelligencePage() {
       )}
 
       {/* Jobs Tab */}
-      {state.activeTab === 'jobs' && R && (
+      {activeTab === 'jobs' && R && (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 space-y-4">
-          <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-            <Briefcase className="w-4 h-4 text-purple-400" />
-            Vagas Analisadas ({R.sample_jobs.length} de {R.summary.relevant_jobs_analyzed})
-          </h3>
+          <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2"><Briefcase className="w-4 h-4 text-purple-400" />Vagas Analisadas ({R.sample_jobs.length} de {R.summary.relevant_jobs_analyzed})</h3>
           <div className="space-y-3">
             {R.sample_jobs.map((job, i) => (
               <div key={i} className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
@@ -486,11 +458,7 @@ export default function MarketIntelligencePage() {
                     <p className="text-sm font-bold text-white">{job.title}</p>
                     <p className="text-xs text-slate-500">{job.company}</p>
                   </div>
-                  {job.is_relevant ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                  )}
+                  {job.is_relevant ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {job.req_techs.slice(0, 5).map(t => (
@@ -506,8 +474,8 @@ export default function MarketIntelligencePage() {
         </div>
       )}
 
-      {/* No result yet */}
-      {state.activeTab === 'results' && !state.result && (
+      {/* Empty state */}
+      {activeTab === 'results' && !result && (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-10 text-center space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto">
             <BarChart3 className="w-8 h-8 text-slate-600" />

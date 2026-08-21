@@ -35,6 +35,9 @@ import {
   FileSpreadsheet,
   ChevronDown
 } from 'lucide-react'
+import { CustomSelect } from './CustomSelect'
+import { CustomInput } from './CustomInput'
+import { CustomButton } from './CustomButton'
 
 interface SecaoDiagnostico {
   status: 'ok' | 'atencao' | 'critico'
@@ -93,17 +96,18 @@ export default function CurriculoTool() {
   // Step Control: 1 = Envio / Config, 2 = Diagnóstico
   const [activeStep, setActiveStep] = useState<1 | 2>(1)
 
-  // Configurações de IA
-  const [provider, setProvider] = useState<'openai' | 'custom'>('openai')
-  const [apiKey, setApiKey] = useState('')
-  const [apiUrl, setApiUrl] = useState('')
-  const [modelName, setModelName] = useState('gpt-4o')
+  // Configurações de IA — usar provedores globais
+  const [providers, setProviders] = useState<import('../hooks/useIaProviders').IAProvider[]>(() => {
+    try { const s = localStorage.getItem('trivor_ia_providers_v2'); return s ? JSON.parse(s) : [] } catch { return [] }
+  })
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
+  const [currentApiKey, setCurrentApiKey] = useState('')
+  const [currentApiUrl, setCurrentApiUrl] = useState('')
+  const [currentModelName, setCurrentModelName] = useState('gpt-4o')
   const [showAdvanced, setShowAdvanced] = useState(false)
-
-  // Form Vaga & Nível
-  const [jobTitle, setJobTitle] = useState('')
-  const [jobLevel, setJobLevel] = useState('Sem nível específico')
   const [isSelectOpen, setIsSelectOpen] = useState(false)
+  const [jobLevel, setJobLevel] = useState('Sem nível específico')
+  const [jobTitle, setJobTitle] = useState('')
 
   // State para o box de métricas da IA
   const [showMetrics, setShowMetrics] = useState(false)
@@ -111,7 +115,7 @@ export default function CurriculoTool() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<{ type: 'success' | 'error'; message: string; savedUntil?: string } | null>(null)
 
-  // Carregar configurações salvas
+  // Carregar provedores globais e config inicial
   useEffect(() => {
     try {
       const savedStr = localStorage.getItem(STORAGE_KEY)
@@ -119,11 +123,9 @@ export default function CurriculoTool() {
         const saved: SavedAIConfig = JSON.parse(savedStr)
         const now = Date.now()
         if (saved.expiry && saved.expiry > now) {
-          setProvider(saved.provider || 'openai')
-          setApiKey(saved.apiKey || '')
-          setApiUrl(saved.apiUrl || '')
-          setModelName(saved.modelName || 'gpt-4o')
-
+          setCurrentApiKey(saved.apiKey || '')
+          setCurrentApiUrl(saved.apiUrl || '')
+          setCurrentModelName(saved.modelName || 'gpt-4o')
           const formattedExpiry = new Date(saved.expiry).toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
@@ -131,7 +133,6 @@ export default function CurriculoTool() {
             hour: '2-digit',
             minute: '2-digit'
           })
-
           setConnectionStatus({
             type: 'success',
             message: saved.message || 'Conexão salva e verificada!',
@@ -144,6 +145,23 @@ export default function CurriculoTool() {
     } catch {
       localStorage.removeItem(STORAGE_KEY)
     }
+
+    // Load global providers
+    try {
+      const saved = localStorage.getItem('trivor_ia_providers_v2')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setProviders(parsed)
+        // Auto-select a provider for curriculo
+        const curriculoProvider = parsed.find((p: any) => p.usedFor === 'all' || p.usedFor === 'curriculo')
+        if (curriculoProvider) {
+          setSelectedProviderId(curriculoProvider.id)
+          setCurrentApiKey(curriculoProvider.apiKey)
+          setCurrentApiUrl(curriculoProvider.apiUrl || '')
+          setCurrentModelName(curriculoProvider.modelName || 'gpt-4o')
+        }
+      }
+    } catch {}
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,7 +180,7 @@ export default function CurriculoTool() {
       formData.set('format', format)
       formData.set('filename', fileName || 'Curriculo.pdf')
       formData.set('job_target', `${jobTitle || 'Geral'} (${jobLevel})`)
-      formData.set('model_name', modelName)
+      formData.set('model_name', currentModelName)
       formData.set('data_json', JSON.stringify(res))
 
       const response = await fetch('http://127.0.0.1:8000/api/export', {
@@ -210,24 +228,22 @@ export default function CurriculoTool() {
   const handleProviderPreset = (preset: 'openai' | 'openrouter' | 'ollama' | 'custom') => {
     setConnectionStatus(null)
     if (preset === 'openai') {
-      setProvider('openai')
-      setApiUrl('')
-      setModelName('gpt-4o')
+      setCurrentApiUrl('')
+      setCurrentModelName('gpt-4o')
     } else if (preset === 'openrouter') {
-      setProvider('custom')
-      setApiUrl('https://openrouter.ai/api/v1')
-      setModelName('openai/gpt-4o')
+      setCurrentApiUrl('https://openrouter.ai/api/v1')
+      setCurrentModelName('openai/gpt-4o')
     } else if (preset === 'ollama') {
-      setProvider('custom')
-      setApiUrl('http://localhost:11434/v1')
-      setModelName('llama3')
+      setCurrentApiUrl('http://localhost:11434/v1')
+      setCurrentModelName('llama3')
     } else {
-      setProvider('custom')
+      setCurrentApiUrl('')
     }
+    setSelectedProviderId('')
   }
 
   const handleTestConnection = async () => {
-    if (!apiKey.trim()) {
+    if (!currentApiKey.trim()) {
       setConnectionStatus({ type: 'error', message: 'Preencha a chave de API antes de testar a conexão.' })
       return
     }
@@ -236,10 +252,10 @@ export default function CurriculoTool() {
     setConnectionStatus(null)
 
     const headers: Record<string, string> = {
-      'api_key': apiKey.trim()
+      'api_key': currentApiKey.trim()
     }
-    if (apiUrl.trim()) headers['api_url'] = apiUrl.trim()
-    if (modelName.trim()) headers['model_name'] = modelName.trim()
+    if (currentApiUrl.trim()) headers['api_url'] = currentApiUrl.trim()
+    if (currentModelName.trim()) headers['model_name'] = currentModelName.trim()
 
     try {
       const response = await fetch('http://127.0.0.1:8000/api/test-connection', {
@@ -259,10 +275,10 @@ export default function CurriculoTool() {
       })
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        provider,
-        apiKey: apiKey.trim(),
-        apiUrl: apiUrl.trim(),
-        modelName: modelName.trim(),
+        provider: 'openai',
+        apiKey: currentApiKey.trim(),
+        apiUrl: currentApiUrl.trim(),
+        modelName: currentModelName.trim(),
         message: data.message || 'Conexão estabelecida com sucesso!',
         expiry
       }))
@@ -281,9 +297,10 @@ export default function CurriculoTool() {
     setRes(null)
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('api_key', apiKey)
-    if (apiUrl.trim()) formData.set('api_url', apiUrl.trim())
-    if (modelName.trim()) formData.set('model_name', modelName.trim())
+    formData.append('api_key', currentApiKey)
+    if (currentApiUrl.trim()) formData.set('api_url', currentApiUrl.trim())
+    if (currentModelName.trim()) formData.set('model_name', currentModelName.trim())
+    if (selectedProviderId) formData.set('provider_id', selectedProviderId)
     if (jobTitle.trim()) formData.set('job', jobTitle.trim())
     if (jobLevel !== 'Sem nível específico') formData.set('job_level', jobLevel)
 
@@ -400,90 +417,53 @@ export default function CurriculoTool() {
               </button>
             </div>
 
-            {/* Provider preset */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {[
-                { id: 'openai' as const, label: 'OpenAI' },
-                { id: 'custom' as const, label: 'Custom' },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => { setProvider(p.id); setConnectionStatus(null) }}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-                    provider === p.id
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/60'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+            {/* Provider selector */}
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-400 mb-2">IA para Currículo</label>
+              <select
+                value={selectedProviderId}
+                onChange={(e) => {
+                  setSelectedProviderId(e.target.value)
+                  const prov = providers.find((p: any) => p.id === e.target.value)
+                  if (prov) {
+                    setCurrentApiKey(prov.apiKey || '')
+                    setCurrentApiUrl(prov.apiUrl || '')
+                    setCurrentModelName(prov.modelName || 'gpt-4o')
+                  }
+                }}
+                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
+              >
+                <option value="">Selecione uma IA...</option>
+                {providers.filter((p: any) => p.usedFor === 'all' || p.usedFor === 'curriculo').map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.modelName})</option>
+                ))}
+              </select>
+              {!selectedProviderId && (
+                <p className="text-[10px] text-slate-600 mt-1">Cadastre suas IAs na aba "Config. IAs" da sidebar</p>
+              )}
             </div>
 
-            {/* API Key */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-slate-400 mb-2">Chave de API</label>
-              <div className="relative">
-                <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type={showFullApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 pl-11 pr-12 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
-                />
-                <button
-                  onClick={() => setShowFullApiKey(!showFullApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                >
-                  {showFullApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Advanced */}
+            {/* Manual override */}
             {showAdvanced && (
-              <div className="space-y-3 mt-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-2">Base URL</label>
-                  <input
-                    type="text"
-                    value={apiUrl}
-                    onChange={(e) => setApiUrl(e.target.value)}
-                    placeholder="https://api.openai.com/v1"
-                    className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
-                  />
+              <div className="space-y-3 pt-4 border-t border-slate-800/60">
+                <div className="flex gap-2">
+                  {(['openai', 'openrouter', 'ollama', 'custom'] as const).map(preset => (
+                    <button key={preset} onClick={() => handleProviderPreset(preset)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition">
+                      {preset.charAt(0).toUpperCase() + preset.slice(1)}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-2">Modelo</label>
-                  <input
-                    type="text"
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder="gpt-4o"
-                    className="w-full bg-slate-950/80 border border-slate-700/80 rounded-2xl py-3 px-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
-                  />
-                </div>
-                <button
-                  onClick={handleTestConnection}
-                  disabled={testingConnection}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-800/60 text-slate-300 text-xs font-semibold border border-slate-700/60 hover:border-indigo-500/40 hover:text-indigo-300 transition disabled:opacity-50"
-                >
-                  {testingConnection ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  Testar Conexão
-                </button>
+                <CustomInput type="text" value={currentApiKey} onChange={setCurrentApiKey} placeholder="API Key" showPasswordToggle />
+                <CustomInput type="text" value={currentApiUrl} onChange={setCurrentApiUrl} placeholder="API URL (opcional)" />
+                <CustomInput type="text" value={currentModelName} onChange={setCurrentModelName} placeholder="Model Name (ex: gpt-4o)" />
+                <CustomButton variant="ghost" onClick={handleTestConnection} loading={testingConnection} className="text-xs">
+                  {testingConnection ? 'Testando...' : 'Testar Conexão'}
+                </CustomButton>
                 {connectionStatus && (
-                  <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs ${
-                    connectionStatus.type === 'success'
-                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                      : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                  }`}>
-                    {connectionStatus.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                    {connectionStatus.message}
-                    {connectionStatus.savedUntil && (
-                      <span className="text-slate-500 ml-auto">Até: {connectionStatus.savedUntil}</span>
-                    )}
-                  </div>
+                  <p className={`text-xs ${connectionStatus.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {connectionStatus.message}{connectionStatus.savedUntil ? ` (válido até ${connectionStatus.savedUntil})` : ''}
+                  </p>
                 )}
               </div>
             )}

@@ -167,15 +167,28 @@ async def test_connection(
 @app.post('/api/analyze')
 async def analyze(
     file: UploadFile = File(...),
-    api_key: str = Form(...),
+    api_key: str = Form(None),
     api_url: str = Form(None),
     model_name: str = Form(None),
     job: str = Form(None),
-    job_level: str = Form(None)
+    job_level: str = Form(None),
+    provider_id: str = Form(None),
 ):
+    # Se provider_id fornecido, buscar credenciais salvas
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
     key = api_key or os.getenv("OPENAI_API_KEY")
     if not key or key.strip() == "":
-        raise HTTPException(status_code=400, detail="Chave de API de IA não fornecida. Passe no header 'api_key' ou defina a variável de ambiente.")
+        raise HTTPException(status_code=400, detail="Chave de API de IA não fornecida.")
 
     selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
     base_url = api_url if (api_url and api_url.strip()) else None
@@ -349,15 +362,28 @@ async def export_analysis(
 
 @app.post('/api/market/analyze')
 async def analyze_market(
-    api_key: str = Form(...),
+    api_key: str = Form(None),
     api_url: str = Form(None),
     model_name: str = Form(None),
+    provider_id: str = Form(None),
     job_title: str = Form(...),
     target_stack: str = Form(""),
     seniority: str = Form("Pleno"),
     location: str = Form("Remoto Nacional"),
     time_window: str = Form("90 dias")
 ):
+    # Se provider_id fornecido, buscar credenciais salvas
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'curriculo'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
     key = api_key or os.getenv("OPENAI_API_KEY")
     if not key or key.strip() == "":
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")

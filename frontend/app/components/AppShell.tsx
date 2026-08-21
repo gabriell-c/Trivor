@@ -4,19 +4,21 @@ import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import Sidebar from './Layout'
 import { LayoutDashboard } from 'lucide-react'
+import { getGlobalStatus, loadProviders } from '../hooks/useIaProviders'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard'
+type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings'
 
 const CurriculoPage = dynamic(() => import('../page').then(m => m.default), { ssr: false })
 const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false })
+const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false })
 
 export default function AppShell() {
   const [mounted, setMounted] = useState(false)
   const [activeTool, setActiveTool] = useState<Tool>('curriculo')
+  const providers = loadProviders()
+  const globalStatus = getGlobalStatus(providers)
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  useEffect(() => { setMounted(true) }, [])
 
   if (!mounted) {
     return (
@@ -35,52 +37,32 @@ export default function AppShell() {
 
   return (
     <div className="relative min-h-screen flex bg-[#070a12]">
-      <Sidebar activeTool={activeTool} onToolChange={setActiveTool} />
+      <Sidebar activeTool={activeTool} onToolChange={setActiveTool} globalStatus={globalStatus} providerCount={providers.length} />
 
-      <motion.main
-        initial={false}
-        animate={{ marginLeft: 72 }}
-        transition={{ duration: 0.25, ease: 'easeInOut' }}
-        className="flex-1 min-h-screen flex flex-col items-center p-4 md:p-8 overflow-x-hidden relative"
-      >
-        {/* Background glow */}
+      <motion.main initial={false} animate={{ marginLeft: 72 }} transition={{ duration: 0.25, ease: 'easeInOut' }}
+        className="flex-1 min-h-screen flex flex-col items-center p-4 md:p-8 overflow-x-hidden relative">
+
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-indigo-600/20 via-purple-600/20 to-pink-600/10 rounded-full animate-pulse-glow pointer-events-none" />
         <div className="absolute bottom-10 right-10 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <AnimatePresence mode="wait">
           {activeTool === 'curriculo' && (
-            <motion.div
-              key="curriculo"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-4xl z-10 space-y-6"
-            >
+            <motion.div key="curriculo" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 space-y-6">
               <CurriculoPage />
             </motion.div>
           )}
           {activeTool === 'mercado' && (
-            <motion.div
-              key="mercado"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.2 }}
-              className="w-full z-10"
-            >
+            <motion.div key="mercado" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10">
               <MarketPage />
             </motion.div>
           )}
+          {activeTool === 'api-settings' && (
+            <motion.div key="api-settings" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full z-10">
+              <ApiSettingsPage />
+            </motion.div>
+          )}
           {activeTool === 'dashboard' && (
-            <motion.div
-              key="dashboard"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-4xl z-10 text-center py-20"
-            >
+            <motion.div key="dashboard" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 text-center py-20">
               <div className="w-20 h-20 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto mb-6">
                 <LayoutDashboard className="w-10 h-10 text-slate-600" />
               </div>
