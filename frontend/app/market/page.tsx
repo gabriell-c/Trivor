@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
@@ -23,7 +23,6 @@ import {
 import { CustomInput } from '../components/CustomInput'
 import { CustomSelect } from '../components/CustomSelect'
 import { CustomButton } from '../components/CustomButton'
-import { loadProviders, getBestProvider, IAProvider } from '../hooks/useIaProviders'
 
 interface AnalysisResult {
   success: boolean
@@ -96,16 +95,6 @@ export default function MarketIntelligencePage() {
   const [customCountry, setCustomCountry] = useState('')
   const [customState, setCustomState] = useState('')
 
-  // IA providers from global settings
-  const [availableProviders] = useState<IAProvider[]>(loadProviders)
-  const [selectedProviderId, setSelectedProviderId] = useState<string | ''>('')
-
-  useEffect(() => {
-    // Auto-select a provider for market analysis
-    const best = getBestProvider(['market'])
-    if (best) setSelectedProviderId(best.id)
-  }, [])
-
   const getLocationValue = (): string => {
     switch (locationMode) {
       case 'remoto': return locationValue // 'Remoto Nacional' or 'Remoto Internacional'
@@ -125,35 +114,11 @@ export default function MarketIntelligencePage() {
       return
     }
 
-    // Resolve provider credentials
-    let apiKey = ''
-    let apiUrl = ''
-    let modelName = 'gpt-4o'
-    let providerId = ''
-
-    if (selectedProviderId) {
-      const prov = availableProviders.find(p => p.id === selectedProviderId)
-      if (prov) {
-        apiKey = prov.apiKey
-        apiUrl = prov.apiUrl
-        modelName = prov.modelName
-        providerId = prov.id
-      }
-    }
-
-    if (!apiKey.trim()) { setError('Nenhuma IA configurada. Vá em "Config. IAs" na sidebar.')
-      return
-    }
-
     setLoading(true)
     setError(null)
     setResult(null)
 
     const formData = new FormData()
-    formData.set('api_key', apiKey)
-    if (apiUrl) formData.set('api_url', apiUrl)
-    if (modelName) formData.set('model_name', modelName)
-    if (providerId) formData.set('provider_id', providerId)
     formData.set('job_title', jobTitle.trim())
     formData.set('target_stack', targetStack.trim())
     formData.set('seniority', seniority)
@@ -244,14 +209,6 @@ export default function MarketIntelligencePage() {
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Janela Temporal</label>
               <CustomSelect value={timeWindow} onChange={setTimeWindow} options={['30 dias', '60 dias', '90 dias'].map(w => ({ value: w, label: w }))} placeholder="Período..." />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-2">IA para Mercado</label>
-              <CustomSelect value={selectedProviderId} onChange={setSelectedProviderId}
-                options={[
-                  { value: '', label: 'Selecione uma IA...' },
-                  ...availableProviders.filter(p => p.usedFor === 'all' || p.usedFor === 'market').map(p => ({ value: p.id, label: `${p.name} (${p.modelName})` })),
-                ]} placeholder="IA..." />
             </div>
           </div>
 

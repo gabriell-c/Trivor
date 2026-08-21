@@ -18,6 +18,25 @@ import pypdfium2.raw as pdfium_c
 from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
 from market_service import run_market_analysis, init_market_db, TECH_SYNONYMS
 
+def _get_provider_for_tool(tool: str):
+    """Retorna o melhor provider para uma ferramenta, ou None."""
+    try:
+        providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+        if not providers:
+            return None
+        # Prioridade: all > tool-specific > qualquer outra
+        for priority in ['all', tool]:
+            for p in providers:
+                if p.get('usedFor') == priority and p.get('apiKey'):
+                    return p
+        # fallback: qualquer um com apiKey
+        for p in providers:
+            if p.get('apiKey'):
+                return p
+        return None
+    except Exception:
+        return None
+
 app = FastAPI(title="Trivor")
 
 app.add_middleware(
@@ -185,6 +204,14 @@ async def analyze(
                 model_name = prov.get('modelName') or model_name
         except Exception:
             pass
+
+    # Auto-select provider for curriculo if not provided
+    if not api_key or not api_key.strip():
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
 
     key = api_key or os.getenv("OPENAI_API_KEY")
     if not key or key.strip() == "":
@@ -383,6 +410,14 @@ async def analyze_market(
                 model_name = prov.get('modelName') or model_name
         except Exception:
             pass
+
+    # Auto-select provider for market if not provided
+    if not api_key or not api_key.strip():
+        prov = _get_provider_for_tool('market')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
 
     key = api_key or os.getenv("OPENAI_API_KEY")
     if not key or key.strip() == "":

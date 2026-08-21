@@ -200,7 +200,7 @@ export default function ApiSettingsPage() {
                     { value: 'market', label: 'Só Mercado' },
                     { value: 'none', label: 'Desativada' },
                   ]} placeholder="Uso" className="w-32" />
-                  <button onClick={() => remove(provider.id)} className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-all" title="Remover">
+                  <button onClick={() => remove(provider.id)} className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-all" title="Desconectar / Remover">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
