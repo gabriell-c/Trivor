@@ -397,7 +397,8 @@ async def analyze_market(
     target_stack: str = Form(""),
     seniority: str = Form("Pleno"),
     location: str = Form("Remoto Nacional"),
-    time_window: str = Form("90 dias")
+    time_window: str = Form("90 dias"),
+    negative_keywords: str = Form("")
 ):
     # Se provider_id fornecido, buscar credenciais salvas
     if provider_id:
@@ -436,7 +437,8 @@ async def analyze_market(
             target_stack=target_stack,
             seniority=seniority,
             location=location,
-            time_window=time_window
+            time_window=time_window,
+            negative_keywords=negative_keywords
         )
         return {"success": True, "report": report}
     except Exception as e:

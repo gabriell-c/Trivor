@@ -19,10 +19,15 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronDown,
+  ChevronUp,
+  Building2,
+  MapPin as MapPinIcon,
 } from 'lucide-react'
 import { CustomInput } from '../components/CustomInput'
 import { CustomSelect } from '../components/CustomSelect'
 import { CustomButton } from '../components/CustomButton'
+import { TagInput } from '../components/TagInput'
 
 interface AnalysisResult {
   success: boolean
@@ -54,7 +59,27 @@ interface MarketReport {
     top_soft_skills: { name: string; count: number }[]
     top_certifications: { name: string; count: number }[]
   }
-  sample_jobs: { title: string; company: string; is_relevant: boolean; req_techs: string[]; desirable_techs: string[] }[]
+  sample_jobs: MarketJob[]
+}
+
+interface MarketJob {
+  title: string
+  company: string
+  location: string
+  modality: string
+  source: string
+  is_relevant: boolean
+  req_techs: string[]
+  desirable_techs: string[]
+  role_level: string | null
+  exp_years_min: number | null
+  exp_years_max: number | null
+  soft_skills: string[]
+  certifications: string[]
+  salary_min: number | null
+  salary_max: number | null
+  currency: string | null
+  raw_description: string
 }
 
 const BRAZILIAN_STATES = [
@@ -81,13 +106,15 @@ type LocationMode = 'remoto' | 'estado' | 'pais' | 'outro'
 
 export default function MarketIntelligencePage() {
   const [jobTitle, setJobTitle] = useState('')
-  const [targetStack, setTargetStack] = useState('')
+  const [targetStack, setTargetStack] = useState<string[]>([])
+  const [negativeKeywords, setNegativeKeywords] = useState<string[]>([])
   const [seniority, setSeniority] = useState('Pleno')
   const [timeWindow, setTimeWindow] = useState('90 dias')
   const [activeTab, setActiveTab] = useState<'config' | 'results' | 'jobs'>('config')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [expandedJob, setExpandedJob] = useState<number | null>(null)
 
   // Location state
   const [locationMode, setLocationMode] = useState<LocationMode>('remoto')
@@ -97,7 +124,7 @@ export default function MarketIntelligencePage() {
 
   const getLocationValue = (): string => {
     switch (locationMode) {
-      case 'remoto': return locationValue // 'Remoto Nacional' or 'Remoto Internacional'
+      case 'remoto': return locationValue
       case 'estado': return customState
       case 'pais': return customCountry || 'Brasil'
       case 'outro': return customCountry || 'Brasil'
@@ -120,7 +147,8 @@ export default function MarketIntelligencePage() {
 
     const formData = new FormData()
     formData.set('job_title', jobTitle.trim())
-    formData.set('target_stack', targetStack.trim())
+    formData.set('target_stack', targetStack.join(', '))
+    formData.set('negative_keywords', negativeKeywords.join(', '))
     formData.set('seniority', seniority)
     formData.set('location', loc)
     formData.set('time_window', timeWindow)
@@ -155,7 +183,7 @@ export default function MarketIntelligencePage() {
   })()
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full max-w-4xl z-10 space-y-6 mx-auto">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full max-w-4xl mx-auto z-10 space-y-6">
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-semibold tracking-wider">
@@ -198,7 +226,13 @@ export default function MarketIntelligencePage() {
 
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2">Stack / Skills Principais</label>
-            <CustomInput type="text" placeholder="Ex: Python, FastAPI, PostgreSQL (separado por vírgula)" value={targetStack} onChange={setTargetStack} className="w-full" />
+            <TagInput value={targetStack} onChange={setTargetStack} placeholder="Ex: Python, FastAPI, PostgreSQL (Enter ou vírgula)" className="w-full" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-2">Palavras-chave Negativas (excluir vagas)</label>
+            <TagInput value={negativeKeywords} onChange={setNegativeKeywords} placeholder="Ex: java, intern, estágio (Enter ou vírgula)" className="w-full" />
+            <p className="text-[10px] text-slate-600 mt-1">Vagas que contiverem essas palavras serão excluídas da análise.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -212,45 +246,38 @@ export default function MarketIntelligencePage() {
             </div>
           </div>
 
-          {/* Geographic scope */}
+          {/* Location */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2">Escopo Geográfico</label>
-            <div className="flex gap-2 mb-3">
-              {[
-                { mode: 'remoto' as LocationMode, label: 'Remoto' },
-                { mode: 'estado' as LocationMode, label: 'Estado (BR)' },
-                { mode: 'pais' as LocationMode, label: 'País' },
-                { mode: 'outro' as LocationMode, label: 'Outro' },
-              ].map(opt => (
-                <button key={opt.mode} onClick={() => { setLocationMode(opt.mode); if (opt.mode === 'remoto') setLocationValue('Remoto Nacional') }}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${locationMode === opt.mode ? 'bg-purple-600 text-white border border-purple-500' : 'bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-slate-200'}`}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {locationMode === 'remoto' && (
-              <CustomSelect value={locationValue} onChange={setLocationValue}
-                options={[{ value: 'Remoto Nacional', label: 'Remoto Nacional' }, { value: 'Remoto Internacional', label: 'Remoto Internacional' }]}
-                placeholder="Tipo de remoto..." className="w-full" />
-            )}
-            {locationMode === 'estado' && (
-              <CustomSelect value={customState} onChange={setCustomState}
-                options={BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))}
-                placeholder="Selecione o estado..." className="w-full" />
-            )}
-            {(locationMode === 'pais' || locationMode === 'outro') && (
-              <CustomSelect value={customCountry} onChange={setCustomCountry}
-                options={[
-                  ...MAIN_COUNTRIES.map(c => ({ value: c, label: c })),
-                  { value: 'Outro', label: 'Outro (digitar abaixo)' },
-                ]} placeholder="Selecione o país..." className="w-full" />
-            )}
-            {(locationMode === 'outro' || (locationMode === 'pais' && customCountry === 'Outro')) && (
-              <div className="mt-2">
-                <CustomInput type="text" placeholder="Nome do país..." value={customCountry === 'Outro' ? '' : customCountry} onChange={v => { if (locationMode === 'outro' || customCountry === 'Outro') setCustomCountry(v) }} className="w-full" />
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {(['remoto', 'estado', 'pais', 'outro'] as const).map(mode => (
+                  <button key={mode} onClick={() => setLocationMode(mode)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                      locationMode === mode ? 'bg-purple-600 text-white' : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700/60'
+                    }`}>
+                    {mode === 'remoto' ? '🌐 Remoto' : mode === 'estado' ? '📍 Estado (BR)' : mode === 'pais' ? '🗺️ País' : '✏️ Outro'}
+                  </button>
+                ))}
               </div>
-            )}
+              {locationMode === 'remoto' && (
+                <CustomSelect value={locationValue} onChange={setLocationValue}
+                  options={locationOptions.map(o => ({ value: o.value, label: o.label }))} placeholder="Selecione..." className="w-full" />
+              )}
+              {locationMode === 'estado' && (
+                <CustomSelect value={customState} onChange={setCustomState}
+                  options={BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))} placeholder="Selecione o estado..." className="w-full" />
+              )}
+              {locationMode === 'pais' && (
+                <CustomSelect value={customCountry} onChange={setCustomCountry}
+                  options={[...MAIN_COUNTRIES.map(c => ({ value: c, label: c })), { value: 'Outro', label: 'Outro (digitar abaixo)' }]} placeholder="Selecione o país..." className="w-full" />
+              )}
+              {(locationMode === 'outro' || (locationMode === 'pais' && customCountry === 'Outro')) && (
+                <div className="mt-2">
+                  <CustomInput type="text" placeholder="Nome do país..." value={locationMode === 'outro' || customCountry === 'Outro' ? customCountry : ''} onChange={v => setCustomCountry(v)} className="w-full" />
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-start gap-3 p-4 rounded-2xl bg-purple-500/5 border border-purple-500/15">
@@ -293,9 +320,9 @@ export default function MarketIntelligencePage() {
               <p className="text-[10px] text-slate-500 mt-0.5">Mediana</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tempo de Análise</p>
-              <p className="text-2xl font-black text-indigo-300 mt-1">{result?.elapsed_seconds?.toFixed(1)}s</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{result?.model}</p>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Descartadas</p>
+              <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.discarded_jobs}</p>
+              <p className="text-[10px] text-slate-600 mt-0.5">por filtro</p>
             </div>
           </div>
 
@@ -333,23 +360,24 @@ export default function MarketIntelligencePage() {
                   <span className="text-xs text-slate-600 w-12 text-right">{tech.count}</span>
                 </div>
               ))}
+              {R.statistics.desirable_technologies.length === 0 && <p className="text-xs text-slate-500">Nenhuma tecnologia diferenciada extraída.</p>}
             </div>
           </div>
 
-          {/* Modalities & Experience */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
-              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-400" />Modalidades de Trabalho</h3>
-              <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2"><Briefcase className="w-4 h-4 text-blue-400" />Modalidades Mais Comuns</h3>
+              <div className="space-y-2">
                 {R.statistics.modalities.map(mod => (
                   <div key={mod.name} className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400 w-24 truncate">{mod.name}</span>
+                    <span className="text-xs font-semibold text-slate-300 w-28 truncate">{mod.name}</span>
                     <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${mod.percentage}%` }} />
+                      <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500" style={{ width: `${mod.percentage}%` }} />
                     </div>
                     <span className="text-xs text-slate-500 w-12 text-right">{mod.percentage}%</span>
                   </div>
                 ))}
+                {R.statistics.modalities.length === 0 && <p className="text-xs text-slate-500">Nenhuma modalidade extraída.</p>}
               </div>
             </div>
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
@@ -375,7 +403,7 @@ export default function MarketIntelligencePage() {
               <h3 className="text-sm font-bold text-slate-200 mb-4">Soft Skills Mais Cobradas</h3>
               <div className="flex flex-wrap gap-2">
                 {R.statistics.top_soft_skills.length > 0 ? R.statistics.top_soft_skills.map(s => (
-                  <span key={s.name} className="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300">{s.name}</span>
+                  <span key={s.name} className="px-3 py-1.5 rounded-xl text-xs font-medium bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">{s.name} <span className="text-cyan-500 ml-1">{s.count}x</span></span>
                 )) : <p className="text-xs text-slate-500">Nenhuma soft skill extraída.</p>}
               </div>
             </div>
@@ -409,22 +437,132 @@ export default function MarketIntelligencePage() {
           <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2"><Briefcase className="w-4 h-4 text-purple-400" />Vagas Analisadas ({R.sample_jobs.length} de {R.summary.relevant_jobs_analyzed})</h3>
           <div className="space-y-3">
             {R.sample_jobs.map((job, i) => (
-              <div key={i} className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="text-sm font-bold text-white">{job.title}</p>
-                    <p className="text-xs text-slate-500">{job.company}</p>
+              <div key={i} className="rounded-2xl bg-slate-950/60 border border-slate-800 overflow-hidden">
+                <button
+                  onClick={() => setExpandedJob(expandedJob === i ? null : i)}
+                  className="w-full flex items-start justify-between p-4 text-left hover:bg-slate-800/30 transition"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-bold text-white truncate">{job.title}</p>
+                      {job.is_relevant
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      }
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                      <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>
+                      <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
+                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
+                      <span className="text-slate-600">· {job.source}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {job.req_techs.slice(0, 4).map(t => (
+                        <span key={t} className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
+                      ))}
+                      {job.desirable_techs.slice(0, 2).map(t => (
+                        <span key={t} className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
+                      ))}
+                    </div>
                   </div>
-                  {job.is_relevant ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {job.req_techs.slice(0, 5).map(t => (
-                    <span key={t} className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
-                  ))}
-                  {job.desirable_techs.slice(0, 3).map(t => (
-                    <span key={t} className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
-                  ))}
-                </div>
+                  <div className="ml-4 flex-shrink-0">
+                    {expandedJob === i
+                      ? <ChevronUp className="w-4 h-4 text-slate-400" />
+                      : <ChevronDown className="w-4 h-4 text-slate-400" />
+                    }
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {expandedJob === i && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="border-t border-slate-800/60"
+                    >
+                      <div className="p-4 space-y-4">
+                        {/* Description */}
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Descrição Completa</p>
+                          <p className="text-xs text-slate-400 leading-relaxed">{job.raw_description}</p>
+                        </div>
+
+                        {/* Techs */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Tecnologias Obrigatórias</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {job.req_techs.length > 0 ? job.req_techs.map(t => (
+                                <span key={t} className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
+                              )) : <span className="text-[10px] text-slate-600">—</span>}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Tecnologias Desejáveis</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {job.desirable_techs.length > 0 ? job.desirable_techs.map(t => (
+                                <span key={t} className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
+                              )) : <span className="text-[10px] text-slate-600">—</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Details grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="p-2 rounded-xl bg-slate-900/60">
+                            <p className="text-[10px] text-slate-500">Nível</p>
+                            <p className="text-xs text-white font-semibold">{job.role_level || '—'}</p>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-900/60">
+                            <p className="text-[10px] text-slate-500">Experiência</p>
+                            <p className="text-xs text-white font-semibold">
+                              {job.exp_years_min ? `${job.exp_years_min}+` : '—'}
+                              {job.exp_years_max ? ` - ${job.exp_years_max}` : ''}
+                              {!job.exp_years_min && !job.exp_years_max ? ' anos' : ' anos'}
+                            </p>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-900/60">
+                            <p className="text-[10px] text-slate-500">Salário</p>
+                            <p className="text-xs text-white font-semibold">
+                              {job.salary_min ? `${job.currency === 'USD' ? 'US$' : 'R$'} ${job.salary_min}` : '—'}
+                              {job.salary_max ? ` - ${job.currency === 'USD' ? 'US$' : 'R$'} ${job.salary_max}` : ''}
+                            </p>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-900/60">
+                            <p className="text-[10px] text-slate-500">Modalidade</p>
+                            <p className="text-xs text-white font-semibold">{job.modality || '—'}</p>
+                          </div>
+                        </div>
+
+                        {/* Soft Skills */}
+                        {job.soft_skills.length > 0 && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Soft Skills</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {job.soft_skills.map(s => (
+                                <span key={s} className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-[10px] text-cyan-300">{s}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Certifications */}
+                        {job.certifications.length > 0 && (
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Certificações</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {job.certifications.map(c => (
+                                <span key={c} className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-300">{c}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             ))}
           </div>
@@ -440,6 +578,17 @@ export default function MarketIntelligencePage() {
           <div>
             <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
             <p className="text-slate-500 text-xs mt-1">Configure os parâmetros e clique em "Analisar Mercado".</p>
+          </div>
+        </div>
+      )}
+      {activeTab === 'jobs' && !result && (
+        <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-10 text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto">
+            <Briefcase className="w-8 h-8 text-slate-600" />
+          </div>
+          <div>
+            <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
+            <p className="text-slate-500 text-xs mt-1">Execute uma análise primeiro para ver as vagas.</p>
           </div>
         </div>
       )}
