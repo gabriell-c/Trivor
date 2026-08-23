@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
-_MAX_JOBS_FOR_ANALYSIS = 150
+_MAX_JOBS_FOR_ANALYSIS = 300
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
@@ -202,7 +202,7 @@ def _generate_sample_jobs(job_title: str) -> List[Dict]:
 
     for sen in seniority_weights:
         level, exp_range, salary_min, salary_max = sen
-        for _ in range(4):  # 4 vagas por nível de senioridade
+        for _ in range(8):  # 8 vagas por nível de senioridade
             mod = random.choice(modalities)
             loc = random.choice(locations)
             src = random.choice(sources)
@@ -227,8 +227,8 @@ def _generate_sample_jobs(job_title: str) -> List[Dict]:
                 "seniority": level,
             })
 
-    # Garante pelo menos 80 vagas
-    while len(jobs) < 80:
+    # Garante pelo menos 200 vagas
+    while len(jobs) < 200:
         level = random.choice(["Júnior", "Pleno", "Sênior"])
         exp_range = {"Júnior": "1 a 2 anos", "Pleno": "2 a 5 anos", "Sênior": "5+ anos"}[level]
         sal = {"Júnior": ("3-5k", "4-6k"), "Pleno": ("6-9k", "8-12k"), "Sênior": ("12-18k", "15-22k")}[level]
@@ -761,20 +761,17 @@ def _pre_filter_jobs(
         if neg_list and any(nk in job_text_lower for nk in neg_list):
             continue
 
-        # MODALIDADE RÍGIDA — rejeita se selecionou modalidade específica e a vaga não bate
+        # MODALIDADE — suavizada para aumentar cobertura
+        # Para remoto: não rejeita vagas que não mencionam "remoto" explicitamente
         if modality_restriction == 'remote':
-            if 'remoto' not in job_text_lower and 'home office' not in job_text_lower:
-                continue
+            pass  # permite todas, score será menor se não mencionar remoto
         elif modality_restriction == 'onsite':
             if 'remoto' in job_text_lower or 'home office' in job_text_lower:
                 continue
         elif modality_restriction == 'hybrid':
             if 'remoto' in job_text_lower or 'home office' in job_text_lower:
                 continue
-            if 'híbrido' not in job_text_lower and 'hibrido' not in job_text_lower and 'presencial' not in job_text_lower:
-                # vaga não menciona modalidade híbrida nem presencial → não seleciona
-                # mas se não mencionar nada de remoto, pode ser híbrida
-                pass
+            # vagas sem menção de modalidade são permitidas (podem ser híbridas)
 
         score = _keyword_score(job_text_lower, title, target_stack, seniority, location)
         if score > 0:
