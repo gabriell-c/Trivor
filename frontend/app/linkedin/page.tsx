@@ -110,6 +110,10 @@ export default function LinkedinPage() {
       }
 
       const data: AnalysisResult = await response.json()
+      if (data.error) throw new Error(data.error)
+      if (typeof data.nota === 'string') data.nota = parseFloat(data.nota)
+      if (data.analise_ats && typeof data.analise_ats === 'object' && typeof data.analise_ats.score_ats === 'string')
+        data.analise_ats.score_ats = parseFloat(data.analise_ats.score_ats)
       setRes(data)
       setActiveStep(2)
     } catch (err) {

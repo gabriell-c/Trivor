@@ -47,6 +47,14 @@ def _get_provider_for_tool(tool: str):
 
 app = FastAPI(title="Trivor")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Inicializa DB de logs
 init_logs_db()
 
@@ -525,7 +533,6 @@ async def analyze_linkedin(
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = comp.choices[0].message.content or ""
-        raw_content = re.sub(r'', '', raw_content, flags=re.DOTALL)
         cleaned_content = raw_content.strip()
         if cleaned_content.startswith("```"):
             cleaned_content = cleaned_content.split("\n", 1)[-1]
