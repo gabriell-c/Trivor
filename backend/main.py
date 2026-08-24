@@ -516,10 +516,10 @@ async def analyze_linkedin(
         create_kwargs["messages"] = [
             {"role": "system", "content": sys_p},
             {"role": "user", "content": [
-                {"type": "text", "text": "Analise este perfil LinkedIn. O texto está na mensagem seguinte. Esta é a foto de perfil do usuário."},
+                {"type": "text", "text": "A imagem abaixo é a FOTO DE PERFIL do usuário no LinkedIn. Analise-a profissionalmente: rosto visível? fundo neutro? iluminação boa? profissional? Em seguida, analise o texto do perfil a seguir seguindo rigorosamente o prompt de sistema."},
                 {"type": "image_url", "image_url": {"url": image_url}},
             ]},
-            {"role": "assistant", "content": user_prompt},
+            {"role": "user", "content": user_prompt},
         ]
 
     try:

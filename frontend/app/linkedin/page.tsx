@@ -518,6 +518,10 @@ export default function LinkedinPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
+                    <p className="text-xs text-slate-500 mb-1">Modelo</p>
+                    <span className="text-xs font-black text-indigo-300 font-mono truncate block">{res.api_info?.model || '—'}</span>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
                     <p className="text-xs text-slate-500 mb-1">Prompt</p>
                     <span className="text-sm font-black text-blue-300 font-mono">{res.uso_tokens.prompt_tokens.toLocaleString('pt-BR')}</span>
                   </div>
@@ -525,8 +529,10 @@ export default function LinkedinPage() {
                     <p className="text-xs text-slate-500 mb-1">Completion</p>
                     <span className="text-sm font-black text-cyan-300 font-mono">{res.uso_tokens.completion_tokens?.toLocaleString('pt-BR')}</span>
                   </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 mt-4">
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
-                    <p className="text-xs text-slate-500 mb-1">Total</p>
+                    <p className="text-xs text-slate-500 mb-1">Total de Tokens</p>
                     <span className="text-sm font-black text-white font-mono">{res.uso_tokens.total_tokens.toLocaleString('pt-BR')}</span>
                   </div>
                 </div>
