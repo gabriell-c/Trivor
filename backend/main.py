@@ -1,6 +1,8 @@
 import sys
 import re
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +18,8 @@ if str(backend_path) not in sys.path:
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
-from market_service import run_market_analysis, init_market_db, TECH_SYNONYMS
+from market_service import run_market_analysis, init_market_db
+from logging_service import init_logs_db, log_request, get_logs, get_logs_stats, clear_logs, LOGS_DB
 
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
@@ -38,6 +41,51 @@ def _get_provider_for_tool(tool: str):
         return None
 
 app = FastAPI(title="Trivor")
+
+# Inicializa DB de logs
+init_logs_db()
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start) * 1000
+
+    key_preview = "none"
+    model = ""
+    body_str = ""
+    try:
+        if request.body:
+            body_bytes = await request.body()
+            body_str = body_bytes.decode("utf-8", errors="replace")[:800]
+            from urllib.parse import unquote
+            for part in body_str.split("&"):
+                part = unquote(part)
+                if part.startswith("api_key="):
+                    key_preview = part.split("=", 1)[1][:8] + "..."
+                elif part.startswith("model_name="):
+                    model = part.split("=", 1)[1][:50]
+    except Exception:
+        pass
+
+    req_dict = None
+    try:
+        if request.headers.get("content-type", "").startswith("application/json"):
+            req_dict = json.loads(body_str[:2000])
+    except Exception:
+        pass
+
+    log_request(
+        endpoint=request.url.path,
+        method=request.method,
+        status_code=response.status_code,
+        duration_ms=round(duration_ms, 1),
+        model=model,
+        api_key_preview=key_preview,
+        request_body=req_dict if req_dict else (body_str if body_str else None),
+    )
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +113,17 @@ def init_db():
             score REAL,
             feedback TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS jsearch_keys (
+            key_hash TEXT PRIMARY KEY,
+            key_prefix TEXT,
+            last_tested TIMESTAMP,
+            rate_limit_total INTEGER DEFAULT 200,
+            rate_limit_remaining INTEGER DEFAULT NULL,
+            status TEXT DEFAULT 'unknown',
+            last_error TEXT
         )
     ''')
     conn.commit()
@@ -170,7 +229,7 @@ async def test_connection(
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
-    base_url = api_url if (api_url and api_url.strip()) else None
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL") or None
 
     try:
         client = OpenAI(api_key=key, base_url=base_url)
@@ -218,7 +277,7 @@ async def analyze(
         raise HTTPException(status_code=400, detail="Chave de API de IA não fornecida.")
 
     selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
-    base_url = api_url if (api_url and api_url.strip()) else None
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL") or None
 
     vaga_completa = f"{job or 'Não especificada'}"
     if job_level and job_level.strip() and job_level != "Sem nível específico":
@@ -393,6 +452,8 @@ async def analyze_market(
     api_url: str = Form(None),
     model_name: str = Form(None),
     provider_id: str = Form(None),
+    jsearch_api_keys: str = Form(None),
+    jsearch_api_key: str = Form(None),
     job_title: str = Form(...),
     target_stack: str = Form(""),
     seniority: str = Form("Pleno"),
@@ -412,20 +473,23 @@ async def analyze_market(
         except Exception:
             pass
 
-    # Auto-select provider for market if not provided
-    if not api_key or not api_key.strip():
+    # Use system-level OPENAI_API_KEY as primary fallback before checking stored providers
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
+
+    # Only use TRIVOR_IAS provider if no system key was found and no explicit api_key was sent
+    if not key or not key.strip():
         prov = _get_provider_for_tool('market')
         if prov:
             api_key = prov['apiKey']
             api_url = prov.get('apiUrl') or api_url
             model_name = prov.get('modelName') or model_name
+            key = api_key
 
-    key = api_key or os.getenv("OPENAI_API_KEY")
     if not key or key.strip() == "":
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
-    base_url = api_url if (api_url and api_url.strip()) else None
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL") or None
 
     try:
         client = OpenAI(api_key=key, base_url=base_url)
@@ -438,12 +502,164 @@ async def analyze_market(
             seniority=seniority,
             location=location,
             time_window=time_window,
-            negative_keywords=negative_keywords
+            negative_keywords=negative_keywords,
+            jsearch_api_keys=[k.strip() for k in (jsearch_api_keys or jsearch_api_key or "").split(",") if k.strip()] if (jsearch_api_keys or jsearch_api_key) else []
         )
         return {"success": True, "report": report}
     except Exception as e:
+        import traceback
+        print(f"[MARKET ERROR] {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao processar inteligência de mercado: {str(e)}")
 
-@app.get('/api/market/synonyms')
-async def get_synonyms():
-    return {"synonyms": TECH_SYNONYMS, "total": len(TECH_SYNONYMS)}
+
+# ---------------------------------------------------------------------------
+# Endpoints de Logs
+# ---------------------------------------------------------------------------
+
+@app.get('/api/jsearch/keys')
+async def api_get_jsearch_keys():
+    """Retorna todas as chaves JSearch com status e uso."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM jsearch_keys ORDER BY rowid')
+    rows = cursor.fetchall()
+    keys = []
+    for r in rows:
+        key_data = dict(r)
+        # Calcula usado com base no remaining
+        used = max(0, key_data['rate_limit_total'] - key_data['rate_limit_remaining']) if key_data['rate_limit_remaining'] is not None else None
+        key_data['used'] = used
+        keys.append(key_data)
+    conn.close()
+    return {"keys": keys}
+
+@app.post('/api/jsearch/test')
+async def test_jsearch_key(
+    api_key: str = Form(...),
+):
+    """Testa uma chave JSearch API, extrai rate limits e salva no DB."""
+    import hashlib
+    key = api_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+    key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+    key_prefix = key[:8] + "…" + key[-4:] if len(key) > 12 else key
+
+    url = "https://api.openwebninja.com/jsearch/search-v2?query=software+developer&country=us&language=en&num_pages=1&date_posted=all"
+    req = urllib.request.Request(url, headers={
+        "X-API-Key": key,
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            # Extrai headers de rate limit (RapidAPI usa lowercase)
+            limit_remaining = resp.headers.get("x-ratelimit-remaining")
+            limit_total = resp.headers.get("x-ratelimit-limit")
+
+        jobs_found = 0
+        status = "ok"
+        message = ""
+        if data.get("status") == "OK":
+            jobs_found = len(data.get("data", []))
+            message = f"Chave válida — {jobs_found} vaga(s) encontrada(s)"
+            status = "ok"
+        else:
+            message = data.get("message", "Erro desconhecido")
+            status = "error"
+
+        # Salva/atualiza no DB
+        remaining = int(limit_remaining) if limit_remaining else None
+        total = int(limit_total) if limit_total else 200
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute('''
+            INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+            VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+            ON CONFLICT(key_hash) DO UPDATE SET
+                key_prefix = excluded.key_prefix,
+                last_tested = CURRENT_TIMESTAMP,
+                rate_limit_total = excluded.rate_limit_total,
+                rate_limit_remaining = excluded.rate_limit_remaining,
+                status = excluded.status,
+                last_error = excluded.last_error
+        ''', (key_hash, key_prefix, total, remaining, status, "" if status == "ok" else message))
+        conn.commit()
+        conn.close()
+
+        return {
+            "ok": status == "ok",
+            "status": status,
+            "message": message,
+            "jobs_found": jobs_found,
+            "rate_limit_total": total,
+            "rate_limit_remaining": remaining,
+            "rate_limit_used": total - remaining if remaining is not None else None,
+        }
+    except urllib.error.HTTPError as e:
+        error_msg = ""
+        error_status = "unknown"
+        if e.code == 403:
+            try:
+                err_body = json.loads(e.read().decode("utf-8"))
+                error_msg = err_body.get("message", "Chave inválida ou 403 Forbidden")
+            except Exception:
+                error_msg = "Chave inválida ou 403 Forbidden"
+            error_status = "403"
+        elif e.code == 429:
+            error_msg = "Limite de requisições atingido (rate limit)"
+            error_status = "429"
+        else:
+            error_msg = f"HTTP {e.code}: {e.reason}"
+            error_status = "http"
+
+        # Salva status de erro
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute('''
+            INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+            VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+            ON CONFLICT(key_hash) DO UPDATE SET
+                key_prefix = excluded.key_prefix,
+                last_tested = CURRENT_TIMESTAMP,
+                status = excluded.status,
+                last_error = excluded.last_error
+        ''', (key_hash, key_prefix, 200, None, error_status, error_msg))
+        conn.commit()
+        conn.close()
+        return {"ok": False, "status": error_status, "message": error_msg, "jobs_found": 0, "rate_limit_total": 200, "rate_limit_remaining": None, "rate_limit_used": None}
+    except Exception as e:
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute('''
+            INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+            VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+            ON CONFLICT(key_hash) DO UPDATE SET
+                key_prefix = excluded.key_prefix,
+                last_tested = CURRENT_TIMESTAMP,
+                status = excluded.status,
+                last_error = excluded.last_error
+        ''', (key_hash, key_prefix, 200, None, "error", str(e)))
+        conn.commit()
+        conn.close()
+        return {"ok": False, "status": "error", "message": str(e), "jobs_found": 0, "rate_limit_total": 200, "rate_limit_remaining": None, "rate_limit_used": None}
+
+@app.get('/api/logs')
+async def api_get_logs(
+    limit: int = 100,
+    offset: int = 0,
+    endpoint: str = "",
+    error_only: bool = False,
+):
+    params = {}
+    if endpoint:
+        params['endpoint'] = endpoint
+    logs = get_logs(limit=limit, offset=offset, **params, error_only=error_only)
+    stats = get_logs_stats()
+    return {"logs": logs, "stats": stats}
+
+
+@app.delete('/api/logs')
+async def api_clear_logs():
+    count = clear_logs()
+    return {"cleared": count}

@@ -6,11 +6,13 @@ import Sidebar from './Layout'
 import { LayoutDashboard } from 'lucide-react'
 import { getGlobalStatus, loadProviders } from '../hooks/useIaProviders'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings'
+type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
 
 const CurriculoPage = dynamic(() => import('../page').then(m => m.default), { ssr: false })
 const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false })
 const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false })
+const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false })
+const LinkedinPage = dynamic(() => import('../linkedin/page').then(m => m.default), { ssr: false })
 
 export default function AppShell() {
   const [mounted, setMounted] = useState(false)
@@ -68,6 +70,16 @@ export default function AppShell() {
               </div>
               <h2 className="text-2xl font-extrabold text-white mb-2">Dashboard</h2>
               <p className="text-slate-500 text-sm">Em desenvolvimento...</p>
+            </motion.div>
+          )}
+          {activeTool === 'logs' && (
+            <motion.div key="logs" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full z-10">
+              <LogsPage />
+            </motion.div>
+          )}
+          {activeTool === 'linkedin' && (
+            <motion.div key="linkedin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 space-y-6">
+              <LinkedinPage />
             </motion.div>
           )}
         </AnimatePresence>

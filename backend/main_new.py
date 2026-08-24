@@ -22,6 +22,10 @@ from market_export import generate_market_markdown_export, generate_market_docx_
 from market_service import run_market_analysis, init_market_db
 from logging_service import init_logs_db, log_request, get_logs, get_logs_stats, clear_logs, LOGS_DB
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+KNOWLEDGE_DIR = BASE_DIR / 'knowledge'
+LINKEDIN_PROMPT_FILE = KNOWLEDGE_DIR / 'linkedin_prompt.md'
+
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
     try:
@@ -434,6 +438,152 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post('/api/linkedin/analyze')
+async def analyze_linkedin(
+    text: str = Form(...),
+    image_url: str = Form(None),
+    api_key: str = Form(None),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
+    provider_id: str = Form(None),
+):
+    """Analisar perfil de LinkedIn a partir de texto colado."""
+    # Se provider_id fornecido, buscar credenciais salvas
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
+    # Auto-select provider for linkedin if not provided
+    if not api_key or not api_key.strip():
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
+
+    key = api_key or os.getenv("OPENAI_API_KEY")
+    if not key or key.strip() == "":
+        raise HTTPException(status_code=400, detail="Chave de API de IA não fornecida.")
+
+    selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL") or None
+
+    # Carregar prompt de sistema
+    if LINKEDIN_PROMPT_FILE.exists():
+        with open(LINKEDIN_PROMPT_FILE, 'r', encoding='utf-8') as f:
+            sys_p = f.read()
+    else:
+        sys_p = "Você é um especialista em análise de perfis LinkedIn."
+
+    # Montar user prompt com instruções de limpeza
+    user_prompt = (
+        f"{sys_p}\n\n"
+        "TEXTO DO PERFIL LINKEDIN COLADO PELO USUÁRIO:\n"
+        f"---\n{text}\n---\n\n"
+        "INSTRUÇÕES:\n"
+        "1. Ignore todo lixo do LinkedIn (navegação, footer, recomendações, pessoas que talvez você conheça, etc.)\n"
+        "2. Analise APENAS as seções válidas do perfil (nome, headline, sobre, experiências, educação, skills, certificações, idiomas, projetos)\n"
+        "3. Se não encontrou uma seção no texto, indique 'Não identificada no texto colado' no campo problema.\n"
+        "4. Sua resposta DEVE SER EXCLUSIVAMENTE um objeto JSON válido (sem cercas ```json).\n"
+    )
+
+    create_kwargs: dict = {
+        "model": selected_model,
+        "messages": [
+            {"role": "system", "content": sys_p},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+    # Se imagem fornecida e modelo suporta visão, incluir
+    if image_url and selected_model in ('gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-3-5-sonnet-20241022'):
+        create_kwargs["messages"] = [
+            {"role": "system", "content": sys_p},
+            {"role": "user", "content": [
+                {"type": "text", "text": "Analise este perfil LinkedIn. O texto está na mensagem seguinte. Esta é a foto de perfil do usuário."},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]},
+            {"role": "assistant", "content": user_prompt},
+        ]
+
+    try:
+        if not base_url or 'openai.com' in base_url:
+            client = OpenAI(api_key=key)
+        else:
+            client = OpenAI(api_key=key, base_url=base_url)
+
+        start_time = time.time()
+        comp = client.chat.completions.create(**create_kwargs)
+        response_time_ms = (time.time() - start_time) * 1000
+
+        raw_content = comp.choices[0].message.content or ""
+        raw_content = re.sub(r'', '', raw_content, flags=re.DOTALL)
+        cleaned_content = raw_content.strip()
+        if cleaned_content.startswith("```"):
+            cleaned_content = cleaned_content.split("\n", 1)[-1]
+            if cleaned_content.endswith("```"):
+                cleaned_content = cleaned_content.rsplit("```", 1)[0]
+            cleaned_content = cleaned_content.strip()
+
+        try:
+            data = json.loads(cleaned_content)
+        except Exception:
+            data = {
+                "nota": 6.0,
+                "resumo_executivo": cleaned_content,
+                "pontos_fortes": ["Conteúdo extraído com sucesso"],
+                "diagnostico_por_secao": {},
+                "analise_ats": {
+                    "score_ats": 5.0,
+                    "palavras_chave_faltantes": [],
+                    "gargalos_formatacao": [],
+                    "veredito_robos": cleaned_content
+                }
+            }
+
+        if hasattr(comp, 'usage') and comp.usage:
+            data['uso_tokens'] = {
+                'prompt_tokens': comp.usage.prompt_tokens,
+                'completion_tokens': comp.usage.completion_tokens,
+                'total_tokens': comp.usage.total_tokens
+            }
+            data['api_info'] = {
+                'model': selected_model,
+                'request_id': getattr(getattr(comp, 'id', None), 'id', str(comp.id)) if hasattr(comp, 'id') else str(uuid.uuid4()),
+                'response_time_ms': int(response_time_ms),
+            }
+
+        log_request(
+            endpoint="/api/linkedin/analyze",
+            method="POST",
+            status_code=200,
+            duration_ms=int(response_time_ms),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+        )
+
+        return data
+
+    except Exception as e:
+        log_request(
+            endpoint="/api/linkedin/analyze",
+            method="POST",
+            status_code=500,
+            duration_ms=0,
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if key and len(key) > 8 else "***",
+        )
+        raise HTTPException(status_code=500, detail=f"Erro na análise do LinkedIn: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

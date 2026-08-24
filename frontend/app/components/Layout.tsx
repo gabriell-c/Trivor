@@ -12,9 +12,10 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
+  CircleDot,
 } from 'lucide-react'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings'
+type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
 
 interface SidebarProps {
   activeTool: Tool
@@ -28,6 +29,8 @@ const tools: { id: Tool; label: string; icon: React.ReactNode; description: stri
   { id: 'curriculo', label: 'Análise de Currículo', icon: <FileText className="w-5 h-5" />, description: 'Diagnóstico ATS e compatibilidade' },
   { id: 'mercado', label: 'Inteligência de Mercado', icon: <BarChart3 className="w-5 h-5" />, description: 'Análise de vagas e tendências' },
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, description: 'Visão geral e histórico' },
+  { id: 'logs', label: 'Logs', icon: <CircleDot className="w-5 h-5" />, description: 'Requisições e performance' },
+  { id: 'linkedin', label: 'Análise de LinkedIn', icon: <Users className="w-5 h-5" />, description: 'Diagnóstico de perfil LinkedIn' },
 ]
 
 export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none', providerCount = 0 }: SidebarProps) {
