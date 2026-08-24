@@ -2,7 +2,7 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Image as ImageIcon, Link as LinkIcon, Users } from 'lucide-react'
-import { getBestProvider } from './hooks/useIaProviders'
+import { getBestProvider } from '../hooks/useIaProviders'
 
 interface SecaoDiagnostico {
   status: 'ok' | 'atencao' | 'critico'
