@@ -13,6 +13,7 @@ import {
   AlertCircle,
   XCircle,
   CircleDot,
+  Users,
 } from 'lucide-react'
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
