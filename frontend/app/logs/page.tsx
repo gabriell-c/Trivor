@@ -42,7 +42,12 @@ export default function LogsPage() {
 
       const res = await fetch(`/api/logs?${params}`)
       const data = await res.json()
-      setLogs(data.logs || [])
+      // Backend retorna status_code, frontend espera status
+      const mappedLogs: LogEntry[] = (data.logs || []).map((l: any) => ({
+        ...l,
+        status: l.status_code,
+      }))
+      setLogs(mappedLogs)
       setStats(data.stats || null)
     } catch {
       setLogs([])

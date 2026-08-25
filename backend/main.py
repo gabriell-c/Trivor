@@ -421,18 +421,31 @@ async def api_delete_jsearch_key(
 # ---------------------------------------------------------------------------
 
 @app.get('/api/logs')
-async def api_get_logs():
-    """Retorna os logs de requisições recentes."""
-    return get_logs()
+async def api_get_logs(
+    limit: int = 100,
+    offset: int = 0,
+    endpoint: str = None,
+    error_only: bool = False,
+):
+    """Retorna logs paginados + stats."""
+    logs = get_logs(limit=limit, offset=offset, endpoint=endpoint, error_only=error_only)
+    stats = get_logs_stats()
+    return {"logs": logs, "stats": stats}
 
 @app.get('/api/logs/stats')
-async def api_get_logs_stats():
+async def api_get_logs_stats_route():
     """Retorna estatísticas dos logs."""
     return get_logs_stats()
 
 @app.post('/api/logs/clear')
 async def api_clear_logs():
     """Limpa os logs."""
+    clear_logs()
+    return {"success": True}
+
+@app.delete('/api/logs')
+async def api_delete_logs():
+    """Limpa todos os logs (fallback DELETE)."""
     clear_logs()
     return {"success": True}
 
