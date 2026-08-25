@@ -90,7 +90,7 @@ def get_logs(
         where += " AND endpoint = ?"
         params.append(endpoint)
     if error_only:
-        where += " AND error IS NOT NULL"
+        where += " AND status_code >= 400"
 
     c.execute(
         f"""SELECT * FROM api_logs {where}
@@ -108,7 +108,7 @@ def get_logs_stats() -> Dict[str, Any]:
     c.execute("SELECT COUNT(*) FROM api_logs")
     total = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM api_logs WHERE error IS NOT NULL")
+    c.execute("SELECT COUNT(*) FROM api_logs WHERE status_code >= 400")
     errors = c.fetchone()[0]
 
     c.execute("SELECT AVG(duration_ms) FROM api_logs")
