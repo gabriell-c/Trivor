@@ -3,38 +3,7 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Image as ImageIcon, Link as LinkIcon, Users } from 'lucide-react'
 import { getBestProvider } from '../hooks/useIaProviders'
-
-interface SecaoDiagnostico {
-  status: 'ok' | 'atencao' | 'critico'
-  problema: string
-  como_corrigir: string
-}
-
-interface AnalysisResult {
-  nota?: number
-  resumo_executivo?: string
-  pontos_fortes?: string[]
-  diagnostico_por_secao?: {
-    [key: string]: SecaoDiagnostico
-  }
-  analise_ats?: {
-    score_ats?: number
-    palavras_chave_faltantes?: string[]
-    gargalos_formatacao?: string[]
-    veredito_robos?: string
-  } | string
-  uso_tokens?: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
-  api_info?: {
-    model: string
-    request_id: string
-    response_time_ms: number
-  }
-  error?: string
-}
+import type { AnalysisResult } from '../types/analysis'
 
 export default function LinkedinPage() {
   const [text, setText] = useState('')

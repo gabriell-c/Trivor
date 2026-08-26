@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   ChevronLeft,
   ChevronRight,
-  Briefcase,
+  Sparkles,
   Key,
   CheckCircle2,
   AlertCircle,
@@ -23,6 +23,8 @@ interface SidebarProps {
   onToolChange: (tool: Tool) => void
   globalStatus?: 'green' | 'yellow' | 'red' | 'none'
   providerCount?: number
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 const tools: { id: Tool; label: string; icon: React.ReactNode; description: string }[] = [
@@ -34,8 +36,14 @@ const tools: { id: Tool; label: string; icon: React.ReactNode; description: stri
   { id: 'linkedin', label: 'Análise de LinkedIn', icon: <Users className="w-5 h-5" />, description: 'Diagnóstico de perfil LinkedIn' },
 ]
 
-export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none', providerCount = 0 }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false)
+export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none', providerCount = 0, collapsed: collapsedProp = false, onCollapsedChange }: SidebarProps) {
+  const [collapsed, setCollapsed] = useState(collapsedProp)
+  const isControlled = collapsedProp !== false || onCollapsedChange !== undefined
+  const toggleCollapsed = () => {
+    const next = !collapsed
+    setCollapsed(next)
+    onCollapsedChange?.(next)
+  }
 
   const statusColor = { green: 'text-emerald-400', yellow: 'text-amber-400', red: 'text-rose-400', none: 'text-slate-500' }
   const statusIcon = {
@@ -59,7 +67,7 @@ export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none
 
         <div className={`flex items-center h-16 px-4 border-b border-slate-800/60 ${collapsed ? 'justify-center' : 'gap-3'}`}>
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-            <Briefcase className="w-4 h-4 text-white" />
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
           <AnimatePresence>
             {!collapsed && (
@@ -83,7 +91,7 @@ export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none
                   {!collapsed && (
                     <motion.div initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -6 }} transition={{ duration: 0.15 }} className="min-w-0 flex-1">
                       <div className={`text-sm font-semibold truncate ${isActive ? 'text-indigo-200' : ''}`}>{tool.label}</div>
-                      <div className="text-[11px] text-slate-500 truncate mt-0.5">{tool.description}</div>
+                      <div className="text-xs text-slate-500 truncate mt-0.5">{tool.description}</div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -96,12 +104,9 @@ export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none
         </nav>
 
         <div className="p-3 border-t border-slate-800/60">
-          <button onClick={() => setCollapsed(!collapsed)}
+          <button onClick={toggleCollapsed}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-all text-xs font-medium">
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-            <AnimatePresence>
-              {!collapsed && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>Recolher</motion.span>}
-            </AnimatePresence>
           </button>
         </div>
       </motion.aside>

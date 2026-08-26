@@ -2,24 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Trash2 } from 'lucide-react'
-
-interface LogEntry {
-  id: string
-  timestamp: string
-  endpoint: string
-  method: string
-  status: number
-  duration_ms: number
-  error?: string
-  ip?: string
-}
-
-interface LogStats {
-  total: number
-  errors: number
-  successes: number
-  avg_duration_ms: number
-}
+import type { LogEntry, LogStats } from '../types/analysis'
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -42,12 +25,7 @@ export default function LogsPage() {
 
       const res = await fetch(`/api/logs?${params}`)
       const data = await res.json()
-      // Backend retorna status_code, frontend espera status
-      const mappedLogs: LogEntry[] = (data.logs || []).map((l: any) => ({
-        ...l,
-        status: l.status_code,
-      }))
-      setLogs(mappedLogs)
+      setLogs(data.logs || [])
       setStats(data.stats || null)
     } catch {
       setLogs([])
@@ -153,9 +131,9 @@ export default function LogsPage() {
                   <td className="px-4 py-3 font-mono text-slate-300">{log.endpoint}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded text-xs ${
-                      log.status < 400 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      log.status_code < 400 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
                     }`}>
-                      {log.status}
+                      {log.status_code}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{log.duration_ms}ms</td>

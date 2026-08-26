@@ -2,42 +2,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download } from 'lucide-react'
-
-interface SecaoDiagnostico {
-  status: 'ok' | 'atencao' | 'critico'
-  problema: string
-  como_corrigir: string
-}
-
-interface AnalysisResult {
-  nota?: number
-  resumo_executivo?: string
-  pontos_fortes?: string[]
-  diagnostico_por_secao?: {
-    dados_pessoais?: SecaoDiagnostico
-    resumo_profissional?: SecaoDiagnostico
-    experiencia_profissional?: SecaoDiagnostico
-    educacao_e_cursos?: SecaoDiagnostico
-    habilidades_e_keywords?: SecaoDiagnostico
-  }
-  analise_ats?: {
-    score_ats?: number
-    palavras_chave_faltantes?: string[]
-    gargalos_formatacao?: string[]
-    veredito_robos?: string
-  } | string
-  uso_tokens?: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
-  api_info?: {
-    model: string
-    request_id: string
-    response_time_ms: number
-  }
-  error?: string
-}
+import type { AnalysisResult } from './types/analysis'
 
 export default function Home() {
   const [res, setRes] = useState<AnalysisResult | null>(null)
