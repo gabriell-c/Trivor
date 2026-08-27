@@ -1,3 +1,11 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+
 # Virtual Environment
 venv/
 .venv/

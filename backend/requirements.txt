@@ -1,7 +1,10 @@
-﻿fastapi
+# Backend dependencies
+fastapi
 uvicorn[standard]
 docling
 sqlalchemy
 pydantic
 openai
 python-multipart
+slowapi
+python-dotenv

@@ -8,6 +8,7 @@ import json
 import re
 import time
 import traceback
+import logging
 import urllib.request
 import urllib.error
 import hashlib
@@ -16,6 +17,8 @@ from typing import Any, Dict, List
 from datetime import datetime, timedelta
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
 _MAX_JOBS_FOR_ANALYSIS = 300
@@ -301,26 +304,26 @@ def _fetch_jsearch_jobs(
                 jobs = _build_jobs_from_raw(raw_jobs, country)
                 remaining = resp.headers.get("x-ratelimit-remaining")
                 total = resp.headers.get("x-ratelimit-limit")
-                print(f"[JSearch] Chave {api_key[:8]}... → {len(jobs)} vagas | rate: {remaining}/{total}")
+                logger.info(f"[JSearch] Chave {api_key[:8]}... → {len(jobs)} vagas | rate: {remaining}/{total}")
                 return jobs, int(remaining) if remaining else None, int(total) if total else None
             else:
-                print(f"[JSearch] Chave {api_key[:8]}... retornou erro: {data.get('message', 'unknown')}")
+                logger.warning(f"[JSearch] Chave {api_key[:8]}... retornou erro: {data.get('message', 'unknown')}")
         except urllib.error.HTTPError as e:
             if e.code == 403:
-                print(f"[JSearch] Chave {api_key[:8]}... 403 (sem créditos ou inválida), tentando próxima...")
+                logger.warning(f"[JSearch] Chave {api_key[:8]}... 403 (sem créditos ou inválida), tentando próxima...")
                 continue
             elif e.code == 429:
-                print(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit), aguardando e tentando próxima...")
+                logger.warning(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit), aguardando e tentando próxima...")
                 time.sleep(1)
                 continue
             else:
-                print(f"[JSearch] HTTP erro {e.code}: {e.reason}")
+                logger.error(f"[JSearch] HTTP erro {e.code}: {e.reason}")
                 continue
         except Exception as e:
-            print(f"[JSearch] Erro com chave {api_key[:8]}...: {e}")
+            logger.error(f"[JSearch] Erro com chave {api_key[:8]}...: {e}")
             continue
 
-    print(f"[JSearch] Nenhuma das {len(keys_tried)} chave(s) retornou resultados")
+    logger.warning(f"[JSearch] Nenhuma das {len(keys_tried)} chave(s) retornou resultados")
     return [], None, None
 
 
@@ -432,7 +435,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
             if valid_keys:
                 search_query = f"{job_title} desenvolvedor python"
                 sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=2, api_keys=valid_keys)
-                print(f"[MARKET] JSearch retornou {len(sample_jobs)} vagas reais")
+                logger.info(f"[MARKET] JSearch retornou {len(sample_jobs)} vagas reais")
                 # Atualiza uso no DB
                 if used_key_remaining is not None and valid_keys:
                     _update_jsearch_usage(db_file, valid_keys[0], used_key_remaining)
@@ -440,7 +443,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
         # Se JSearch falhou ou não configurado, usa mock
         if not sample_jobs:
             if valid_keys:
-                print("[MARKET] JSearch sem resultados, usando dados simulados")
+                logger.info("[MARKET] JSearch sem resultados, usando dados simulados")
             sample_jobs = _generate_sample_jobs(job_title)
 
         now = datetime.now()
@@ -844,7 +847,7 @@ Descrição da Vaga:
         return data
     except Exception as e:
         # Fallback heurístico quando a IA falha completamente
-        print(f"[WARN] extract_job_with_ai fallback to heuristic: {e}")
+        logger.warning(f"[WARN] extract_job_with_ai fallback to heuristic: {e}")
         return heuristic_extract(job_text)
 
 
@@ -968,11 +971,11 @@ Perfil do Usuário:
         data = json.loads(content)
         elapsed = (time.time() - start_time) * 1000
 
-        # Debug: log raw response for first batch
+        # Log raw response for first batch (debug level)
         if len(job_texts) <= 12:
-            print(f"[DEBUG] AI response ({len(data) if isinstance(data, list) else 'invalid'} items):")
+            logger.debug(f"[DEBUG] AI response ({len(data) if isinstance(data, list) else 'invalid'} items):")
             for i, item in enumerate(data[:3] if isinstance(data, list) else []):
-                print(f"  [{i}] keys={list(item.keys()) if isinstance(item, dict) else type(item)}, is_relevant={item.get('is_relevant') if isinstance(item, dict) else 'N/A'}, reqs={item.get('requirements')}")
+                logger.debug(f"  [{i}] keys={list(item.keys()) if isinstance(item, dict) else type(item)}, is_relevant={item.get('is_relevant') if isinstance(item, dict) else 'N/A'}, reqs={item.get('requirements')}")
 
         # Log AI call
         try:
@@ -992,10 +995,10 @@ Perfil do Usuário:
         if isinstance(data, list) and len(data) == len(job_texts):
             return data
         # Se o tamanho não bater, fazer fallback heurístico vaga por vaga
-        print(f"[WARN] batch size mismatch: got {len(data) if isinstance(data, list) else 'invalid'}, expected {len(job_texts)}")
+        logger.warning(f"[WARN] batch size mismatch: got {len(data) if isinstance(data, list) else 'invalid'}, expected {len(job_texts)}")
         return _fallback_extract_jobs(client, selected_model, job_texts, target_stack, seniority, location)
     except Exception as e:
-        print(f"[WARN] batch extraction failed: {e}")
+        logger.warning(f"[WARN] batch extraction failed: {e}")
         traceback.print_exc()
         return _fallback_extract_jobs(client, selected_model, job_texts, target_stack, seniority, location)
 
@@ -1074,7 +1077,7 @@ def run_market_analysis(
 
             # Debug: log first batch results
             if batch_start == 0 and idx < 3:
-                print(f"[DEBUG] Job {idx+1}: title={title[:50]}, is_rel={is_rel}, reqs={reqs_norm[:3]}, nice={nice_norm[:3]}, soft={extracted.get('soft_skills', [])[:3]}, certs={extracted.get('certifications', [])[:3]}")
+                logger.debug(f"[DEBUG] Job {idx+1}: title={title[:50]}, is_rel={is_rel}, reqs={reqs_norm[:3]}, nice={nice_norm[:3]}, soft={extracted.get('soft_skills', [])[:3]}, certs={extracted.get('certifications', [])[:3]}")
 
             if is_rel:
                 relevant_count += 1

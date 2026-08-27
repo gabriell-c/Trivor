@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download } from 'lucide-react'
 import type { AnalysisResult } from './types/analysis'
+import { API_BASE_URL } from './lib/api'
 
 export default function Home() {
   const [res, setRes] = useState<AnalysisResult | null>(null)
@@ -31,7 +32,7 @@ export default function Home() {
       formData.set('job_target', `${jobTitle || 'Geral'} (${jobLevel})`)
       formData.set('data_json', JSON.stringify(res))
 
-      const response = await fetch('http://127.0.0.1:8000/api/export', {
+      const response = await fetch(`${API_BASE_URL}/api/export`, {
         method: 'POST',
         body: formData
       })
@@ -64,7 +65,7 @@ export default function Home() {
     if (jobLevel !== 'Sem nível específico') formData.set('job_level', jobLevel)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/analyze', {
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: 'POST',
         body: formData
       })

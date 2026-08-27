@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Image as ImageIcon, Link as LinkIcon, Users } from 'lucide-react'
 import { getBestProvider } from '../hooks/useIaProviders'
 import type { AnalysisResult } from '../types/analysis'
+import { API_BASE_URL } from '../lib/api'
 
 export default function LinkedinPage() {
   const [text, setText] = useState('')
@@ -68,7 +69,7 @@ export default function LinkedinPage() {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/linkedin/analyze', {
+      const response = await fetch(`${API_BASE_URL}/api/linkedin/analyze`, {
         method: 'POST',
         body: formData
       })
@@ -102,7 +103,7 @@ export default function LinkedinPage() {
       formData.set('job_target', 'Análise de Perfil LinkedIn')
       formData.set('data_json', JSON.stringify(res))
 
-      const response = await fetch('http://127.0.0.1:8000/api/export', {
+      const response = await fetch(`${API_BASE_URL}/api/export`, {
         method: 'POST',
         body: formData
       })

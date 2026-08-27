@@ -24,6 +24,7 @@ import { CustomInput } from '../components/CustomInput'
 import { CustomSelect } from '../components/CustomSelect'
 import { CustomButton } from '../components/CustomButton'
 import { useIaProviders, IAProvider, getGlobalStatus } from '../hooks/useIaProviders'
+import { API_BASE_URL } from '../lib/api'
 
 const PROVIDER_CONFIG = {
   openai: { name: 'OpenAI', icon: <Sparkles className="w-4 h-4" />, defaultUrl: 'https://api.openai.com/v1', defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'], color: 'text-emerald-400' },
@@ -56,7 +57,7 @@ export default function ApiSettingsPage() {
     body.set('text', 'Olá, responda apenas "ok"')
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/test-connection', { method: 'POST', body })
+      const res = await fetch(`${API_BASE_URL}/api/test-connection`, { method: 'POST', body })
       const data = await res.json()
       if (res.ok) {
         setTestResult({ id: provider.id, ok: true, msg: data.message || 'Conexão OK' })
@@ -69,6 +70,14 @@ export default function ApiSettingsPage() {
   }
 
   const addProvider = () => {
+    if (newProvider.providerType === 'custom' && newProvider.apiUrl.trim()) {
+      try {
+        new URL(newProvider.apiUrl.trim())
+      } catch {
+        alert('URL inválida. Deve ser um endereço válido (ex: https://api.openai.com/v1)')
+        return
+      }
+    }
     const p = add({ ...newProvider, provider: newProvider.providerType })
     setShowAddForm(false)
     if (p.apiKey.trim()) testConnection(p)
@@ -115,13 +124,13 @@ export default function ApiSettingsPage() {
     const form = new FormData()
     form.set('api_key', key)
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/jsearch/test', { method: 'POST', body: form })
+      const res = await fetch(`${API_BASE_URL}/api/jsearch/test`, { method: 'POST', body: form })
       const data = await res.json()
       const prefix = key.slice(0, 8) + '…' + key.slice(-4)
       setJsearchKeyData(prev => ({ ...prev, [prefix]: data }))
       if (data.ok) {
         try {
-          await fetch('http://127.0.0.1:8000/api/jsearch/keys')
+          await fetch(`${API_BASE_URL}/api/jsearch/keys`)
         } catch (e) {
           console.warn('Falha ao atualizar lista de chaves JSearch:', e)
         }

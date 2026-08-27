@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import Sidebar from './Layout'
+import ErrorBoundary from './ErrorBoundary'
 import { getGlobalStatus, loadProviders } from '../hooks/useIaProviders'
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
@@ -39,6 +40,7 @@ export default function AppShell() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="relative min-h-screen flex bg-[#070a12]">
       <Sidebar activeTool={activeTool} onToolChange={setActiveTool} globalStatus={globalStatus} providerCount={providers.length} collapsed={collapsed} onCollapsedChange={setCollapsed} />
 
@@ -81,5 +83,6 @@ export default function AppShell() {
         </AnimatePresence>
       </motion.main>
     </div>
+    </ErrorBoundary>
   )
 }

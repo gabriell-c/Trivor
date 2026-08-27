@@ -1,13 +1,22 @@
 import sys
 import re
 import time
+import logging
 import urllib.request
 import urllib.error
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    logger.addHandler(_h)
 import sqlite3, json, os, uuid
 
 # Adiciona o diretório backend ao Python path para importar export_utils
@@ -45,7 +54,13 @@ def _get_provider_for_tool(tool: str):
     except Exception:
         return None
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 app = FastAPI(title="Trivor")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,6 +69,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request, exc):
+    return JSONResponse(status_code=429, content={"detail": "Muitas requisições. Aguarde um momento."})
 
 # Inicializa DB de logs
 init_logs_db()
@@ -211,6 +230,7 @@ async def analyze_market(
         base_url = "https://api.openai.com/v1"
 
     DB_FILE = Path(__file__).parent / "market.db"
+    start_time = time.time()
 
     try:
         client = OpenAI(api_key=key, base_url=base_url)
@@ -226,11 +246,11 @@ async def analyze_market(
             negative_keywords=negative_keywords,
             jsearch_api_keys=[k.strip() for k in (jsearch_api_keys or jsearch_api_key or "").split(",") if k.strip()] if (jsearch_api_keys or jsearch_api_key) else []
         )
-        return {"success": True, "report": report}
+        elapsed = round(time.time() - start_time, 2)
+        return {"success": True, "report": report, "model": selected_model, "elapsed_seconds": elapsed}
     except Exception as e:
-        import traceback
-        print(f"[MARKET ERROR] {e}")
-        traceback.print_exc()
+        logger.error(f"[MARKET ERROR] {e}")
+        logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erro ao processar inteligência de mercado: {str(e)}")
 
 

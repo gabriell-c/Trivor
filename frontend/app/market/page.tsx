@@ -31,6 +31,7 @@ import { CustomSelect } from '../components/CustomSelect'
 import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
+import { API_BASE_URL } from '../lib/api'
 
 interface AnalysisResult {
   success: boolean
@@ -184,7 +185,7 @@ export default function MarketIntelligencePage() {
     formData.set('jsearch_api_keys', Array.isArray(jsearchKeys) ? jsearchKeys.join(',') : '')
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/market/analyze', { method: 'POST', body: formData })
+      const res = await fetch(`${API_BASE_URL}/api/market/analyze`, { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || 'Erro na análise')
       setResult(data)
@@ -207,7 +208,7 @@ export default function MarketIntelligencePage() {
       formData.set('location', result.report.summary.location)
       formData.set('model_name', result.model)
       formData.set('report_json', JSON.stringify(result.report))
-      const res = await fetch('http://127.0.0.1:8000/api/export/market', { method: 'POST', body: formData })
+      const res = await fetch(`${API_BASE_URL}/api/export/market`, { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Falha ao exportar')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
