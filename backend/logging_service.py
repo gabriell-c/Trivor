@@ -146,3 +146,22 @@ def clear_logs() -> int:
     conn.commit()
     conn.close()
     return count
+
+
+def cleanup_logs(days_old: int = 90) -> int:
+    """Remove logs com mais de N dias. Retorna quantidade removida."""
+    conn = sqlite3.connect(LOGS_DB)
+    c = conn.cursor()
+    c.execute(
+        "SELECT COUNT(*) FROM api_logs WHERE timestamp < ? OR timestamp IS NULL",
+        ((datetime.now() - timedelta(days=days_old)).isoformat(),)
+    )
+    count = c.fetchone()[0]
+    if count > 0:
+        c.execute(
+            "DELETE FROM api_logs WHERE timestamp < ? OR timestamp IS NULL",
+            ((datetime.now() - timedelta(days=days_old)).isoformat(),)
+        )
+        conn.commit()
+    conn.close()
+    return count

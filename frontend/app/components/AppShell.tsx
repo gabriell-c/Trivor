@@ -8,12 +8,12 @@ import { getGlobalStatus, loadProviders } from '../hooks/useIaProviders'
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
 
-const CurriculoPage = dynamic(() => import('../page').then(m => m.default), { ssr: false })
-const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false })
-const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false })
-const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false })
-const LinkedinPage = dynamic(() => import('../linkedin/page').then(m => m.default), { ssr: false })
-const DashboardPage = dynamic(() => import('../dashboard/page').then(m => m.default), { ssr: false })
+const CurriculoPage = dynamic(() => import('../page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const LinkedinPage = dynamic(() => import('../linkedin/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const DashboardPage = dynamic(() => import('../dashboard/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 
 export default function AppShell() {
   const [mounted, setMounted] = useState(false)

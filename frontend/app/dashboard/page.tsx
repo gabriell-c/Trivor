@@ -197,7 +197,7 @@ export default function DashboardPage() {
               </p>
             ) : (
               <div className="space-y-0">
-                {recentLogs.map((log: any) => (
+                {recentLogs.map((log: LogEntry) => (
                   <RecentLogItem
                     key={log.id}
                     endpoint={log.endpoint}

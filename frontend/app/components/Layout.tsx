@@ -37,12 +37,14 @@ const tools: { id: Tool; label: string; icon: React.ReactNode; description: stri
 ]
 
 export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none', providerCount = 0, collapsed: collapsedProp = false, onCollapsedChange }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(collapsedProp)
-  const isControlled = collapsedProp !== false || onCollapsedChange !== undefined
+  // Usar estado controlado quando props forem fornecidas
+  const [collapsedInternal, setCollapsedInternal] = useState(false)
+  const isControlled = onCollapsedChange !== undefined
+  const collapsed = isControlled ? collapsedProp : collapsedInternal
+  const setCollapsed = isControlled ? onCollapsedChange : setCollapsedInternal
+
   const toggleCollapsed = () => {
-    const next = !collapsed
-    setCollapsed(next)
-    onCollapsedChange?.(next)
+    setCollapsed(!collapsed)
   }
 
   const statusColor = { green: 'text-emerald-400', yellow: 'text-amber-400', red: 'text-rose-400', none: 'text-slate-500' }

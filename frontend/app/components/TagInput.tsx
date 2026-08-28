@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { X } from 'lucide-react'
 
 interface TagInputProps {
@@ -33,18 +33,6 @@ export function TagInput({ value, onChange, placeholder = 'Digite e pressione En
       removeTag(value[value.length - 1])
     }
   }
-
-  // Focus input when clicking outside
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (!target.closest('.tag-input-container')) {
-        // Don't blur - just let it be
-      }
-    }
-    document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
-  }, [])
 
   return (
     <div className={`tag-input-container relative w-full`}>

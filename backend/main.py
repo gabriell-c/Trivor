@@ -4,6 +4,7 @@ import time
 import logging
 import urllib.request
 import urllib.error
+import tempfile
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response
 from fastapi.responses import JSONResponse
@@ -102,6 +103,7 @@ async def log_requests(request, call_next):
 # ---------------------------------------------------------------------------
 
 @app.post('/api/cv/analyze')
+@limiter.limit("30/minute")
 async def analyze_cv(
     api_key: str = Form(None),
     api_url: str = Form(None),
@@ -118,13 +120,17 @@ async def analyze_cv(
         ext = os.path.splitext(cv_file.filename or "")[1].lower()
         if ext not in ('.pdf', '.docx', '.doc', '.txt'):
             raise HTTPException(status_code=400, detail="Formato de arquivo não suportado.")
-        temp_path = f"/tmp/cv_{uuid.uuid4().hex}{ext}"
-        with open(temp_path, "wb") as f:
-            f.write(content)
-        converter = DocumentConverter()
-        conversion_result = converter.convert(temp_path)
-        os.remove(temp_path)
-        return conversion_result.document.export_to_markdown()
+        # Usar tempfile para compatibilidade com Windows
+        temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cv_')
+        try:
+            with os.fdopen(temp_fd, 'wb') as f:
+                f.write(content)
+            converter = DocumentConverter()
+            conversion_result = converter.convert(temp_path)
+            return conversion_result.document.export_to_markdown()
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
     except HTTPException:
         raise
     except Exception as e:
@@ -132,6 +138,7 @@ async def analyze_cv(
 
 
 @app.post('/api/ia/analyze')
+@limiter.limit("20/minute")
 async def analyze_ia(
     api_key: str = Form(None),
     api_url: str = Form(None),
@@ -201,7 +208,7 @@ async def analyze_market(
     if provider_id:
         try:
             providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
+            prov = next((p for p in providers if p.get('id') == provider_id), None)
             if prov and prov.get('usedFor') not in ('none', 'curriculo'):
                 api_key = prov['apiKey']
                 api_url = prov.get('apiUrl') or api_url
@@ -469,6 +476,13 @@ async def api_delete_logs():
     clear_logs()
     return {"success": True}
 
+@app.post('/api/logs/cleanup')
+async def api_cleanup_logs(days: int = 90):
+    """Remove logs antigos (padrão 90 dias)."""
+    from logging_service import cleanup_logs
+    removed = cleanup_logs(days)
+    return {"success": True, "removed": removed}
+
 
 # ---------------------------------------------------------------------------
 # Health check
@@ -480,6 +494,7 @@ async def health():
 
 
 @app.post('/api/linkedin/analyze')
+@limiter.limit("20/minute")
 async def analyze_linkedin(
     text: str = Form(...),
     image_url: str = Form(None),

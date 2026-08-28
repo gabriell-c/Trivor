@@ -45,6 +45,7 @@ export default function ApiSettingsPage() {
   })
 
   const [testResult, setTestResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
+  const [urlError, setUrlError] = useState('')
 
   const config = PROVIDER_CONFIG[newProvider.providerType]
   const globalStatus = getGlobalStatus(providers)
@@ -73,8 +74,9 @@ export default function ApiSettingsPage() {
     if (newProvider.providerType === 'custom' && newProvider.apiUrl.trim()) {
       try {
         new URL(newProvider.apiUrl.trim())
+        setUrlError('')
       } catch {
-        alert('URL inválida. Deve ser um endereço válido (ex: https://api.openai.com/v1)')
+        setUrlError('URL inválida. Deve ser um endereço válido (ex: https://api.openai.com/v1)')
         return
       }
     }
@@ -217,7 +219,10 @@ export default function ApiSettingsPage() {
             <CustomInput placeholder="Nome (opcional)" value={newProvider.name} onChange={v => setNewProvider(p => ({ ...p, name: v }))} className="w-full" />
             <CustomInput type="password" showPasswordToggle placeholder="Chave de API" value={newProvider.apiKey} onChange={v => setNewProvider(p => ({ ...p, apiKey: v }))} className="w-full" />
             {newProvider.providerType === 'custom' && (
-              <CustomInput placeholder="Base URL (ex: https://api.openai.com/v1)" value={newProvider.apiUrl} onChange={v => setNewProvider(p => ({ ...p, apiUrl: v }))} className="w-full" />
+              <>
+                <CustomInput placeholder="Base URL (ex: https://api.openai.com/v1)" value={newProvider.apiUrl} onChange={v => setNewProvider(p => ({ ...p, apiUrl: v }))} className="w-full" />
+                {urlError && <p className="text-red-400 text-xs mt-1">{urlError}</p>}
+              </>
             )}
             <CustomSelect value={newProvider.modelName} onChange={v => setNewProvider(p => ({ ...p, modelName: v }))} options={config.defaultModels.map(m => ({ value: m, label: m }))} placeholder="Selecionar modelo..." className="w-full" />
             <CustomSelect value={newProvider.usedFor} onChange={v => setNewProvider(p => ({ ...p, usedFor: v as IAProvider['usedFor'] }))} options={[

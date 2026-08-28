@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Trash2 } from 'lucide-react'
 import type { LogEntry, LogStats } from '../types/analysis'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { useDebounce } from '../hooks/useDebounce'
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -11,7 +13,11 @@ export default function LogsPage() {
   const [filter, setFilter] = useState('')
   const [errorOnly, setErrorOnly] = useState(false)
   const [offset, setOffset] = useState(0)
+  const [showClearDialog, setShowClearDialog] = useState(false)
   const LIMIT = 100
+
+  // Debounce do filtro para evitar fetch a cada keystroke
+  const debouncedFilter = useDebounce(filter, 300)
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
@@ -20,7 +26,7 @@ export default function LogsPage() {
         limit: String(LIMIT),
         offset: String(offset),
       })
-      if (filter) params.set('endpoint', filter)
+      if (debouncedFilter) params.set('endpoint', debouncedFilter)
       if (errorOnly) params.set('error_only', 'true')
 
       const res = await fetch(`/api/logs?${params}`)
@@ -33,15 +39,15 @@ export default function LogsPage() {
     } finally {
       setLoading(false)
     }
-  }, [filter, errorOnly, offset])
+  }, [debouncedFilter, errorOnly, offset])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
   const handleClear = async () => {
-    if (!confirm('Limpar todos os logs?')) return
     await fetch('/api/logs', { method: 'DELETE' })
     setLogs([])
     setStats(null)
+    setShowClearDialog(false)
   }
 
   return (
@@ -84,11 +90,22 @@ export default function LogsPage() {
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Atualizar
         </button>
-        <button onClick={handleClear} className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm rounded-lg transition-colors">
+        <button onClick={() => setShowClearDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm rounded-lg transition-colors">
           <Trash2 className="w-4 h-4" />
           Limpar
         </button>
       </div>
+
+      <ConfirmDialog
+        isOpen={showClearDialog}
+        title="Limpar Logs"
+        message="Tem certeza que deseja remover todos os logs? Esta ação não pode ser desfeita."
+        confirmLabel="Limpar"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={handleClear}
+        onCancel={() => setShowClearDialog(false)}
+      />
 
       {logs.length === 0 && !loading ? (
         <div className="text-center py-16 text-slate-500">

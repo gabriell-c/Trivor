@@ -5,11 +5,13 @@
 *.key
 *.pem
 *.crt
+.env.example
 
 # Virtual Environment
 venv/
 .venv/
 env/
+pyvenv.cfg
 
 # Python
 __pycache__/
@@ -17,6 +19,11 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
 
 # Data & SQLite
 data/*.pdf

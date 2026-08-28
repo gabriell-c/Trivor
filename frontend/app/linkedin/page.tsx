@@ -3,7 +3,7 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Image as ImageIcon, Link as LinkIcon, Users } from 'lucide-react'
 import { getBestProvider } from '../hooks/useIaProviders'
-import type { AnalysisResult } from '../types/analysis'
+import type { AnalysisResult, SecaoDiagnostico } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 
 export default function LinkedinPage() {
@@ -120,7 +120,7 @@ export default function LinkedinPage() {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao baixar o arquivo.')
+      setExportError(err instanceof Error ? err.message : 'Erro ao baixar o arquivo.')
     } finally {
       setExporting(null)
     }
@@ -154,10 +154,10 @@ export default function LinkedinPage() {
     )
   }
 
-  const renderDiagnostico = (data?: { [key: string]: any }) => {
+  const renderDiagnostico = (data?: Record<string, SecaoDiagnostico>) => {
     if (!data) return null
     const entries = Object.entries(data)
-    return entries.map(([key, value]: any) => (
+    return entries.map(([key, value]) => (
       <div key={key} className="rounded-2xl bg-slate-950/60 border border-slate-800/80 p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-white capitalize">

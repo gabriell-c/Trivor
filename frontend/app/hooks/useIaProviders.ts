@@ -45,7 +45,8 @@ export function useIaProviders() {
   const [providers, setProviders] = useState<IAProvider[]>(loadProviders)
 
   useEffect(() => {
-    const interval = setInterval(() => setProviders(loadProviders), 1000)
+    // Polling otimizado: 5 segundos em vez de 1s
+    const interval = setInterval(() => setProviders(loadProviders), 5000)
     return () => clearInterval(interval)
   }, [])
 

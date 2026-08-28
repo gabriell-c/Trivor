@@ -32,61 +32,7 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
-
-interface AnalysisResult {
-  success: boolean
-  report: MarketReport
-  elapsed_seconds: number
-  model: string
-}
-
-interface MarketReport {
-  summary: {
-    job_title: string
-    target_stack: string[]
-    seniority: string
-    location: string
-    time_window: string
-    total_jobs_scanned: number
-    pre_filtered_count: number
-    relevant_jobs_analyzed: number
-    discarded_jobs: number
-    confidence_score: string
-    confidence_reason: string
-    generated_at: string
-  }
-  statistics: {
-    required_technologies: { name: string; count: number; percentage: number }[]
-    desirable_technologies: { name: string; count: number; percentage: number }[]
-    exp_years_median: number
-    exp_years_distribution: { [key: string]: number }
-    modalities: { name: string; count: number; percentage: number }[]
-    top_soft_skills: { name: string; count: number }[]
-    top_certifications: { name: string; count: number }[]
-  }
-  sample_jobs: MarketJob[]
-}
-
-interface MarketJob {
-  title: string
-  company: string
-  location: string
-  modality: string
-  source: string
-  source_url: string
-  is_relevant: boolean
-  requirements: string[]
-  nice_to_have: string[]
-  role_level: string | null
-  exp_years_min: number | null
-  exp_years_max: number | null
-  soft_skills: string[]
-  certifications: string[]
-  salary_min: number | null
-  salary_max: number | null
-  currency: string | null
-  raw_description: string
-}
+import type { MarketAnalysisResult, MarketReport, MarketJob } from '../types/analysis'
 
 const BRAZILIAN_STATES = [
   { value: 'AC', label: 'Acre' }, { value: 'AL', label: 'Alagoas' }, { value: 'AP', label: 'Amapá' },
@@ -121,7 +67,7 @@ export default function MarketIntelligencePage() {
   const [exporting, setExporting] = useState(false)
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'md'>('pdf')
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [result, setResult] = useState<MarketAnalysisResult | null>(null)
   const [expandedJob, setExpandedJob] = useState<number | null>(null)
   const [jobFilter, setJobFilter] = useState<'all' | 'relevant' | 'discarded'>('all')
   const [jobSourceFilter, setJobSourceFilter] = useState('all')
