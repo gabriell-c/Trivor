@@ -9,6 +9,7 @@ não carregar páginas JS. Nestes casos, os testes são automaticamente skipados
 import pytest
 import requests
 import time
+from pathlib import Path
 
 NEXT_URL = "http://127.0.0.1:3000"
 
@@ -33,7 +34,7 @@ def ensure_dev_server():
         import subprocess, sys
         proc = subprocess.Popen(
             [sys.executable, "-m", "next", "dev", "--port", "3000"],
-            cwd=r"c:\Users\xxxsa\OneDrive\Área de Trabalho\python\curriculo\frontend",
+            cwd=Path(__file__).parent.parent / "frontend",
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

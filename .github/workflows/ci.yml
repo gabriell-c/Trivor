@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ------------------------------------------------------------------
+  # Lint
+  # ------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install ruff
+
+      - name: Ruff (Python)
+        run: ruff check backend/ tests/
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Node deps
+        run: cd frontend && npm ci
+
+      - name: ESLint
+        run: cd frontend && npx eslint .
+
+  # ------------------------------------------------------------------
+  # Backend unit + integration tests
+  # ------------------------------------------------------------------
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      # SQLite é arquivo, não precisa de serviço externo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest
+
+      - name: Start backend server
+        run: |
+          cd backend
+          python -m uvicorn main:app --host 127.0.0.1 --port 8000 &
+          # Aguarda o servidor responder
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8000/health > /dev/null && break
+            sleep 1
+          done
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short --ignore=tests/test_e2e.py
+
+  # ------------------------------------------------------------------
+  # Frontend build
+  # ------------------------------------------------------------------
+  build-frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        run: cd frontend && npm ci
+
+      - name: Build
+        run: cd frontend && npm run build
+
+  # ------------------------------------------------------------------
+  # E2E tests (Playwright + Next.js dev server)
+  # ------------------------------------------------------------------
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest playwright
+
+      - name: Install Playwright browsers
+        run: playwright install chromium
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Node deps
+        run: cd frontend && npm ci
+
+      - name: Start backend server
+        run: |
+          cd backend
+          python -m uvicorn main:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8000/health > /dev/null && break
+            sleep 1
+          done
+
+      - name: Start frontend dev server
+        run: |
+          cd frontend
+          npx next dev --port 3000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3000 > /dev/null 2>&1 && break
+            sleep 1
+          done
+
+      - name: Run E2E tests
+        run: pytest tests/test_e2e.py -v --tb=short
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: playwright-report/
