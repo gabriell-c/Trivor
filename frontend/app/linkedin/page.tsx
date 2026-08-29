@@ -16,6 +16,7 @@ export default function LinkedinPage() {
   const [activeStep, setActiveStep] = useState<1 | 2>(1)
   const [showMetrics, setShowMetrics] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
 

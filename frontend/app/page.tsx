@@ -15,6 +15,7 @@ export default function Home() {
   const [jobTitle, setJobTitle] = useState('')
   const [showMetrics, setShowMetrics] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {

@@ -81,7 +81,7 @@ function RecentLogItem({
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<LogStats | null>(null)
-  const [recentLogs, setRecentLogs] = useState<any[]>([])
+  const [recentLogs, setRecentLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
