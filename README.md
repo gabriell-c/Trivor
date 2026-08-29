@@ -115,6 +115,17 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 
 ---
 
+## 🎨 Interface e UX
+
+- **Toast Notifications** — Feedback visual para ações (sucesso, erro, aviso)
+- **Loading Skeletons** — Estados de carregamento suaves
+- **Empty States** — Mensagens claras quando não há dados
+- **Error Boundaries** — Tratamento de erros por página
+- **Keyboard Shortcuts** — `Ctrl+L` (logs), `Ctrl+D` (dashboard), `Ctrl+C` (currículo)
+- **Acessibilidade** — ARIA labels e navegação por teclado
+
+---
+
 ## 🛡️ Recursos de Segurança
 
 - ✅ Rate limiting em todos os endpoints críticos
@@ -123,6 +134,9 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 - ✅ Cleanup automático de logs antigos (90 dias)
 - ✅ `.gitignore` protege credenciais
 - ✅ Templates de prompt isolados do código sensível
+- ✅ Validação de inputs com Pydantic
+- ✅ Respostas de erro padronizadas
+- ✅ Graceful shutdown
 
 ---
 
@@ -132,9 +146,40 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 |------|--------|
 | Análise de Currículo | ✅ Completo |
 | Market Intelligence | ✅ Completo |
-| Análise LinkedIn | ✅ Em desenvolvimento |
-| Criação de Currículos | 🔄 Próximo |
-| Análise GitHub | 📋 Planejado |
+| Análise LinkedIn | ✅ Completo |
+| Dashboard & Logs | ✅ Completo |
+| Configuração de IAs | ✅ Completo |
+| Exportação | ✅ Completo |
+| Docker | ✅ Configurado |
+| Testes | 🔄 Em desenvolvimento |
+
+---
+
+## 🚀 Comandos Rápidos
+
+```bash
+# Iniciar desenvolvimento
+make dev
+
+# Iniciar apenas backend
+make backend-dev
+
+# Iniciar apenas frontend
+make frontend-dev
+
+# Rodar testes
+make test
+
+# Lint
+make lint
+
+# Build
+make build
+
+# Docker
+make docker-up
+make docker-down
+```
 
 ---
 

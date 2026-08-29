@@ -9,6 +9,9 @@ interface CustomInputProps {
   className?: string
   disabled?: boolean
   showPasswordToggle?: boolean
+  ariaLabel?: string
+  ariaDescribedBy?: string
+  id?: string
 }
 
 export function CustomInput({
@@ -19,18 +22,26 @@ export function CustomInput({
   className = '',
   disabled,
   showPasswordToggle,
+  ariaLabel,
+  ariaDescribedBy,
+  id,
 }: CustomInputProps) {
   const [showPassword, setShowPassword] = useState(false)
   const actualType = (type === 'password' && showPassword) ? 'text' : type
+  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${className}`} id={inputId}>
       <input
+        id={inputId}
         type={actualType}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        aria-label={ariaLabel || placeholder}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={disabled ? undefined : undefined}
         className={`w-full bg-slate-950/80 border rounded-2xl py-3 ${
           type === 'password' ? 'pr-12' : 'pr-4'
         } pl-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${

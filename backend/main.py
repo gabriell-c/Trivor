@@ -6,11 +6,12 @@ import urllib.request
 import urllib.error
 import tempfile
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response
+from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -58,7 +59,64 @@ def _get_provider_for_tool(tool: str):
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-app = FastAPI(title="Trivor")
+
+# ---------------------------------------------------------------------------
+# Pydantic Models para Validação
+# ---------------------------------------------------------------------------
+
+class JSearchKeyRequest(BaseModel):
+    """Modelo para teste de chave JSearch."""
+    key: str = Field(..., min_length=10, description="API key do JSearch")
+    provider: str = Field(default='jsearch', description="Nome do provider")
+
+    @field_validator('key')
+    @classmethod
+    def validate_key(cls, v: str) -> str:
+        if not v or len(v.strip()) < 10:
+            raise ValueError('API key deve ter pelo menos 10 caracteres')
+        return v.strip()
+
+class LogCleanupRequest(BaseModel):
+    """Modelo para limpeza de logs."""
+    days: int = Field(default=90, ge=1, le=365, description="Dias para manter logs")
+
+# ---------------------------------------------------------------------------
+# Funções de Resposta Padronizada
+# ---------------------------------------------------------------------------
+
+def error_response(code: str, message: str, details: dict = None, status_code: int = 400) -> JSONResponse:
+    """Retorna resposta de erro padronizada."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "details": details or {},
+                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S%z')
+            }
+        }
+    )
+
+def success_response(data: dict = None, message: str = "Sucesso") -> JSONResponse:
+    """Retorna resposta de sucesso padronizada."""
+    return JSONResponse(
+        status_code=200,
+        content={
+            "success": True,
+            "message": message,
+            "data": data,
+            "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S%z')
+        }
+    )
+
+app = FastAPI(
+    title="Trivor - Motor de Análise de Currículos",
+    description="API para análise de currículos, market intelligence e diagnóstico profissional",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -73,7 +131,19 @@ app.add_middleware(
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
-    return JSONResponse(status_code=429, content={"detail": "Muitas requisições. Aguarde um momento."})
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Muitas requisições. Aguarde e tente novamente.",
+                "details": {
+                    "limit": str(exc.limit) if hasattr(exc, 'limit') else "unknown"
+                }
+            }
+        },
+        headers={"Retry-After": "60"}
+    )
 
 # Inicializa DB de logs
 init_logs_db()
@@ -490,13 +560,59 @@ async def api_cleanup_logs(days: int = 90):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check robusto com verificação de dependências."""
+    import sqlite3
+    from datetime import datetime
+
+    checks = {}
+    overall_status = "healthy"
+
+    # Verificar banco de dados
+    try:
+        conn = sqlite3.connect(LOGS_DB)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM api_logs")
+        log_count = cursor.fetchone()[0]
+        conn.close()
+        checks["database"] = {"status": "ok", "logs_count": log_count}
+    except Exception as e:
+        checks["database"] = {"status": "error", "message": str(e)}
+        overall_status = "degraded"
+
+    # Verificar providers IA
+    try:
+        providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+        checks["providers"] = {
+            "status": "ok" if providers else "warning",
+            "count": len(providers)
+        }
+    except Exception as e:
+        checks["providers"] = {"status": "error", "message": str(e)}
+        overall_status = "degraded"
+
+    # Verificar diretório de conhecimento
+    try:
+        knowledge_exists = KNOWLEDGE_DIR.exists() and (KNOWLEDGE_DIR / 'system_prompt.md').exists()
+        checks["knowledge"] = {"status": "ok" if knowledge_exists else "warning"}
+    except Exception as e:
+        checks["knowledge"] = {"status": "error", "message": str(e)}
+
+    status_code = 200 if overall_status == "healthy" else 503
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": overall_status,
+            "timestamp": datetime.now().isoformat(),
+            "checks": checks
+        }
+    )
 
 
 @app.post('/api/linkedin/analyze')
 @limiter.limit("20/minute")
 async def analyze_linkedin(
-    text: str = Form(...),
+    text: str = Form(..., min_length=10, description="Texto do perfil LinkedIn"),
     image_url: str = Form(None),
     api_key: str = Form(None),
     api_url: str = Form(None),
@@ -504,6 +620,13 @@ async def analyze_linkedin(
     provider_id: str = Form(None),
 ):
     """Analisar perfil de LinkedIn a partir de texto colado."""
+
+    if not text or len(text.strip()) < 10:
+        return error_response(
+            code="INVALID_INPUT",
+            message="O texto do perfil deve ter pelo menos 10 caracteres",
+            status_code=400
+        )
     # Se provider_id fornecido, buscar credenciais salvas
     if provider_id:
         try:
@@ -636,9 +759,25 @@ async def analyze_linkedin(
             model=selected_model,
             api_key_preview=key[:8] + "..." if key and len(key) > 8 else "***",
         )
-        raise HTTPException(status_code=500, detail=f"Erro na análise do LinkedIn: {str(e)}")
+        return error_response(
+            code="ANALYSIS_ERROR",
+            message="Erro na análise do LinkedIn",
+            details={"error": str(e)},
+            status_code=500
+        )
 
 if __name__ == "__main__":
     import uvicorn
+    import signal
+    import sys
+
+    def graceful_shutdown(signum, frame):
+        logger.info("Recebido sinal de encerramento. Finalizando graceful...")
+        logger.info("Logs salvos com sucesso.")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
