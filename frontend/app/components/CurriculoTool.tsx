@@ -26,6 +26,7 @@ export default function CurriculoTool() {
   }
 
   const [exporting, setExporting] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const handleExport = async (format: 'json' | 'md' | 'docx' | 'pdf') => {
     if (!res) return

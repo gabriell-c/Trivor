@@ -11,7 +11,7 @@ import {
   Activity,
   Server,
 } from 'lucide-react'
-import type { LogStats } from '../types/analysis'
+import type { LogEntry, LogStats } from '../types/analysis'
 
 function StatCard({
   label,

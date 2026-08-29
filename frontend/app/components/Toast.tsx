@@ -5,7 +5,7 @@ import { CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 
-interface Toast {
+export interface Toast {
   id: string
   type: ToastType
   title: string

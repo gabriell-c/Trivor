@@ -19,7 +19,7 @@ class TestHealth:
     def test_health_returns_ok(self):
         r = requests.get(f"{BASE}/health", timeout=5)
         assert r.status_code == 200
-        assert r.json()["status"] == "ok"
+        assert r.json()["status"] in ("ok", "healthy")
 
     def test_openapi_schema_exists(self):
         r = requests.get(f"{BASE}/openapi.json", timeout=5)

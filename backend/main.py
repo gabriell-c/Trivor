@@ -6,7 +6,7 @@ import urllib.request
 import urllib.error
 import tempfile
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response, Query
+from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
@@ -175,6 +175,7 @@ async def log_requests(request, call_next):
 @app.post('/api/cv/analyze')
 @limiter.limit("30/minute")
 async def analyze_cv(
+    request: Request,
     api_key: str = Form(None),
     api_url: str = Form(None),
     model_name: str = Form(None),
@@ -210,6 +211,7 @@ async def analyze_cv(
 @app.post('/api/ia/analyze')
 @limiter.limit("20/minute")
 async def analyze_ia(
+    request: Request,
     api_key: str = Form(None),
     api_url: str = Form(None),
     model_name: str = Form(None),
@@ -612,6 +614,7 @@ async def health():
 @app.post('/api/linkedin/analyze')
 @limiter.limit("20/minute")
 async def analyze_linkedin(
+    request: Request,
     text: str = Form(..., min_length=10, description="Texto do perfil LinkedIn"),
     image_url: str = Form(None),
     api_key: str = Form(None),
