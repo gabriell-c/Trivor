@@ -49,8 +49,6 @@ jobs:
   test-backend:
     name: Backend Tests
     runs-on: ubuntu-latest
-    services:
-      # SQLite é arquivo, não precisa de serviço externo
     steps:
       - uses: actions/checkout@v4
 
