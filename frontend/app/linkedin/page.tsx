@@ -128,8 +128,8 @@ export default function LinkedinPage() {
   }
 
   const getScoreColor = (score: number = 0) => {
-    if (score >= 8) return { text: 'text-emerald-400', stroke: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' }
-    if (score >= 6) return { text: 'text-amber-400', stroke: '#f59e0b', bg: 'bg-amber-500/10', border: 'border-amber-500/30' }
+    if (score >= 80) return { text: 'text-emerald-400', stroke: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' }
+    if (score >= 60) return { text: 'text-amber-400', stroke: '#f59e0b', bg: 'bg-amber-500/10', border: 'border-amber-500/30' }
     return { text: 'text-rose-400', stroke: '#f43f5e', bg: 'bg-rose-500/10', border: 'border-rose-500/30' }
   }
 
@@ -186,7 +186,7 @@ export default function LinkedinPage() {
   const hasImage = !!imagePreview || !!imageUrl.trim()
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 py-10">
       {/* Header */}
       <div className="text-center mb-10">
         <div className="inline-flex items-center gap-3 mb-4">
@@ -304,7 +304,14 @@ export default function LinkedinPage() {
             {error && (
               <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
                 <XCircle className="w-4 h-4 flex-shrink-0" />
-                {error}
+                <span className="flex-1">{error}</span>
+                <button
+                  onClick={analyzeLinkedIn}
+                  disabled={loading}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3 h-3" /> Tentar novamente
+                </button>
               </div>
             )}
 
@@ -322,6 +329,34 @@ export default function LinkedinPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Skeleton loading while analysis runs */}
+      {loading && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8 space-y-4"
+        >
+          <div className="h-4 bg-slate-700/50 rounded-full w-1/4 animate-pulse" />
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex gap-4 items-start">
+                <div className="h-8 w-8 bg-slate-700/50 rounded-lg animate-pulse flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-slate-700/50 rounded-full w-2/3 animate-pulse" />
+                  <div className="h-3 bg-slate-700/50 rounded-full w-full animate-pulse" />
+                  <div className="h-3 bg-slate-700/50 rounded-full w-5/6 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-3 mt-6">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-12 bg-slate-700/50 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Step 2: Results */}
       <AnimatePresence mode="wait">

@@ -497,17 +497,30 @@ async def analyze_cv(
             else:
                 sys_prompt = """Você é um especialista em análise de currículos (CV) para ATS e mercado de trabalho.
 
-REGRAS IMPORTANTES:
-- CAPITALIZAÇÃO: Preserve EXATAMENTE como no currículo original. Não invente capitalização.
-- BULLET POINTS: Lines starting with -, *, or • are bullet points. Preserve them.
-- SPELL CHECK: Only flag REAL errors. Do NOT flag proper nouns, technical terms, or names.
-- HYPERLINKS: Report all detected URLs/links in the links section.
-- Be thorough and analyze EVERY line of the CV.
-- Output valid JSON only.
-- Use EXACTLY these field names (Portuguese):
+REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
+1. CAPITALIZAÇÃO: Preserve EXATAMENTE como no currículo original. Não invente capitalização.
+2. BULLET POINTS: Lines starting with -, *, or • are bullet points. Preserve them.
+3. SPELL CHECK — REGRAS RIGOROSAS:
+   - SOMENTE flag palavras que estejam REALMENTE erradas segundo o dicionário português (BR).
+   - NÃO flagge nomes próprios, marcas, tecnologias, abreviações, ou termos técnicos.
+   - NÃO flagge erros de formatação (quebras de linha, espaçamento).
+   - NÃO flagge links/URLs como erros ortográficos — links são hyperlinks válidos.
+   - Se NÃO houver erros ortográficos, retorne array vazio [].
+   - ERRO comum: inventar erros que não existem. NÃO FAÇA ISSO.
+4. HYPERLINKS — REGRAS RIGOROSAS:
+   - Links como wa.me, t.me, mailto:, linkedin.com, whatsapp.com são FORMATOS VÁLIDOS.
+   - NÃO flagge links como "faltando https" ou "inválido".
+   - Apenas reporte links na seção de links, nunca como erro.
+5. NOTA (0-100):
+   - "nota" deve ser ESCALA 0-100 (NÃO 0-10). Ex: 65, 78, 92.
+   - "score_ats" já é 0-100 (manter).
+   - Scores nas seções (analise_secoes.*) devem ser 0-100 (NÃO 0-10).
+6. Be thorough and analyze EVERY line of the CV.
+7. Output valid JSON only.
+8. Use EXACTLY these field names (Portuguese):
 
 {
-  "nota": <0-10 float, 1 decimal>,
+  "nota": <0-100 float, 1 decimal>,
   "score_ats": <0-100 int>,
   "resumo_executivo": "<string>",
   "foto_detectada": <boolean>,
@@ -519,12 +532,12 @@ REGRAS IMPORTANTES:
   "pontos_fracos": ["<string>"],
   "erros_comuns_detectados": [{"tipo": "<string>", "descricao": "<string>", "exemplo": "<string|null>"}],
   "analise_secoes": {
-    "dados_pessoais": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
-    "resumo_profissional": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
-    "experiencia_profissional": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "has_metrics": <boolean>},
-    "formacao_academica": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
-    "habilidades": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "bullet_points": <boolean>},
-    "objetivo": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>}
+    "dados_pessoais": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "resumo_profissional": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "experiencia_profissional": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "has_metrics": <boolean>},
+    "formacao_academica": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "habilidades": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "bullet_points": <boolean>},
+    "objetivo": {"status": "ok|atencao|critico", "score": <0-100>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>}
   },
   "analise_ats": {
     "score_ats": <0-100>,
