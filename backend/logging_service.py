@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS api_logs (
     api_key_preview TEXT,
     request_body TEXT,
     response_summary TEXT,
-    error TEXT
+    error TEXT,
+    extracted_text TEXT,
+    llm_prompt TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_logs_timestamp ON api_logs(timestamp);
@@ -51,6 +53,8 @@ def log_request(
     request_body: Optional[Dict] = None,
     response_summary: Optional[str] = None,
     error: Optional[str] = None,
+    extracted_text: Optional[str] = None,
+    llm_prompt: Optional[str] = None,
 ) -> str:
     log_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
@@ -59,14 +63,17 @@ def log_request(
     conn.execute(
         """INSERT INTO api_logs
            (id, timestamp, endpoint, method, status_code, duration_ms,
-            model, api_key_preview, request_body, response_summary, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            model, api_key_preview, request_body, response_summary, error,
+            extracted_text, llm_prompt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             log_id, now, endpoint, method, status_code, duration_ms,
             model, api_key_preview,
             json.dumps(request_body) if request_body else None,
             response_summary,
             error,
+            extracted_text,
+            llm_prompt,
         ),
     )
     conn.commit()

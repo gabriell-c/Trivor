@@ -358,6 +358,9 @@ async def log_requests(request, call_next):
     start = time.time()
     response = await call_next(request)
     duration_ms = int((time.time() - start) * 1000)
+    # Skip logging for endpoints that create their own detailed logs
+    if request.url.path == "/api/cv/analyze":
+        return response
     try:
         log_request(
             endpoint=request.url.path,
@@ -500,24 +503,35 @@ async def analyze_cv(
 REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
 1. CAPITALIZAÇÃO: Preserve EXATAMENTE como no currículo original. Não invente capitalização.
 2. BULLET POINTS: Lines starting with -, *, or • are bullet points. Preserve them.
-3. SPELL CHECK — REGRAS RIGOROSAS:
+3. DATES — REGRAS RIGOROSAS:
+   - Parse dates EXACTLY as written in the CV. NEVER reformat, never invent dates.
+   - If CV says "2018-2020", keep "2018-2020". If CV says "Jan 2020 - Mar 2022", keep exact text.
+   - NEVER change date formats (e.g., never convert "2018" to "2018-2022" or add years).
+   - NEVER interpret date ranges — only report what is literally written.
+   - If no dates are present, do not invent any.
+4. SPELL CHECK — REGRAS MÁXIMAMENTE RIGOROSAS:
    - SOMENTE flag palavras que estejam REALMENTE erradas segundo o dicionário português (BR).
    - NÃO flagge nomes próprios, marcas, tecnologias, abreviações, ou termos técnicos.
    - NÃO flagge erros de formatação (quebras de linha, espaçamento).
    - NÃO flagge links/URLs como erros ortográficos — links são hyperlinks válidos.
+   - NÃO flagge siglas (AWS, Java, React, SQL, etc), mesmo que pareçam erradas.
+   - NÃO flagge termos estrangeiros (e.g., "software", "developer", "framework").
    - Se NÃO houver erros ortográficos, retorne array vazio [].
-   - ERRO comum: inventar erros que não existem. NÃO FAÇA ISSO.
-4. HYPERLINKS — REGRAS RIGOROSAS:
+   - WARNING: O ERRO MAIS COMUM é inventar erros que não existem. NUNCA invente.
+   - Palavras como "React", "Python", "JavaScript", "AWS", "SQL" NUNCA devem ser flaggadas.
+   - Nomes próprios como "São Paulo", "Maria", "João" NUNCA devem ser flagrados.
+   - Antes de flaggar qualquer palavra, pergunte-se: "esta palavra REALMENTE existe no dicionário português?" Se NÃO TEM CERTEZA, NÃO flagge.
+5. HYPERLINKS — REGRAS RIGOROSAS:
    - Links como wa.me, t.me, mailto:, linkedin.com, whatsapp.com são FORMATOS VÁLIDOS.
    - NÃO flagge links como "faltando https" ou "inválido".
    - Apenas reporte links na seção de links, nunca como erro.
-5. NOTA (0-100):
+6. NOTA (0-100):
    - "nota" deve ser ESCALA 0-100 (NÃO 0-10). Ex: 65, 78, 92.
    - "score_ats" já é 0-100 (manter).
    - Scores nas seções (analise_secoes.*) devem ser 0-100 (NÃO 0-10).
-6. Be thorough and analyze EVERY line of the CV.
-7. Output valid JSON only.
-8. Use EXACTLY these field names (Portuguese):
+7. Be thorough and analyze EVERY line of the CV.
+8. Output valid JSON only.
+9. Use EXACTLY these field names (Portuguese):
 
 {
   "nota": <0-100 float, 1 decimal>,
@@ -604,6 +618,23 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
             # Links e extractor são campos internos, não expostos ao frontend
             analysis['_extractor_used'] = extractor_used
             analysis['_links'] = [l['url'] for l in links_info]
+
+            # Salvar log com texto extraído e prompt
+            llm_prompt = f"SYSTEM:\n{sys_prompt}\n\nUSER:\n{user_content}"
+            extracted_truncated = markdown_text[:5000] if markdown_text else ""
+            prompt_truncated = llm_prompt[:8000] if llm_prompt else ""
+            response_summary_json = json.dumps(analysis, ensure_ascii=False)
+            log_request(
+                endpoint="/api/cv/analyze",
+                method="POST",
+                status_code=200,
+                duration_ms=0,
+                model=selected_model,
+                api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+                response_summary=response_summary_json,
+                extracted_text=extracted_truncated,
+                llm_prompt=prompt_truncated,
+            )
 
             return JSONResponse(content=analysis)
 

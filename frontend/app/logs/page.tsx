@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Code,
   Server,
+  FileText,
 } from 'lucide-react'
 import type { LogEntry, LogStats } from '../types/analysis'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -226,6 +227,7 @@ function StatCard({ label, value, icon, color }: { label: string; value: number 
 }
 
 function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }) {
+  const [showRawText, setShowRawText] = useState(false)
   const isFallback = Boolean(log.fallback_used)
   const isDocling = log.extractor === 'docling' || log.extractor === 'docling_parse'
   const isPypdfium = log.extractor === 'pypdfium2'
@@ -557,6 +559,48 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
               <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
                 <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{log.response_summary}</pre>
               </div>
+            </section>
+          )}
+
+          {/* === TEXTO EXTRAÍDO E PROMPT DO LLM === */}
+          {(log.extracted_text || log.llm_prompt) && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <SectionHeader icon={<FileText className="w-3.5 h-3.5" />} label="Texto Extraído & Prompt LLM" />
+                <button
+                  onClick={() => setShowRawText(v => !v)}
+                  className={`text-xs px-3 py-1 rounded-lg transition-colors flex items-center gap-1.5 ${
+                    showRawText
+                      ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                      : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'
+                  }`}
+                >
+                  <Eye className="w-3 h-3" />
+                  {showRawText ? 'Ocultar' : 'Ver texto extraído'}
+                </button>
+              </div>
+              {showRawText && (
+                <div className="space-y-4">
+                  {log.extracted_text && (
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800/80">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Texto Extraído ({log.extracted_text.length} chars)</span>
+                        <button onClick={() => copyToClipboard(log.extracted_text!)} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Copiar</button>
+                      </div>
+                      <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words p-4 max-h-64 overflow-y-auto">{log.extracted_text}</pre>
+                    </div>
+                  )}
+                  {log.llm_prompt && (
+                    <div className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800/80">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Prompt Enviado ao LLM ({log.llm_prompt.length} chars)</span>
+                        <button onClick={() => copyToClipboard(log.llm_prompt!)} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Copiar</button>
+                      </div>
+                      <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words p-4 max-h-96 overflow-y-auto">{log.llm_prompt}</pre>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
         </div>
