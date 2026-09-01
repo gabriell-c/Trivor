@@ -503,7 +503,38 @@ REGRAS IMPORTANTES:
 - SPELL CHECK: Only flag REAL errors. Do NOT flag proper nouns, technical terms, or names.
 - HYPERLINKS: Report all detected URLs/links in the links section.
 - Be thorough and analyze EVERY line of the CV.
-- Output valid JSON only."""
+- Output valid JSON only.
+- Use EXACTLY these field names (Portuguese):
+
+{
+  "nota": <0-10 float, 1 decimal>,
+  "score_ats": <0-100 int>,
+  "resumo_executivo": "<string>",
+  "foto_detectada": <boolean>,
+  "foto_recomendada": <boolean>,
+  "ordem_secoes": {"correta": <boolean>, "problema": "<string|null>", "como_corrigir": "<string|null>"},
+  "palavras_chave_presentes": ["<string>"],
+  "palavras_chave_faltantes": ["<string>"],
+  "pontos_fortes": ["<string>"],
+  "pontos_fracos": ["<string>"],
+  "erros_comuns_detectados": [{"tipo": "<string>", "descricao": "<string>", "exemplo": "<string|null>"}],
+  "analise_secoes": {
+    "dados_pessoais": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "resumo_profissional": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "experiencia_profissional": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "has_metrics": <boolean>},
+    "formacao_academica": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>},
+    "habilidades": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>, "bullet_points": <boolean>},
+    "objetivo": {"status": "ok|atencao|critico", "score": <0-10>, "problema": "<string|null>", "como_corrigir": "<string|null>", "presente": <boolean>}
+  },
+  "analise_ats": {
+    "score_ats": <0-100>,
+    "palavras_chave_faltantes": ["<string>"],
+    "gargalos_formatacao": ["<string>"],
+    "veredito_robos": "aprovado|com_ressalvas|reprovado",
+    "explicacao": "<string>"
+  },
+  "sugestoes": ["<string>"]
+}"""
 
             # Montar user message
             user_content = f"""ANALISE ESTE CURRÍCULO COMPLETAMENTE.
@@ -546,13 +577,20 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                 else:
                     analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
 
-            # Adicionar metadados
-            analysis['extractor_used'] = extractor_used
-            analysis['links'] = links_info
-            analysis['token_usage'] = {
-                "prompt": response.usage.prompt_tokens if response.usage else 0,
-                "completion": response.usage.completion_tokens if response.usage else 0,
+            # Adicionar metadados compatíveis com o frontend
+            analysis['uso_tokens'] = {
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": (response.usage.prompt_tokens + response.usage.completion_tokens) if response.usage else 0,
             }
+            analysis['api_info'] = {
+                "model": selected_model,
+                "request_id": str(uuid.uuid4()),
+                "response_time_ms": 0,
+            }
+            # Links e extractor são campos internos, não expostos ao frontend
+            analysis['_extractor_used'] = extractor_used
+            analysis['_links'] = [l['url'] for l in links_info]
 
             return JSONResponse(content=analysis)
 
