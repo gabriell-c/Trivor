@@ -148,6 +148,210 @@ async def rate_limit_handler(request, exc):
 # Inicializa DB de logs
 init_logs_db()
 
+# ---------------------------------------------------------------------------
+# Extração de PDF com fallback chain: PyMuPDF → pypdfium2 → docling_parse
+# ---------------------------------------------------------------------------
+
+_md_cache: dict[str, str] = {}
+_ALLOWED_EXTS = {'.pdf', '.docx', '.doc', '.txt'}
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Correções exatas de OCR — SEM regex genéricas
+_FIXES: list[tuple[str, str]] = [
+    ('Área', 'Área'), ('São', 'São'), ('João', 'João'),
+    ('Código', 'Código'), ('Códigos', 'Códigos'),
+    ('Desenvolvimento', 'Desenvolvimento'),
+    ('Tecnologia', 'Tecnologia'),
+    # Erros comuns de OCR em português
+    ('ilustração', 'ilustração'),
+    ('nao', 'não'),  # só quando óbvio pelo contexto — deixar o LLM decidir
+]
+
+def _extract_pdf_text_pymupdf(pdf_path: str) -> str:
+    """Extrai texto de PDF usando PyMuPDF — melhor qualidade, extrai links também."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        chunks = []
+        for page in doc:
+            text = page.get_text()
+            lines = []
+            for line in text.split('\n'):
+                stripped = line.strip()
+                if stripped:
+                    lines.append(stripped)
+            if lines:
+                chunks.append('\n'.join(lines))
+        doc.close()
+        return '\n\n---\n'.join(chunks)
+    except Exception as e:
+        logger.warning(f"[PYMUPDF] Falhou: {e}")
+        return ""
+
+def _extract_pdf_text_pypdfium(pdf_path: str) -> str:
+    """Fallback: extrai texto de PDF usando pypdfium2."""
+    try:
+        pdf_document = pdfium.PdfDocument(pdf_path)
+        chunks = []
+        for page in pdf_document:
+            textpage = page.get_textpage()
+            text = textpage.get_text_bounded()
+            textpage.close()
+            lines = []
+            for line in text.split('\n'):
+                stripped = line.strip()
+                if stripped:
+                    lines.append(stripped)
+            if lines:
+                chunks.append('\n'.join(lines))
+        pdf_document.close()
+        return '\n\n---\n'.join(chunks)
+    except Exception as e:
+        logger.warning(f"[PDFIUM] Falhou: {e}")
+        return ""
+
+def _extract_pdf_text_docling_parse(pdf_path: str) -> str:
+    """Fallback: extrai texto com docling_parse (melhor estrutura)."""
+    try:
+        from docling_parse.pdf_parsers import DoclingParser
+        parser = DoclingParser()
+        parsed = parser.parse_pdf(pdf_path, first_n_pages=10)
+        lines = []
+        for cell in parsed.cells:
+            lines.append(cell.get('page_content', ''))
+        return '\n'.join(lines)
+    except Exception as e:
+        logger.warning(f"[DOCING] Falhou: {e}")
+        return ""
+
+def _extract_pdf_text_pdfplumber(pdf_path: str) -> str:
+    """Fallback: extrai texto com pdfplumber."""
+    try:
+        import pdfplumber
+        chunks = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    lines = []
+                    for line in text.split('\n'):
+                        stripped = line.strip()
+                        if stripped:
+                            lines.append(stripped)
+                    if lines:
+                        chunks.append('\n'.join(lines))
+        return '\n\n---\n'.join(chunks)
+    except Exception as e:
+        logger.warning(f"[PDFPLUMBER] Falhou: {e}")
+        return ""
+
+def _extract_pdf_links(pdf_path: str) -> list[str]:
+    """Extrai hyperlinks das anotações do PDF usando PyMuPDF → pdfplumber."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        links = []
+        for page in doc:
+            for link in page.get_links():
+                uri = link.get('uri', '')
+                if uri and uri not in links:
+                    links.append(str(uri))
+        doc.close()
+        if links:
+            logger.info(f"[LINKS] {len(links)} via PyMuPDF")
+            return links
+    except Exception as e:
+        logger.warning(f"[LINKS pymupdf] Falhou: {e}")
+
+    try:
+        import pdfplumber
+        links = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                annots = page.annots
+                if not annots:
+                    continue
+                for annot in annots:
+                    uri = annot.get('uri')
+                    if uri and uri not in links:
+                        links.append(str(uri))
+        logger.info(f"[LINKS] {len(links)} via pdfplumber")
+        return links
+    except Exception as e:
+        logger.warning(f"[LINKS pdfplumber] Falhou: {e}")
+        return []
+
+def _detect_hyperlinks(text: str) -> list[dict[str, str]]:
+    """Detecta hyperlinks no texto convertido para markdown."""
+    import urllib.parse
+    results = []
+    seen = set()
+
+    def add_url(raw: str):
+        raw = raw.rstrip('.,;:!)')
+        if raw in seen:
+            return
+        seen.add(raw)
+        if raw.startswith('//'):
+            raw = 'https:' + raw
+        elif raw.startswith('www.'):
+            raw = 'https://' + raw
+        results.append({'url': raw, 'valid': True})  # LLM validará
+
+    # Markdown links: [text](url)
+    for m in re.finditer(r'\[([^\]]+)\]\(([^)]+)\)', text):
+        add_url(m.group(2).strip('<>'))
+
+    # Full URLs
+    for m in re.finditer(r'https?://[^\s)<>\]]+', text):
+        add_url(m.group(0))
+
+    # www. URLs
+    for m in re.finditer(r'www\.[^\s)<>\]]+', text):
+        add_url(m.group(0))
+
+    return results
+
+def _text_to_markdown(text: str) -> str:
+    """Converte texto extraído para markdown estruturado."""
+    import re
+    lines = text.split('\n')
+    result = []
+    in_section = False
+    section_buffer = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if section_buffer:
+                result.extend(section_buffer)
+                section_buffer = []
+            result.append('')
+            continue
+
+        # Detectar títulos de seção (todas as letras maiúsculas, ou padrões comuns)
+        is_header = False
+        if len(stripped) <= 60 and re.match(r'^[A-ZÀ-Ý][A-ZÀ-Ý\s\-]{1,58}$', stripped):
+            is_header = True
+        elif re.match(r'^(EXPERIÊNCIA|EDUCAÇÃO|FORMAÇÃO|HABILIDADES|SKILLS|IDIOMAS|OBJETIVO|RESUMO|SOBRE|CERTIFICAÇÕES|IDIOMAS|PROJETO|LINKS|CONTATO|INFORMAÇÕES)', stripped.upper()):
+            is_header = True
+
+        if is_header:
+            if section_buffer:
+                result.extend(section_buffer)
+                section_buffer = []
+            result.append(f'## {stripped}')
+            result.append('')
+        elif re.match(r'^[-•*]\s', stripped):
+            result.append(f'- {stripped[2:]}')
+        else:
+            section_buffer.append(stripped)
+
+    if section_buffer:
+        result.extend(section_buffer)
+
+    return '\n'.join(result)
+
 
 @app.middleware("http")
 async def log_requests(request, call_next):
@@ -182,29 +386,184 @@ async def analyze_cv(
     provider_id: str = Form(None),
     cv_file: UploadFile = File(...),
     job_description: str = Form(""),
-    target_role: str = Form("fullstack"),
+    target_role: str = Form(""),
+    area: str = Form(""),
 ):
     try:
         content = await cv_file.read()
         if not content:
             raise HTTPException(status_code=400, detail="Arquivo vazio.")
         ext = os.path.splitext(cv_file.filename or "")[1].lower()
-        if ext not in ('.pdf', '.docx', '.doc', '.txt'):
+        if ext not in _ALLOWED_EXTS:
             raise HTTPException(status_code=400, detail="Formato de arquivo não suportado.")
-        # Usar tempfile para compatibilidade com Windows
+        if len(content) > _MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
+
         temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cv_')
         try:
             with os.fdopen(temp_fd, 'wb') as f:
                 f.write(content)
-            converter = DocumentConverter()
-            conversion_result = converter.convert(temp_path)
-            return conversion_result.document.export_to_markdown()
+
+            # Extrair texto com fallback chain
+            markdown_text = ""
+            extractor_used = "none"
+            fallback_used = False
+
+            if ext == '.pdf':
+                # 1. PyMuPDF primeiro
+                markdown_text = _extract_pdf_text_pymupdf(temp_path)
+                extractor_used = "pymupdf"
+                logger.info(f"[CV] PyMuPDF: {len(markdown_text)} chars")
+                if not markdown_text or not markdown_text.strip():
+                    # 2. pypdfium2
+                    markdown_text = _extract_pdf_text_pypdfium(temp_path)
+                    extractor_used = "pypdfium2"
+                    fallback_used = True
+                    logger.info(f"[CV] pypdfium2: {len(markdown_text)} chars")
+                if not markdown_text or not markdown_text.strip():
+                    # 3. docling_parse
+                    md_fd, md_path = tempfile.mkstemp(suffix='.pdf', prefix='md_')
+                    os.close(md_fd)
+                    try:
+                        import shutil
+                        shutil.copy2(temp_path, md_path)
+                        markdown_text = _extract_pdf_text_docling_parse(md_path)
+                        extractor_used = "docling_parse"
+                        fallback_used = True
+                        logger.info(f"[CV] docling_parse: {len(markdown_text)} chars")
+                    finally:
+                        if os.path.exists(md_path):
+                            os.remove(md_path)
+                if not markdown_text or not markdown_text.strip():
+                    # 4. pdfplumber
+                    markdown_text = _extract_pdf_text_pdfplumber(temp_path)
+                    extractor_used = "pdfplumber"
+                    fallback_used = True
+                    logger.info(f"[CV] pdfplumber: {len(markdown_text)} chars")
+            else:
+                # Para docx/txt, usar docling
+                converter = DocumentConverter()
+                conversion_result = converter.convert(temp_path)
+                markdown_text = conversion_result.document.export_to_markdown()
+                extractor_used = "docling"
+
+            if not markdown_text or not markdown_text.strip():
+                markdown_text = "Erro ao extrair texto do documento."
+                extractor_used = "none"
+                logger.warning("[CV] Todos os extratores falharam!")
+
+            # Cache de markdown
+            cache_key = temp_path
+            if cache_key in _md_cache:
+                markdown_text = _md_cache[cache_key]
+            else:
+                markdown_text = _text_to_markdown(markdown_text)
+                _md_cache[cache_key] = markdown_text
+
+            # Detectar hyperlinks
+            links_info = _detect_hyperlinks(markdown_text)
+            if ext == '.pdf':
+                pdf_links = _extract_pdf_links(temp_path)
+                for url in pdf_links:
+                    already = any(l['url'] == url for l in links_info)
+                    if not already:
+                        links_info.append({'url': url, 'valid': True})
+            logger.info(f"[CV] Links detectados: {len(links_info)}")
+
+            # Configurar cliente OpenAI
+            key = api_key or os.getenv("OPENAI_API_KEY", "")
+            if not key or key.strip() == "":
+                prov = _get_provider_for_tool('curriculo')
+                if prov:
+                    api_key = prov['apiKey']
+                    api_url = prov.get('apiUrl') or api_url
+                    model_name = prov.get('modelName') or model_name
+                    key = api_key
+            if not key or key.strip() == "":
+                raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+            selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
+            base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
+            if not base_url:
+                base_url = "http://localhost:20128/v1"  # omniroute local
+
+            client = OpenAI(api_key=key, base_url=base_url)
+
+            # Carregar prompt
+            prompt_file = KNOWLEDGE_DIR / 'cv_analysis_prompt.md'
+            if prompt_file.exists():
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    sys_prompt = f.read()
+            else:
+                sys_prompt = """Você é um especialista em análise de currículos (CV) para ATS e mercado de trabalho.
+
+REGRAS IMPORTANTES:
+- CAPITALIZAÇÃO: Preserve EXATAMENTE como no currículo original. Não invente capitalização.
+- BULLET POINTS: Lines starting with -, *, or • are bullet points. Preserve them.
+- SPELL CHECK: Only flag REAL errors. Do NOT flag proper nouns, technical terms, or names.
+- HYPERLINKS: Report all detected URLs/links in the links section.
+- Be thorough and analyze EVERY line of the CV.
+- Output valid JSON only."""
+
+            # Montar user message
+            user_content = f"""ANALISE ESTE CURRÍCULO COMPLETAMENTE.
+
+CURRÍCULO (Markdown):
+---
+{markdown_text}
+---
+
+INFORMAÇÕES ADICIONAIS:
+- Links detectados: {[l['url'] for l in links_info] if links_info else 'Nenhum'}
+- Tipo de arquivo: {ext}
+- Extrator usado: {extractor_used}
+- Job description (se fornecida): {job_description or 'Nenhuma'}
+- Target role: {target_role or area or 'Não especificado'}
+
+Faça uma análise COMPLETA e DETALHADA do currículo."""
+
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.3,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+            )
+
+            result_text = response.choices[0].message.content
+
+            # Parsear resultado JSON
+            try:
+                analysis = json.loads(result_text)
+            except json.JSONDecodeError:
+                # Tentar extrair JSON do texto
+                match = re.search(r'\{[\s\S]*\}', result_text)
+                if match:
+                    analysis = json.loads(match.group())
+                else:
+                    analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
+
+            # Adicionar metadados
+            analysis['extractor_used'] = extractor_used
+            analysis['links'] = links_info
+            analysis['token_usage'] = {
+                "prompt": response.usage.prompt_tokens if response.usage else 0,
+                "completion": response.usage.completion_tokens if response.usage else 0,
+            }
+
+            return JSONResponse(content=analysis)
+
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"[CV] Erro: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar o currículo: {str(e)}")
 
 
