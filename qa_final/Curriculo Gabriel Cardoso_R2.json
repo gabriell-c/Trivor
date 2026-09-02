@@ -1,0 +1,122 @@
+{
+  "nota": 72.0,
+  "score_ats": 65,
+  "resumo_executivo": "O currículo apresenta uma base técnica sólida e utiliza a fórmula XYZ em diversos pontos, o que é excelente. No entanto, a formatação está prejudicada por quebras de linha irregulares (provavelmente devido à extração ou layout original) e a seção de experiência está desorganizada cronologicamente e visualmente, dificultando a leitura rápida pelo recrutador.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A seção de experiência profissional está fragmentada e com datas/cargos deslocados dos bullet points.",
+    "como_corrigir": "Reorganizar para: Cargo | Empresa | Data, seguido pelos bullet points de impacto."
+  },
+  "palavras_chave_presentes": [
+    "Python",
+    "Django",
+    "React",
+    "MySQL",
+    "Docker",
+    "API RESTful",
+    "JWT"
+  ],
+  "palavras_chave_faltantes": [
+    "CI/CD",
+    "Cloud (AWS/Azure/GCP)",
+    "Testes Unitários"
+  ],
+  "pontos_fortes": [
+    "Uso consistente da fórmula XYZ (ex: 'automatizando 80% do atendimento').",
+    "Stack tecnológica moderna e alinhada ao mercado.",
+    "Links clicáveis presentes."
+  ],
+  "pontos_fracos": [
+    "Formatação visual confusa: cargos e datas estão separados dos bullet points.",
+    "Dados pessoais contêm endereço completo (risco de privacidade).",
+    "Seção de certificações está misturada com habilidades técnicas."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Endereço completo exposto",
+      "exemplo": "Recreio Anhanguera, Ribeirão Preto - SP"
+    },
+    {
+      "tipo": "formatação_quebrada",
+      "descricao": "Texto cortado ou com quebra de linha indevida",
+      "exemplo": "reduzindo tempo de registro em [quebra de linha] Até 40%."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Exposição de endereço completo.",
+      "como_corrigir": "Remover o endereço e manter apenas Cidade/Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "critico",
+      "score": 40,
+      "problema": "Layout desestruturado. As datas e cargos estão desconexos dos resultados.",
+      "como_corrigir": "Agrupar cada experiência com seu respectivo cargo, período e bullets de impacto.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 75,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 80,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 65,
+    "palavras_chave_faltantes": [
+      "CI/CD",
+      "Testes"
+    ],
+    "gargalos_formatacao": [
+      "Quebras de linha irregulares",
+      "Estrutura de experiência não linear"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O ATS pode ter dificuldade em associar os resultados (bullets) aos cargos devido à quebra de layout no arquivo."
+  },
+  "sugestoes": [
+    "Remova o endereço completo, deixando apenas 'Ribeirão Preto - SP'.",
+    "Corrija a estrutura da seção de experiência: Cargo -> Empresa -> Datas -> Bullet Points.",
+    "Remova a seção 'Certificações' e integre os conhecimentos relevantes na seção de Habilidades ou Formação.",
+    "Revise o texto para garantir que frases como 'reduzindo tempo de registro em Até 40%' fiquem em uma única linha."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 3085,
+    "completion_tokens": 1034,
+    "total_tokens": 4119
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "13a77720-3231-4ffb-8f25-2c6bd7d4f5f8",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "mailto:gabri3lcardoso07@gmail.com",
+    "https://portfolio--gabriel.vercel.app",
+    "https://linkedin.com/in/gabriell-cardoso",
+    "https://github.com/gabriell-c"
+  ]
+}

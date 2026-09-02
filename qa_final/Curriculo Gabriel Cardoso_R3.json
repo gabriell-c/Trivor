@@ -1,0 +1,122 @@
+{
+  "nota": 72.0,
+  "score_ats": 65,
+  "resumo_executivo": "O currículo apresenta uma base técnica sólida e utiliza a fórmula XYZ em diversos pontos, o que é excelente. No entanto, a formatação está prejudicada por quebras de linha irregulares (provavelmente devido à extração ou layout original) e a seção de experiência está confusa, com cargos e datas desconectados dos bullet points. É necessário organizar a hierarquia visual e remover dados sensíveis como endereço completo.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A seção de certificações está misturada com habilidades e a experiência profissional está com layout fragmentado.",
+    "como_corrigir": "Agrupe as experiências profissionais com seus respectivos cargos e datas de forma coesa. Mova certificações para uma seção própria ou anexe à formação acadêmica."
+  },
+  "palavras_chave_presentes": [
+    "Python",
+    "Django",
+    "React",
+    "MySQL",
+    "Docker",
+    "API REST",
+    "JWT"
+  ],
+  "palavras_chave_faltantes": [
+    "CI/CD",
+    "AWS",
+    "Testes Unitários"
+  ],
+  "pontos_fortes": [
+    "Uso consistente da fórmula XYZ (ex: 'automatizando 80% do atendimento', 'reduzindo erros em 30%').",
+    "Stack técnica moderna e bem definida.",
+    "Links clicáveis presentes."
+  ],
+  "pontos_fracos": [
+    "Layout fragmentado: cargos e datas estão separados dos bullet points de descrição.",
+    "Presença de endereço completo (risco de privacidade).",
+    "Seção de certificações confusa e mal posicionada."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Endereço completo (Rua/Bairro) incluído no cabeçalho.",
+      "exemplo": "Recreio Anhanguera, Ribeirão Preto - SP"
+    },
+    {
+      "tipo": "formatação_layout",
+      "descricao": "Quebras de linha que separam o cargo da descrição da experiência.",
+      "exemplo": "Desenvolvedor Backend Freelancer / ChatBot com IA"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Inclui endereço completo (Recreio Anhanguera).",
+      "como_corrigir": "Mantenha apenas Cidade e Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Layout desorganizado, dificultando a leitura cronológica e a associação entre cargo e responsabilidades.",
+      "como_corrigir": "Reorganize para: Cargo | Empresa | Data | Descrição (bullets).",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 75,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 65,
+    "palavras_chave_faltantes": [
+      "CI/CD",
+      "Cloud",
+      "Testes"
+    ],
+    "gargalos_formatacao": [
+      "Layout fragmentado pode confundir parsers de ATS que leem por blocos de texto."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O conteúdo é rico em palavras-chave, mas a estrutura física do documento (quebras de linha) pode impedir que o ATS associe corretamente as experiências aos cargos."
+  },
+  "sugestoes": [
+    "Remova o endereço completo, deixando apenas 'Ribeirão Preto - SP'.",
+    "Corrija o layout da experiência profissional: agrupe o Cargo, Empresa e Datas no topo de cada bloco de experiência.",
+    "Remova a seção 'Certificações' da forma como está e integre os cursos relevantes na seção de Formação ou crie uma seção 'Educação Complementar' limpa.",
+    "Certifique-se de que o texto 'segurançe' no resumo seja corrigido para 'segurança' (embora não seja erro grave, a correção profissional é recomendada)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 3085,
+    "completion_tokens": 1089,
+    "total_tokens": 4174
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "d94830a6-2755-4a0f-b0d3-f0c3f7a2f22d",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "mailto:gabri3lcardoso07@gmail.com",
+    "https://portfolio--gabriel.vercel.app",
+    "https://linkedin.com/in/gabriell-cardoso",
+    "https://github.com/gabriell-c"
+  ]
+}

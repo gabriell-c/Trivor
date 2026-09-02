@@ -1,0 +1,118 @@
+{
+  "nota": 52.0,
+  "score_ats": 45,
+  "resumo_executivo": "O currículo apresenta uma estrutura confusa, com seções fora de ordem e falta de foco em resultados quantitativos. Embora a experiência profissional seja sólida, a ausência da fórmula XYZ e a desorganização hierárquica das seções prejudicam a leitura por recrutadores e sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A ordem das seções está invertida e fragmentada (Objetivo e Resumo estão no final, Formação está antes da Experiência).",
+    "como_corrigir": "Seguir a ordem padrão: Dados Pessoais -> Resumo Profissional -> Experiência Profissional -> Formação Acadêmica -> Habilidades."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Atendimento ao cliente",
+    "Pacote Office",
+    "Rotinas administrativas"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "Gestão de tempo",
+    "KPIs",
+    "Excel Avançado"
+  ],
+  "pontos_fortes": [
+    "Experiência profissional clara e com tempo de permanência estável.",
+    "Informações de contato e links de comunicação presentes."
+  ],
+  "pontos_fracos": [
+    "Estrutura de seções desorganizada.",
+    "Ausência de métricas ou resultados (Fórmula XYZ).",
+    "Resumo profissional muito longo e com excesso de descrições operacionais."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "ordem_secoes",
+      "descricao": "Seções de Objetivo e Resumo posicionadas ao final do documento.",
+      "exemplo": "Objetivo e Resumo Profissional após Habilidades."
+    },
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Endereço completo incluído no currículo.",
+      "exemplo": "Sebastião Martins Viana - Recreio Anhanguera, Ribeirão Preto"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Endereço completo exposto desnecessariamente.",
+      "como_corrigir": "Manter apenas Cidade/Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 40,
+      "problema": "Muito longo e descritivo; falta foco em impacto.",
+      "como_corrigir": "Resumir para: 'Assistente Administrativo com 2 anos de experiência em rotinas operacionais e atendimento. Foco em organização de processos e suporte administrativo. Cursando Técnico em Administração.'",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Bullets puramente descritivos, sem métricas de impacto.",
+      "como_corrigir": "Adicionar resultados. Ex: 'Redução de X% no tempo de resposta através da otimização de planilhas de controle'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 65,
+      "problema": null,
+      "como_corrigir": "Categorizar as habilidades (ex: Soft Skills, Hard Skills, Ferramentas).",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 45,
+    "palavras_chave_faltantes": [
+      "Gestão de processos",
+      "Suporte administrativo",
+      "Microsoft Excel"
+    ],
+    "gargalos_formatacao": [
+      "Ordem das seções não convencional",
+      "Uso de cabeçalhos inconsistentes"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O ATS pode ter dificuldade em identificar a experiência profissional devido à inversão das seções e à falta de clareza nos títulos de cada bloco."
+  },
+  "sugestoes": [
+    "Remova o endereço completo, mantendo apenas a cidade e estado.",
+    "Reorganize o currículo: Resumo -> Experiência -> Formação -> Habilidades.",
+    "Transforme as descrições de tarefas em conquistas usando a fórmula XYZ (Ação + Métrica + Resultado).",
+    "Destaque o curso técnico em administração como um diferencial competitivo."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2735,
+    "completion_tokens": 1101,
+    "total_tokens": 3836
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "8ca0b1a6-aab5-41fe-81f8-2a6648e9ef79",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "http://wa.me/5516992472832",
+    "mailto:milena.scardoso09@gmail.com"
+  ]
+}

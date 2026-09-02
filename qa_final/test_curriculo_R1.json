@@ -1,0 +1,114 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas carece de profundidade técnica e impacto. A ausência de um resumo profissional e a falta de resultados quantitativos (fórmula XYZ) impedem que o candidato se destaque para posições de nível pleno ou superior.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A ordem das experiências profissionais está invertida (a mais recente deve vir primeiro) e o resumo profissional está ausente.",
+    "como_corrigir": "Adicione um resumo profissional no topo e liste as experiências da mais recente para a mais antiga."
+  },
+  "palavras_chave_presentes": [
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Administração"
+  ],
+  "palavras_chave_faltantes": [
+    "Gestão de Projetos",
+    "Análise de Dados",
+    "KPIs",
+    "Automação"
+  ],
+  "pontos_fortes": [
+    "Informações de contato claras.",
+    "Formação acadêmica relevante e bem posicionada."
+  ],
+  "pontos_fracos": [
+    "Ausência total de métricas ou resultados (Fórmula XYZ).",
+    "Experiências profissionais descritas como lista de tarefas, não como conquistas.",
+    "Falta de resumo profissional para contextualizar a carreira.",
+    "Ordem cronológica das experiências está confusa."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "falta_formula_xyz",
+      "descricao": "As experiências profissionais listam apenas responsabilidades, sem resultados mensuráveis.",
+      "exemplo": "Responsável por análise de dados e relatórios"
+    },
+    {
+      "tipo": "falta_resumo",
+      "descricao": "O currículo não possui um perfil profissional, dificultando a identificação imediata da senioridade e objetivos.",
+      "exemplo": "N/A"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "critico",
+      "score": 0,
+      "problema": "Ausente",
+      "como_corrigir": "Adicionar resumo: [Cargo] + [Anos XP] + [Stack] + [Destaque de impacto].",
+      "presente": false
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 30,
+      "problema": "Falta de resultados (XYZ) e ordem cronológica invertida.",
+      "como_corrigir": "Transformar tarefas em conquistas: 'Reduzi o tempo de conciliação bancária em 20% utilizando automação em Excel'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 70,
+      "problema": "Poderiam ser categorizadas (ex: Ferramentas, Idiomas, Soft Skills).",
+      "como_corrigir": "Agrupar as habilidades por competência técnica.",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "Gestão de Projetos",
+      "KPIs"
+    ],
+    "gargalos_formatacao": [
+      "Ordem cronológica inversa não respeitada",
+      "Ausência de resumo profissional"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível para robôs, mas a falta de palavras-chave de impacto e a estrutura de tarefas simples reduzem a pontuação de ranqueamento em sistemas ATS."
+  },
+  "sugestoes": [
+    "Adicione um resumo profissional: 'Analista Administrativo com 6 anos de experiência em gestão financeira e análise de dados, especialista em Excel e Power BI, com foco em otimização de processos e redução de custos.'",
+    "Aplique a fórmula XYZ: Em vez de 'Responsável por análise de dados', use 'Melhorei a precisão dos relatórios financeiros em 15% através da automação de dashboards no Power BI'.",
+    "Corrija a ordem das experiências: A Empresa ABC (2020-2024) deve aparecer antes da Empresa XYZ (2018-2020)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2498,
+    "completion_tokens": 1112,
+    "total_tokens": 3610
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "af4c087b-0cec-48b5-8ff3-0ea6431e2240",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

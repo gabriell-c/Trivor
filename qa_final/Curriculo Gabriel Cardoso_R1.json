@@ -1,0 +1,119 @@
+{
+  "nota": 72.0,
+  "score_ats": 65,
+  "resumo_executivo": "O currículo apresenta uma base técnica sólida e utiliza a fórmula XYZ em diversos pontos, o que é excelente. No entanto, a formatação está prejudicada pela disposição das experiências profissionais, que estão fragmentadas e com quebras de layout confusas. O resumo profissional é direto, mas contém um erro ortográfico e pode ser mais conciso.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A seção de experiências está com o título e datas deslocados para baixo dos bullet points, dificultando a leitura humana e a interpretação do ATS.",
+    "como_corrigir": "Reorganize para: Cargo | Empresa | Data, seguido pelos bullet points de impacto."
+  },
+  "palavras_chave_presentes": [
+    "Python",
+    "Django",
+    "React",
+    "MySQL",
+    "API REST",
+    "Docker",
+    "NLP",
+    "LLMs"
+  ],
+  "palavras_chave_faltantes": [
+    "CI/CD",
+    "Cloud",
+    "AWS",
+    "Testes Unitários"
+  ],
+  "pontos_fortes": [
+    "Uso consistente da fórmula XYZ (ex: 'automatizando 80% do atendimento').",
+    "Stack tecnológica moderna e bem definida.",
+    "Inclusão de projetos práticos relevantes."
+  ],
+  "pontos_fracos": [
+    "Formatação das experiências profissionais está desestruturada.",
+    "Dados pessoais contêm endereço completo (risco de privacidade).",
+    "Resumo profissional contém erro ortográfico."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Endereço completo incluído no cabeçalho.",
+      "exemplo": "Recreio Anhanguera, Ribeirão Preto - SP"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Endereço completo exposto.",
+      "como_corrigir": "Remover endereço, manter apenas Cidade/Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 70,
+      "problema": "Erro ortográfico e estrutura levemente prolixa.",
+      "como_corrigir": "Corrigir 'segurançe' e focar no valor de negócio.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "critico",
+      "score": 50,
+      "problema": "Layout fragmentado e confuso.",
+      "como_corrigir": "Agrupar cargo, empresa e datas corretamente acima dos bullets.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 65,
+    "palavras_chave_faltantes": [
+      "CI/CD",
+      "AWS"
+    ],
+    "gargalos_formatacao": [
+      "Quebra de linha em blocos de experiência",
+      "Datas separadas do título do cargo"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O ATS pode ter dificuldade em associar os bullet points de resultados aos cargos específicos devido à quebra de layout. A estrutura de dados (datas/cargos) precisa ser linear."
+  },
+  "sugestoes": [
+    "Remova o endereço completo (Rua/Bairro), deixe apenas 'Ribeirão Preto, SP'.",
+    "Corrija a palavra 'segurançe' para 'segurança' no resumo.",
+    "Reestruture a seção de Experiência: coloque o Cargo, Empresa e Datas em uma única linha antes dos bullet points.",
+    "Remova a seção 'Certificações' separada; integre essas tecnologias na seção de Habilidades ou Formação, pois o título 'Certificações' com apenas nomes de tecnologias é redundante."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 3085,
+    "completion_tokens": 991,
+    "total_tokens": 4076
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "6bc5808f-acbc-4d76-8fa9-229c72087a2a",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "mailto:gabri3lcardoso07@gmail.com",
+    "https://portfolio--gabriel.vercel.app",
+    "https://linkedin.com/in/gabriell-cardoso",
+    "https://github.com/gabriell-c"
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "nota": 88.0,
+  "score_ats": 90,
+  "resumo_executivo": "O currículo de Pedro Henrique Almeida é sólido, bem estruturado e demonstra maturidade profissional. O candidato utiliza a fórmula XYZ de forma consistente, o que facilita a leitura tanto para recrutadores quanto para sistemas ATS. A formatação é limpa e objetiva.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "Designer UX/UI",
+    "Design Systems",
+    "Prototipagem",
+    "User Research",
+    "Figma",
+    "MVP"
+  ],
+  "palavras_chave_faltantes": [
+    "Acessibilidade",
+    "Testes A/B",
+    "Metodologias Ágeis"
+  ],
+  "pontos_fortes": [
+    "Aplicação exemplar da fórmula XYZ em todas as experiências profissionais.",
+    "Quantificação clara de resultados (%, números de componentes, volume de usuários).",
+    "Links de portfólio clicáveis e relevantes para a área de design.",
+    "Seção de habilidades bem segmentada."
+  ],
+  "pontos_fracos": [
+    "O resumo profissional é um pouco genérico; poderia destacar melhor o impacto estratégico.",
+    "Endereço completo (Belo Horizonte, MG) é desnecessário; apenas a cidade/estado é suficiente."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de endereço (cidade/estado) - embora não seja crítico, recomenda-se remover para manter foco apenas na localização geográfica macro.",
+      "exemplo": "Belo Horizonte, MG"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 75,
+      "problema": "Poderia ser mais impactante.",
+      "como_corrigir": "Adicionar um destaque de impacto, ex: 'Designer UX/UI com 4 anos de experiência, especializado em Design Systems e otimização de conversão, com histórico comprovado de redução de atrito em fluxos de onboarding.'",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 90,
+    "palavras_chave_faltantes": [
+      "Acessibilidade",
+      "Testes A/B"
+    ],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo é altamente legível por sistemas ATS devido ao uso de seções claras, bullet points padronizados e ausência de elementos gráficos complexos (barras de progresso, tabelas)."
+  },
+  "sugestoes": [
+    "Remova a cidade e o estado do cabeçalho; apenas o LinkedIn/Portfólio e contatos são essenciais.",
+    "No resumo, substitua a descrição genérica por uma frase que conecte sua experiência técnica ao valor de negócio que você gera.",
+    "Considere adicionar uma linha sobre 'Acessibilidade' ou 'Testes A/B' nas habilidades, caso possua experiência, pois são palavras-chave muito buscadas para vagas de UX Sênior."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2825,
+    "completion_tokens": 940,
+    "total_tokens": 3765
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "620a7ace-f847-4b87-bedf-f0a6af4c373f",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://dribbble.com/pedroalmeida",
+    "https://behance.net/pedroalmeida"
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "nota": 52.0,
+  "score_ats": 45,
+  "resumo_executivo": "O currículo apresenta uma base sólida de experiência operacional, mas sofre com uma estrutura de seções desorganizada (objetivo e resumo no final) e falta de métricas de impacto (fórmula XYZ). A legibilidade é prejudicada pela ordem das seções, o que pode confundir sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "As seções 'Objetivo' e 'Resumo Profissional' estão posicionadas ao final do documento, após a experiência e habilidades.",
+    "como_corrigir": "Mover 'Resumo Profissional' e 'Objetivo' para o topo, logo após os dados de contato."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Atendimento ao cliente",
+    "Pacote Office",
+    "Rotinas administrativas",
+    "Sistemas internos"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "CRM",
+    "Gestão de tempo",
+    "Excel Avançado",
+    "KPIs"
+  ],
+  "pontos_fortes": [
+    "Clareza na descrição das atividades diárias.",
+    "Informações de contato atualizadas e links clicáveis.",
+    "Experiência profissional consistente (2 anos e 5 meses)."
+  ],
+  "pontos_fracos": [
+    "Ausência de resultados quantitativos (Fórmula XYZ).",
+    "Ordem das seções fora do padrão de mercado.",
+    "Resumo profissional muito longo e com excesso de detalhes operacionais.",
+    "Endereço completo exposto (risco de privacidade)."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Exposição de endereço completo (Rua/Bairro/Cidade).",
+      "exemplo": "Sebastião Martins Viana - Recreio Anhanguera, Ribeirão Preto"
+    },
+    {
+      "tipo": "estrutura_inadequada",
+      "descricao": "Seções de resumo e objetivo ao final do documento.",
+      "exemplo": "Resumo Profissional no final da página"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Endereço completo exposto.",
+      "como_corrigir": "Manter apenas Cidade/Estado (ex: Ribeirão Preto, SP).",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Posição incorreta e texto denso.",
+      "como_corrigir": "Mover para o topo e reduzir para 3 linhas focadas em resultados.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 55,
+      "problema": "Falta de resultados mensuráveis (Fórmula XYZ).",
+      "como_corrigir": "Adicionar métricas como volume de atendimentos diários ou redução de tempo em processos.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 80,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": "Agrupar por categorias (Soft/Hard Skills).",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 45,
+    "palavras_chave_faltantes": [
+      "Microsoft Excel",
+      "Gestão de processos",
+      "Suporte administrativo"
+    ],
+    "gargalos_formatacao": [
+      "Ordem das seções confusa para leitura automatizada."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível, mas a estrutura não segue a hierarquia lógica esperada pelos robôs de ATS (Resumo -> Experiência -> Formação). A falta de métricas dificulta a pontuação em ranqueamento de candidatos."
+  },
+  "sugestoes": [
+    "Remova o endereço completo, deixando apenas 'Ribeirão Preto, SP'.",
+    "Reorganize o documento: Cabeçalho -> Resumo -> Experiência -> Formação -> Habilidades.",
+    "Aplique a fórmula XYZ: Em vez de 'Atendimento ao cliente', use 'Realizei atendimento a 50+ clientes/dia, reduzindo o tempo de espera em 15% através da otimização de registros em sistema'.",
+    "Destaque o curso técnico em Administração como um diferencial competitivo."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2735,
+    "completion_tokens": 1121,
+    "total_tokens": 3856
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "fa0feac6-fc14-4efe-a300-69a78a00ad9c",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "http://wa.me/5516992472832",
+    "mailto:milena.scardoso09@gmail.com"
+  ]
+}

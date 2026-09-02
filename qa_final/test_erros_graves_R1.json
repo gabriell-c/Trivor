@@ -1,0 +1,122 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas falha gravemente em métricas de impacto (fórmula XYZ) e na exposição de dados sensíveis desnecessários. A seção de habilidades utiliza barras de progresso, o que é um erro crítico para ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Dados pessoais detalhados (CPF/RG/Endereço) estão no final, mas ocupam espaço valioso. A seção de habilidades está com formatação inadequada (barras de progresso).",
+    "como_corrigir": "Remover dados sensíveis, mover contatos para o topo e listar habilidades como texto simples (tags)."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Gestão de equipes"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "KPIs",
+    "Planejamento Estratégico",
+    "Fluxo de Caixa",
+    "Análise de Dados"
+  ],
+  "pontos_fortes": [
+    "Clareza na descrição dos cargos e períodos.",
+    "Formatação limpa e de fácil leitura humana."
+  ],
+  "pontos_fracos": [
+    "Uso de barras de progresso em habilidades (erro gravíssimo).",
+    "Exposição de dados sensíveis (CPF, RG, endereço completo).",
+    "Ausência total de métricas ou resultados quantitativos (Fórmula XYZ).",
+    "Resumo profissional genérico."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de CPF, RG e endereço completo.",
+      "exemplo": "CPF: 123.456.789-00 | RG: 12.345.678-9"
+    },
+    {
+      "tipo": "habilidades_percentuais",
+      "descricao": "Uso de barras de progresso/porcentagem em habilidades.",
+      "exemplo": "Excel: 80%"
+    },
+    {
+      "tipo": "cliche_resumo",
+      "descricao": "Resumo sem impacto ou dados factuais.",
+      "exemplo": "Administradora com 3 anos de experiência em gestão de equipes e processos."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "critico",
+      "score": 20,
+      "problema": "Contém CPF, RG e endereço completo.",
+      "como_corrigir": "Remover CPF, RG, endereço completo e data de nascimento. Manter apenas Cidade/Estado, LinkedIn, e-mail e telefone.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 40,
+      "problema": "Muito genérico, não destaca resultados.",
+      "como_corrigir": "Adicionar cargo, anos de experiência, stack técnica e um resultado principal (ex: 'Administradora com 3 anos de experiência, especialista em SAP e Excel, com foco em otimização de fluxo de caixa e redução de custos operacionais').",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Bullets puramente descritivos, sem métricas.",
+      "como_corrigir": "Aplicar fórmula XYZ: 'Controle de fluxo de caixa (Z), reduzindo erros de conciliação em 15% (X) através de automação em Excel (Y)'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 80,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "critico",
+      "score": 10,
+      "problema": "Uso de porcentagem em habilidades.",
+      "como_corrigir": "Remover as porcentagens. Listar apenas as competências: 'Excel Avançado, Power BI, SAP, Gestão de Equipes'.",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "ERP",
+      "KPIs",
+      "Automação"
+    ],
+    "gargalos_formatacao": [
+      "Uso de barras de progresso que impedem a leitura correta pelo parser do ATS"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível, mas a presença de dados sensíveis e o uso de porcentagens nas habilidades prejudicam a pontuação em sistemas ATS modernos."
+  },
+  "sugestoes": [
+    "Remova imediatamente CPF, RG, endereço completo e data de nascimento por questões de segurança e privacidade (LGPD).",
+    "Substitua as porcentagens em habilidades por níveis de proficiência (Básico, Intermediário, Avançado) ou apenas liste a tecnologia.",
+    "Reescreva os bullets de experiência profissional focando em resultados (ex: quanto dinheiro foi economizado? quantos processos foram otimizados?).",
+    "Adicione links clicáveis para o seu LinkedIn."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2719,
+    "completion_tokens": 1140,
+    "total_tokens": 3859
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "4ff2a3bb-baef-430e-bcd5-22e8aa891936",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

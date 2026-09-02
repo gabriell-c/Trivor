@@ -1,0 +1,118 @@
+{
+  "nota": 52.0,
+  "score_ats": 45,
+  "resumo_executivo": "O currículo apresenta uma base sólida de experiência operacional, mas sofre com uma estrutura desorganizada e falta de foco em resultados quantitativos. A ordem das seções está invertida (Objetivo e Resumo no final), o que prejudica a leitura imediata por recrutadores e sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "As seções estão em ordem inversa e misturadas. O objetivo e resumo devem ser os primeiros itens.",
+    "como_corrigir": "Reorganizar para: Dados Pessoais -> Resumo Profissional -> Experiência Profissional -> Formação Acadêmica -> Habilidades."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Atendimento ao cliente",
+    "Pacote Office",
+    "Rotinas administrativas"
+  ],
+  "palavras_chave_faltantes": [
+    "Gestão de tempo",
+    "KPIs",
+    "Excel Avançado",
+    "Ferramentas de CRM"
+  ],
+  "pontos_fortes": [
+    "Experiência profissional clara e consistente.",
+    "Presença de contatos funcionais (e-mail e WhatsApp)."
+  ],
+  "pontos_fracos": [
+    "Ordem das seções confusa.",
+    "Ausência de métricas de impacto (Fórmula XYZ).",
+    "Dados sensíveis desnecessários (Endereço completo)."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Endereço completo incluído no currículo.",
+      "exemplo": "Sebastião Martins Viana - Recreio Anhanguera, Ribeirão Preto"
+    },
+    {
+      "tipo": "estrutura_inadequada",
+      "descricao": "Objetivo e Resumo posicionados ao final do documento.",
+      "exemplo": "Seções de Objetivo e Resumo após Habilidades."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Endereço completo exposto.",
+      "como_corrigir": "Remover endereço completo, manter apenas Cidade/Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Falta de métricas e resultados (Fórmula XYZ).",
+      "como_corrigir": "Adicionar números: ex: 'Atendimento a X clientes/dia', 'Redução de Y% no tempo de resposta'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 75,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 45,
+    "palavras_chave_faltantes": [
+      "CRM",
+      "SAP",
+      "Gestão de Processos"
+    ],
+    "gargalos_formatacao": [
+      "Ordem das seções não convencional",
+      "Uso excessivo de quebras de linha manuais"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O sistema ATS pode ter dificuldade em identificar a hierarquia das informações devido à inversão das seções. A falta de palavras-chave técnicas específicas da área administrativa limita a pontuação em filtros automáticos."
+  },
+  "sugestoes": [
+    "Mova o 'Resumo Profissional' e 'Objetivo' para o topo do documento.",
+    "Remova o endereço completo, deixando apenas 'Ribeirão Preto - SP'.",
+    "Transforme as descrições de experiência em conquistas: em vez de 'Atendimento ao cliente', use 'Realizei atendimento a mais de 50 clientes/dia, mantendo índice de satisfação acima de 90%'.",
+    "Destaque o curso técnico em administração como prioridade na formação."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2735,
+    "completion_tokens": 968,
+    "total_tokens": 3703
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "677e8cc9-fc73-4cb3-b291-cc3e2a396100",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "http://wa.me/5516992472832",
+    "mailto:milena.scardoso09@gmail.com"
+  ]
+}

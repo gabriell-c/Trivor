@@ -1,0 +1,116 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas carece de elementos essenciais para um perfil competitivo. A ausência de um resumo profissional, a falta de resultados quantitativos (fórmula XYZ) e a ordem cronológica inversa mal aplicada prejudicam a legibilidade e o impacto.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A ordem das experiências profissionais está confusa e a formatação das datas está abaixo do nome da empresa, dificultando a leitura rápida.",
+    "como_corrigir": "Adote o padrão: [Cargo] | [Empresa] | [Data]. Organize as experiências da mais recente para a mais antiga."
+  },
+  "palavras_chave_presentes": [
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Administração"
+  ],
+  "palavras_chave_faltantes": [
+    "Gestão de Processos",
+    "KPIs",
+    "Automação",
+    "Análise Financeira"
+  ],
+  "pontos_fortes": [
+    "Informações de contato claras.",
+    "Habilidades técnicas relevantes para a área administrativa."
+  ],
+  "pontos_fracos": [
+    "Ausência total de resultados mensuráveis (Fórmula XYZ).",
+    "Falta de resumo profissional.",
+    "Formatação de cargos e empresas desorganizada.",
+    "Ausência de links para LinkedIn ou portfólio."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "falta_de_impacto",
+      "descricao": "Bullets descritivos sem métricas ou resultados.",
+      "exemplo": "Responsável por análise de dados e relatórios"
+    },
+    {
+      "tipo": "ausencia_resumo",
+      "descricao": "O currículo não possui um perfil profissional de abertura.",
+      "exemplo": "N/A"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "critico",
+      "score": 0,
+      "problema": "Seção ausente",
+      "como_corrigir": "Adicionar resumo de 2-3 linhas com Cargo + XP + Stack + Impacto.",
+      "presente": false
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 30,
+      "problema": "Bullets genéricos e sem métricas.",
+      "como_corrigir": "Aplicar fórmula XYZ: Atingi [X] mensurado por [Y] fazendo [Z].",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 80,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "Gestão de Projetos",
+      "Relatórios Gerenciais",
+      "SAP ERP"
+    ],
+    "gargalos_formatacao": [
+      "Ordem cronológica inversa mal estruturada",
+      "Falta de hierarquia visual clara entre cargos e empresas"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível para robôs, mas a falta de palavras-chave de impacto e a estrutura de tópicos genéricos reduzem a pontuação de ranqueamento em sistemas ATS."
+  },
+  "sugestoes": [
+    "Adicione um resumo profissional: 'Analista Administrativo com 6 anos de experiência em gestão financeira e análise de dados. Especialista em Excel e Power BI, com foco em otimização de processos e redução de custos operacionais.'",
+    "Transforme os bullets em conquistas: Em vez de 'Responsável por análise de dados', use 'Otimizei a geração de relatórios em 30% através da automação via Power BI'.",
+    "Inclua o link do seu LinkedIn no cabeçalho.",
+    "Reorganize a seção de experiência para: Cargo | Empresa | Data (Ex: Analista Administrativo | Empresa ABC | 2020 - 2024)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2498,
+    "completion_tokens": 1015,
+    "total_tokens": 3513
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "08031250-90e1-47a1-841a-cddf021ca4fc",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

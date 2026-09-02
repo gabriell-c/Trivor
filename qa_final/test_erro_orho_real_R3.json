@@ -1,0 +1,99 @@
+{
+  "nota": 92.0,
+  "score_ats": 95,
+  "resumo_executivo": "Currículo de alto nível, com excelente aplicação da fórmula XYZ e forte alinhamento com práticas de mercado. A estrutura é limpa e o conteúdo é orientado a resultados quantitativos.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "React",
+    "Node.js",
+    "Docker",
+    "Jenkins",
+    "AWS",
+    "Python",
+    "TypeScript",
+    "Kubernetes",
+    "Scrum"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Excelente uso da fórmula XYZ em todas as experiências profissionais.",
+    "Métricas claras de impacto (55% redução de deploy, 40% tempo de resposta, 50k usuários).",
+    "Seção de habilidades técnica e bem categorizada.",
+    "Links clicáveis e portfólio presente."
+  ],
+  "pontos_fracos": [
+    "Presença de um erro de digitação pontual na seção de experiência.",
+    "O resumo profissional poderia ser mais conciso, unindo as duas linhas em uma única frase de impacto."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": "Consolidar as duas linhas em uma frase única para maior impacto visual.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 85,
+      "problema": "Erro de digitação encontrado na primeira linha da experiência no BancoTech SA.",
+      "como_corrigir": "Corrigir 'Liderançde' para 'Liderança'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 95,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo está altamente otimizado para ATS, com uso consistente de palavras-chave técnicas e estrutura semântica clara."
+  },
+  "sugestoes": [
+    "Corrija o erro de digitação 'Liderançde' para 'Liderança' na experiência no BancoTech SA.",
+    "Considere remover o endereço completo (apenas Cidade/UF é suficiente para privacidade)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2950,
+    "completion_tokens": 807,
+    "total_tokens": 3757
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "2d643dd5-09e9-4280-ba1a-67a5344d8159",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/marianacosta",
+    "https://linkedin.com/in/marianacosta"
+  ]
+}

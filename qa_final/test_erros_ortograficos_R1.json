@@ -1,0 +1,111 @@
+{
+  "nota": 92.0,
+  "score_ats": 95,
+  "resumo_executivo": "Currículo de alto nível, tecnicamente sólido e bem estruturado. O candidato demonstra excelente uso da fórmula XYZ, apresentando métricas claras de impacto. O resumo profissional é direto e evita clichês, focando em competências técnicas.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "Go",
+    "Kubernetes",
+    "AWS",
+    "Kafka",
+    "Node.js",
+    "React",
+    "Terraform"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Aplicação consistente da fórmula XYZ em todas as experiências.",
+    "Quantificação de resultados (1M+ requisições, 60% de redução, 99.9% de confiabilidade).",
+    "Resumo profissional objetivo e sem clichês.",
+    "Links clicáveis presentes e funcionais."
+  ],
+  "pontos_fracos": [
+    "Presença de erros ortográficos em termos específicos nas descrições de cargos.",
+    "Endereço completo (cidade/estado) desnecessário para vagas remotas ou de tecnologia."
+  ],
+  "erros_ortograficos": [
+    {
+      "palavra": "OTIMIZAI",
+      "contexto": "OTIMIZAI queries SQL reduzindo tempo de resposta em 60%"
+    },
+    {
+      "palavra": "REDUSEI",
+      "contexto": "REDUSEI o tempo de carga das páginas em 35% através de caching com Redis"
+    }
+  ],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "erro_ortografico_tecnico",
+      "descricao": "Uso de verbos conjugados incorretamente ou com grafia errada (provável erro de digitação de 'Otimizei' e 'Reduzi').",
+      "exemplo": "OTIMIZAI, REDUSEI"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 85,
+      "problema": "Erros de digitação nos verbos de ação.",
+      "como_corrigir": "Corrigir 'OTIMIZAI' para 'Otimizei' e 'REDUSEI' para 'Reduzi'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 95,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo é altamente otimizado para ATS. A estrutura é clara, utiliza palavras-chave relevantes para a área de Engenharia de Software e os resultados quantitativos facilitam a triagem automatizada."
+  },
+  "sugestoes": [
+    "Corrija os erros de digitação nos verbos de ação: 'OTIMIZAI' para 'Otimizei' e 'REDUSEI' para 'Reduzi'.",
+    "Remova a localização (Curitiba, PR) se estiver aplicando para vagas 100% remotas, mantendo apenas o e-mail e telefone para privacidade."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2763,
+    "completion_tokens": 934,
+    "total_tokens": 3697
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "9b68cc98-57aa-495a-b236-0a8ccd2a93c3",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/lucasfernandes"
+  ]
+}

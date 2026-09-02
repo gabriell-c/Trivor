@@ -604,6 +604,19 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                 else:
                     analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
 
+            # VALIDAÇÃO DE GROUNDING: remover erros ortográficos alucinados
+            # Se a LLM reporta um erro, a palavra ERRADA deve EXISTIR no texto extraído.
+            # Se não existe, é alucinação e deve ser removida.
+            extracted_lower = markdown_text.lower() if markdown_text else ""
+            if 'erros_ortograficos' in analysis and isinstance(analysis['erros_ortograficos'], list):
+                valid_errors = []
+                for err in analysis['erros_ortograficos']:
+                    word = err.get('palavra', '') if isinstance(err, dict) else str(err)
+                    if word and word.lower() in extracted_lower:
+                        valid_errors.append(err)
+                    # Se a palavra NÃO existe no texto extraído, é alucinação → remover
+                analysis['erros_ortograficos'] = valid_errors
+
             # Adicionar metadados compatíveis com o frontend
             analysis['uso_tokens'] = {
                 "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,

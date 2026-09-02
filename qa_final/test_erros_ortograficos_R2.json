@@ -1,0 +1,112 @@
+{
+  "nota": 88.0,
+  "score_ats": 92,
+  "resumo_executivo": "O currículo de Lucas Fernandes é tecnicamente sólido, bem estruturado e alinhado com as melhores práticas de mercado. O uso da fórmula XYZ é evidente na maioria das experiências, demonstrando foco em resultados quantificáveis. A seção de habilidades é abrangente e bem organizada.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "Go",
+    "Kubernetes",
+    "AWS",
+    "Kafka",
+    "Node.js",
+    "React",
+    "Terraform"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Aplicação consistente da fórmula XYZ (ex: 'reduzindo tempo de resposta em 60%').",
+    "Clareza na progressão de carreira e senioridade.",
+    "Links clicáveis e profissionais.",
+    "Ausência de clichês no resumo profissional."
+  ],
+  "pontos_fracos": [
+    "Presença de erros ortográficos em termos técnicos (provavelmente erros de digitação).",
+    "Dados pessoais incluem endereço completo (cidade/estado), o que pode ser simplificado para apenas a localização geral."
+  ],
+  "erros_ortograficos": [
+    {
+      "palavra": "OTIMIZAI",
+      "contexto": "OTIMIZAI queries SQL reduzindo tempo de resposta em 60%"
+    },
+    {
+      "palavra": "REDUSEI",
+      "contexto": "REDUSEI o tempo de carga das páginas em 35%"
+    }
+  ],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "erro_digitacao",
+      "descricao": "Uso de verbos com sufixos incorretos ou em caixa alta que parecem erros de digitação.",
+      "exemplo": "OTIMIZAI, REDUSEI"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 85,
+      "problema": "Erros de digitação nos verbos de ação.",
+      "como_corrigir": "Corrigir 'OTIMIZAI' para 'Otimizei' e 'REDUSEI' para 'Reduzi'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 92,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo possui excelente legibilidade para sistemas ATS. A estrutura é limpa, utiliza palavras-chave relevantes de mercado e quantifica resultados de forma clara."
+  },
+  "sugestoes": [
+    "Corrija os verbos 'OTIMIZAI' e 'REDUSEI' para 'Otimizei' e 'Reduzi', respectivamente.",
+    "Remova 'Curitiba, PR' e mantenha apenas o LinkedIn/GitHub para maior privacidade, caso deseje.",
+    "O currículo está em um nível excelente para vagas de Engenharia de Software Pleno/Sênior."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2763,
+    "completion_tokens": 863,
+    "total_tokens": 3626
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "139990c8-f508-4d32-9dae-38481e5da0e9",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/lucasfernandes"
+  ]
+}

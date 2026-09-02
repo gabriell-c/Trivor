@@ -1,0 +1,122 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas falha gravemente em métricas de impacto (fórmula XYZ) e na exposição de dados sensíveis desnecessários. A seção de habilidades utiliza barras de progresso, o que é um erro crítico para ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Dados pessoais detalhados (CPF, RG, endereço completo) estão no final, mas deveriam ser minimalistas no topo. A seção de habilidades está com formatação inadequada.",
+    "como_corrigir": "Remova dados sensíveis (CPF, RG, endereço completo, data de nascimento, estado civil). Mantenha apenas nome, cidade/estado, e-mail e telefone."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Gestão de equipes"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "KPIs",
+    "Análise de Dados",
+    "Planejamento Estratégico"
+  ],
+  "pontos_fortes": [
+    "Clareza na descrição dos cargos e períodos.",
+    "Formatação limpa e fácil leitura."
+  ],
+  "pontos_fracos": [
+    "Uso de barras de progresso/porcentagem em habilidades (Erro crítico).",
+    "Exposição de dados sensíveis (CPF, RG, endereço completo).",
+    "Ausência total de métricas ou resultados (Fórmula XYZ).",
+    "Resumo profissional genérico e sem destaque de impacto."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de CPF, RG e endereço completo.",
+      "exemplo": "CPF: 123.456.789-00 | RG: 12.345.678-9"
+    },
+    {
+      "tipo": "habilidades_percentual",
+      "descricao": "Uso de porcentagem para medir proficiência técnica.",
+      "exemplo": "Excel: 80%"
+    },
+    {
+      "tipo": "falta_formula_xyz",
+      "descricao": "Bullets descritivos sem resultados quantitativos.",
+      "exemplo": "Controle de fluxo de caixa e conciliação bancária diária"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "critico",
+      "score": 20,
+      "problema": "Exposição de dados sensíveis (CPF, RG, endereço, estado civil).",
+      "como_corrigir": "Remover CPF, RG, endereço completo, data de nascimento e estado civil.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 40,
+      "problema": "Resumo muito curto e sem impacto.",
+      "como_corrigir": "Adicionar stack técnica e um resultado principal (ex: 'redução de X% em custos' ou 'otimização de Y processos').",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Falta de métricas quantitativas.",
+      "como_corrigir": "Aplicar fórmula XYZ: 'Controle de fluxo de caixa de R$ X/mês, reduzindo erros de conciliação em Y%'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 80,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "critico",
+      "score": 10,
+      "problema": "Uso de porcentagem em habilidades.",
+      "como_corrigir": "Remover as porcentagens. Listar apenas as competências técnicas e ferramentas.",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "ERP",
+      "KPIs",
+      "Gestão de Processos"
+    ],
+    "gargalos_formatacao": [
+      "Uso de caracteres especiais para porcentagem",
+      "Dados sensíveis que podem ser bloqueados por filtros de segurança"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível, mas a presença de dados sensíveis e a medição subjetiva de habilidades (porcentagem) prejudicam a pontuação em sistemas de triagem automática."
+  },
+  "sugestoes": [
+    "Remova imediatamente CPF, RG, endereço completo, data de nascimento e estado civil.",
+    "Substitua as porcentagens em habilidades por uma lista simples (ex: Excel, Power BI, SAP).",
+    "Reescreva os bullet points da experiência profissional incluindo números (R$, %, tempo, volume).",
+    "Adicione um link clicável para o seu LinkedIn."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2719,
+    "completion_tokens": 1082,
+    "total_tokens": 3801
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "bb9252df-2085-4cc4-b8ac-a6de193f983e",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

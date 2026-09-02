@@ -1,0 +1,98 @@
+{
+  "nota": 92.0,
+  "score_ats": 95,
+  "resumo_executivo": "Currículo de alto nível, muito bem estruturado e alinhado com as melhores práticas de mercado. A candidata utiliza a fórmula XYZ de forma consistente, demonstrando impacto quantitativo claro em todas as experiências. O documento é limpo, objetivo e tecnicamente robusto.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "React",
+    "Node.js",
+    "Python",
+    "AWS",
+    "Docker",
+    "Kubernetes",
+    "CI/CD",
+    "Scrum"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Aplicação exemplar da fórmula XYZ em todas as experiências profissionais.",
+    "Quantificação de resultados (R$, %, tempo, escala de usuários).",
+    "Seção de habilidades organizada e tecnicamente relevante.",
+    "Formação acadêmica concisa e adequada para nível sênior."
+  ],
+  "pontos_fracos": [
+    "Presença de um erro de digitação pontual na descrição da experiência atual.",
+    "Endereço completo (Rio de Janeiro, RJ) poderia ser simplificado apenas para a cidade/estado, embora não seja crítico."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "ok",
+      "score": 98,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 95,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo possui excelente densidade de palavras-chave técnicas e uma estrutura semântica que facilita a leitura por parsers de ATS. Não há elementos gráficos que impeçam a extração de dados."
+  },
+  "sugestoes": [
+    "Corrigir o erro de digitação 'Liderançde' para 'Liderança' na primeira experiência.",
+    "Remover o endereço 'Rio de Janeiro, RJ' e manter apenas a localização geral ou omitir, visando privacidade, embora seja aceitável no formato atual."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2950,
+    "completion_tokens": 796,
+    "total_tokens": 3746
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "74795714-6eda-4bfb-aacc-8525b76c6b3f",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/marianacosta",
+    "https://linkedin.com/in/marianacosta"
+  ]
+}

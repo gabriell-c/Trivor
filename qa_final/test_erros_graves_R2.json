@@ -1,0 +1,121 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas falha gravemente em métricas de impacto (fórmula XYZ) e na exposição de dados sensíveis desnecessários. A seção de habilidades utiliza barras de progresso, o que é contraindicado para sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Dados pessoais detalhados (CPF, RG, Endereço completo) estão no final, mas deveriam ser minimalistas no topo. Informações sensíveis como CPF/RG não devem constar no CV.",
+    "como_corrigir": "Remover CPF, RG, endereço completo, data de nascimento e estado civil. Manter apenas nome, cidade/estado, telefone e e-mail."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Gestão de equipes"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "KPIs",
+    "Processos",
+    "Otimização",
+    "Dashboard"
+  ],
+  "pontos_fortes": [
+    "Experiência profissional alinhada com a formação acadêmica.",
+    "Clareza nas datas de início e fim das experiências."
+  ],
+  "pontos_fracos": [
+    "Uso de barras de progresso/porcentagem em habilidades (erro gravíssimo).",
+    "Ausência total de métricas de resultado (Fórmula XYZ).",
+    "Exposição de dados sensíveis (CPF, RG, endereço completo).",
+    "Resumo profissional genérico e sem destaque de impacto."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de CPF, RG e endereço completo.",
+      "exemplo": "CPF: 123.456.789-00"
+    },
+    {
+      "tipo": "habilidades_percentual",
+      "descricao": "Uso de porcentagem para medir proficiência técnica.",
+      "exemplo": "Excel: 80%"
+    },
+    {
+      "tipo": "falta_metrica_xyz",
+      "descricao": "Bullets descritivos sem resultados quantitativos.",
+      "exemplo": "Controle de fluxo de caixa e conciliação bancária diária"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "critico",
+      "score": 20,
+      "problema": "Exposição de dados sensíveis (CPF, RG, Endereço, Estado Civil)",
+      "como_corrigir": "Remover CPF, RG, endereço completo, data de nascimento e estado civil.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 40,
+      "problema": "Resumo muito curto e sem destaque de impacto.",
+      "como_corrigir": "Adicionar stack técnica e um resultado principal alcançado nos últimos 3 anos.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Bullets puramente descritivos, sem métricas de impacto (Fórmula XYZ).",
+      "como_corrigir": "Adicionar resultados: ex: 'Reduzi em 15% o tempo de conciliação bancária utilizando Excel avançado'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "critico",
+      "score": 10,
+      "problema": "Uso de porcentagem em habilidades.",
+      "como_corrigir": "Listar as habilidades apenas por nome, sem métricas subjetivas.",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "ERP",
+      "KPIs",
+      "Gestão de Processos"
+    ],
+    "gargalos_formatacao": [
+      "Uso de barras de progresso (80%, 70%) que podem ser mal interpretadas por parsers de ATS."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível, mas a inclusão de dados sensíveis e a formatação de habilidades com porcentagem reduzem a pontuação em sistemas de triagem automática."
+  },
+  "sugestoes": [
+    "Remova imediatamente CPF, RG, endereço completo, data de nascimento e estado civil.",
+    "Substitua as porcentagens em habilidades por uma lista simples (ex: Excel, Power BI, SAP).",
+    "Aplique a fórmula XYZ: 'Controle de fluxo de caixa' -> 'Gerenciei fluxo de caixa de R$ X/mês, reduzindo erros de conciliação em Y% através de automação no Excel'."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2719,
+    "completion_tokens": 1080,
+    "total_tokens": 3799
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "f4848458-f543-479b-8fea-6ebfc45f8b06",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

@@ -1,0 +1,99 @@
+{
+  "nota": 92.0,
+  "score_ats": 95,
+  "resumo_executivo": "Currículo de alto nível, muito bem estruturado e alinhado com as melhores práticas de mercado. A candidata demonstra maturidade técnica e excelente uso da fórmula XYZ para quantificar resultados. O documento é altamente legível para sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "React",
+    "Node.js",
+    "Docker",
+    "Jenkins",
+    "CI/CD",
+    "AWS",
+    "Python",
+    "TypeScript",
+    "Kubernetes"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Uso consistente e eficaz da fórmula XYZ em todas as experiências profissionais.",
+    "Quantificação clara de métricas (55% de redução, 50k usuários, R$ 2M/dia).",
+    "Seção de habilidades técnica e bem organizada.",
+    "Links clicáveis presentes e funcionais."
+  ],
+  "pontos_fracos": [
+    "Presença de um erro ortográfico pontual na descrição da experiência atual.",
+    "O resumo profissional poderia ser mais conciso e direto, integrando a especialização em uma única linha."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 85,
+      "problema": "Poderia ser mais impactante e unificado.",
+      "como_corrigir": "Consolidar em: 'Analista de Sistemas Sênior com 8 anos de experiência em desenvolvimento web/mobile, especialista em React, Node.js e arquitetura de microsserviços, com histórico comprovado de otimização de performance e liderança técnica.'",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 95,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo utiliza uma estrutura semântica clara, com títulos de seção padrão e bullet points bem definidos, facilitando a leitura por qualquer parser de ATS."
+  },
+  "sugestoes": [
+    "Corrigir o erro de digitação 'Liderançde' para 'Liderança' na experiência no BancoTech SA.",
+    "O currículo está excelente; não há necessidade de mudanças estruturais profundas."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2950,
+    "completion_tokens": 821,
+    "total_tokens": 3771
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "802fc6cc-f34b-49bf-b202-49b1fd8cef63",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/marianacosta",
+    "https://linkedin.com/in/marianacosta"
+  ]
+}
