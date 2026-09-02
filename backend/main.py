@@ -168,22 +168,60 @@ _FIXES: list[tuple[str, str]] = [
 ]
 
 def _extract_pdf_text_pymupdf(pdf_path: str) -> str:
-    """Extrai texto de PDF usando PyMuPDF — melhor qualidade, extrai links também."""
+    """Extrai texto de PDF usando PyMuPDF — preserva ordem correta em layouts de colunas."""
     try:
         import pymupdf
         doc = pymupdf.open(pdf_path)
-        chunks = []
+        all_text = []
+
         for page in doc:
-            text = page.get_text()
-            lines = []
-            for line in text.split('\n'):
-                stripped = line.strip()
-                if stripped:
-                    lines.append(stripped)
-            if lines:
-                chunks.append('\n'.join(lines))
+            blocks = page.get_text("blocks")
+            if not blocks:
+                continue
+
+            # Agrupar posições X para detectar colunas
+            x_positions = sorted(set(int(b[0]) for b in blocks))
+            columns = []
+            current_col_x = []
+            col_gap = 50  # gap mínimo para considerar coluna diferente
+
+            for x in x_positions:
+                if not current_col_x:
+                    current_col_x.append(x)
+                elif x - current_col_x[-1] > col_gap:
+                    columns.append(sum(current_col_x) // len(current_col_x))
+                    current_col_x = [x]
+                else:
+                    current_col_x.append(x)
+            if current_col_x:
+                columns.append(sum(current_col_x) // len(current_col_x))
+
+            # Agrupar blocos por coluna
+            col_blocks = {col: [] for col in columns}
+            for block in blocks:
+                x = block[0]
+                text = block[4].strip()
+                if not text:
+                    continue
+                closest_col = min(columns, key=lambda c: abs(c - x))
+                col_blocks[closest_col].append((block[1], text))
+
+            # Ordenar cada coluna por Y
+            for col in col_blocks:
+                col_blocks[col].sort(key=lambda b: b[0])
+
+            # Intercalar blocos de todas as colunas por posição Y
+            all_blocks = []
+            for col in columns:
+                for y, text in col_blocks[col]:
+                    all_blocks.append((y, text))
+            all_blocks.sort(key=lambda b: b[0])
+
+            page_text = "\n".join(text for _, text in all_blocks)
+            all_text.append(page_text)
+
         doc.close()
-        return '\n\n---\n'.join(chunks)
+        return "\n\n---\n".join(all_text)
     except Exception as e:
         logger.warning(f"[PYMUPDF] Falhou: {e}")
         return ""
@@ -313,42 +351,50 @@ def _detect_hyperlinks(text: str) -> list[dict[str, str]]:
     return results
 
 def _text_to_markdown(text: str) -> str:
-    """Converte texto extraído para markdown estruturado."""
+    """Converte texto extraído para markdown estruturado, PRESERVANDO a ordem original."""
     import re
     lines = text.split('\n')
     result = []
-    in_section = False
-    section_buffer = []
+
+    # Nomes de seções conhecidos (com variações possíveis)
+    SECTION_PATTERNS = [
+        r'^EXPERIÊNCIA', r'^EXPERIENCIA', r'^EXPERIENCIA(S|PROFISSIONAL)?',
+        r'^EDUCAÇÃO', r'^EDUCACAO',
+        r'^FORMAÇÃO', r'^FORMACAO',
+        r'^HABILIDADES', r'^SKILLS',
+        r'^IDIOMAS',
+        r'^OBJETIVO',
+        r'^RESUMO', r'^SOBRE',
+        r'^CERTIFICAÇÕES', r'^CERTIFICACOES',
+        r'^PROJETOS?', r'^LINKS?', r'^CONTATO',
+        r'^INFORMAÇÕES', r'^INFORMACOES',
+        r'^TRABALHO', r'^ATUAÇÃO', r'^ATUACAO',
+        r'^QUALIFICAÇÕES', r'^QUALIFICACOES',
+        r'^DADOS PESSOAIS', r'^DADOSPESSOAIS',
+        r'^INTERESSE', r'^INTERESSES',
+    ]
 
     for line in lines:
         stripped = line.strip()
         if not stripped:
-            if section_buffer:
-                result.extend(section_buffer)
-                section_buffer = []
             result.append('')
             continue
 
-        # Detectar títulos de seção (todas as letras maiúsculas, ou padrões comuns)
+        # Detectar títulos de seção APENAS por nomes conhecidos
         is_header = False
-        if len(stripped) <= 60 and re.match(r'^[A-ZÀ-Ý][A-ZÀ-Ý\s\-]{1,58}$', stripped):
-            is_header = True
-        elif re.match(r'^(EXPERIÊNCIA|EDUCAÇÃO|FORMAÇÃO|HABILIDADES|SKILLS|IDIOMAS|OBJETIVO|RESUMO|SOBRE|CERTIFICAÇÕES|IDIOMAS|PROJETO|LINKS|CONTATO|INFORMAÇÕES)', stripped.upper()):
-            is_header = True
+        upper_stripped = stripped.upper()
+        for pattern in SECTION_PATTERNS:
+            if re.match(pattern, upper_stripped):
+                is_header = True
+                break
 
         if is_header:
-            if section_buffer:
-                result.extend(section_buffer)
-                section_buffer = []
             result.append(f'## {stripped}')
             result.append('')
         elif re.match(r'^[-•*]\s', stripped):
             result.append(f'- {stripped[2:]}')
         else:
-            section_buffer.append(stripped)
-
-    if section_buffer:
-        result.extend(section_buffer)
+            result.append(stripped)
 
     return '\n'.join(result)
 
