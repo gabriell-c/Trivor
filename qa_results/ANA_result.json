@@ -1,0 +1,135 @@
+{
+  "nota": 48.0,
+  "score_ats": 45,
+  "resumo_executivo": "O currículo apresenta bom potencial técnico com conhecimento em ferramentas chave (Excel, Power BI, SAP), porém possui erros estruturais críticos que reduzem drasticamente sua nota. Destacam-se a inclusão desnecessária de documentos e dados altamente sensíveis (CPF, RG, endereço residencial, estado civil), o uso de porcentagens para medir habilidades, a ausência de link para o LinkedIn e a desorganização das experiências profissionais (atribuições soltas no topo e cargos sem detalhamento).",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Estrutura desorganizada: a seção de Dados Pessoais com informações sensíveis foi colocada ao final do currículo, e uma lista de atividades aparece solta no topo antes da identificação dos cargos.",
+    "como_corrigir": "Reorganize na ordem padrão: 1. Cabeçalho com Contatos Essenciais (Topo); 2. Resumo Profissional; 3. Experiência Profissional (com atribuições organizadas abaixo de cada cargo); 4. Formação Acadêmica; 5. Habilidades."
+  },
+  "palavras_chave_presentes": [
+    "Administradora",
+    "Fluxo de caixa",
+    "Conciliação bancária",
+    "Relatórios gerenciais",
+    "Gestão de fornecedores",
+    "Atendimento ao cliente",
+    "Controle de estoque",
+    "Excel",
+    "Power BI",
+    "SAP"
+  ],
+  "palavras_chave_faltantes": [
+    "Contas a pagar",
+    "Contas a receber",
+    "Indicadores de desempenho (KPIs)",
+    "Redução de custos",
+    "Otimização de processos",
+    "DRE"
+  ],
+  "pontos_fortes": [
+    "Objetivo claro indicando a profissão (Administradora).",
+    "Presença de hard skills relevantes para a área (Excel, Power BI, SAP).",
+    "Progressão de carreira visível (Estagiária para Assistente Administrativa)."
+  ],
+  "pontos_fracos": [
+    "Uso inapropriado de porcentagens para medir habilidades (ex: Excel 80%, Gestão de equipes 100%).",
+    "Exposição desnecessária de dados sensíveis e pessoais (CPF, RG, endereço residencial completo, estado civil e data de nascimento).",
+    "Ausência de métricas e quantificação de impacto nas experiências profissionais (Fórmula XYZ do Google).",
+    "Atribuições desvinculadas das empresas/cargos onde foram desempenhadas.",
+    "Falta de link para perfil do LinkedIn."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "percentual_habilidades",
+      "descricao": "Uso de porcentagens ou barras de progresso para mensurar conhecimento/habilidades.",
+      "exemplo": "Excel: 80% | Gestão de equipes: 100%"
+    },
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de documentos pessoais, endereço residencial completo e estado civil.",
+      "exemplo": "CPF: 123.456.789-00 | RG: 12.345.678-9 | Estado civil: Solteira"
+    },
+    {
+      "tipo": "falta_metrica_xyz",
+      "descricao": "Descrição de atividades meramente operacionais sem indicar resultados ou volume negociado/gerenciado.",
+      "exemplo": "Controle de fluxo de caixa e conciliação bancária diária"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "critico",
+      "score": 30,
+      "problema": "Exposição de documentos (CPF, RG), endereço completo, data de nascimento e estado civil. Além disso, falta o link para o perfil do LinkedIn e a seção está posicionada no fim do documento.",
+      "como_corrigir": "Mova a seção para o topo. Mantenha apenas: Nome, Cidade/UF, E-mail, Telefone/WhatsApp e link clicável do LinkedIn. Remova CPF, RG, endereço completo, estado civil e data de nascimento.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "O resumo 'Administradora com 3 anos de experiência em gestão de equipes e processos.' é excessivamente curto e está deslocado no texto.",
+      "como_corrigir": "Posicione-o logo abaixo do cabeçalho de contatos no formato: [Cargo] + [Anos de XP] + [Stack/Ferramentas principais] + [Destaque de Impacto/Resultado].",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 40,
+      "problema": "As experiências registradas em 'Moura Empresas' e 'Silva Comércio' não possuem tópicos descritivos e resultados associados diretamente a elas.",
+      "como_corrigir": "Insira os bullet points de atividades e conquistas diretamente abaixo de cada empresa correspondente. Reescreva cada bullet no formato XYZ (Atingi [X], mensurado por [Y], fazendo [Z]).",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "critico",
+      "score": 20,
+      "problema": "Atribuição de porcentagens arbitrárias a competências (ex: Gestão de equipes: 100%).",
+      "como_corrigir": "Remova todas as porcentagens. Apresente as habilidades técnicas em lista simples por nível de domínio (ex: Excel Avançado, Power BI, SAP) e idiomas com nível formal (ex: Inglês Avançado).",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 45,
+    "palavras_chave_faltantes": [
+      "Contas a pagar e receber",
+      "Redução de custos",
+      "DRE",
+      "KPIs",
+      "ERP"
+    ],
+    "gargalos_formatacao": [
+      "Seção de contatos e dados pessoais posicionada no final do documento",
+      "Atribuições desvinculadas das empresas e datas correspondentes",
+      "Métricas percentuais em habilidades que geram ruído na extração de dados do ATS"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é passível de leitura por leitores de PDF, contudo a estrutura desordenada e a falta de associação clara entre conquistas e histórico profissional fazem com que o robô não consiga ranquear a candidata de forma adequada para vagas sênior/pleno."
+  },
+  "sugestoes": [
+    "Remova imediatamente CPF, RG, endereço residencial completo, estado civil e data de nascimento.",
+    "Elimine todas as porcentagens da seção de Habilidades.",
+    "Insira o link clicável para o perfil do LinkedIn no cabeçalho.",
+    "Reorganize as seções: Cabeçalho de Contatos -> Resumo Profissional -> Experiência Profissional -> Formação Acadêmica -> Habilidades.",
+    "Associe as atribuições a cada empresa específica e adicione métricas/números reais (ex: volume de fluxo de caixa gerenciado, percentual de redução de custos ou tempo otimizado)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2284,
+    "completion_tokens": 1692,
+    "total_tokens": 3976
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "683344e8-e838-4f91-8cfc-a70b45f293f4",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

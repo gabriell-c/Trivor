@@ -1,0 +1,128 @@
+{
+  "nota": 68.0,
+  "score_ats": 60,
+  "resumo_executivo": "O currículo apresenta excelentes métricas quantitativas (uso consistente da Fórmula XYZ) e um resumo objetivo sem clichês. No entanto, possui uma falha estrutural crítica: os bullet points de conquistas/atividades estão deslocados para o topo do documento, enquanto a seção de Experiência Profissional contém apenas nomes de empresas e datas. Isso prejudica fortemente o entendimento de onde cada resultado foi alcançado e afeta o escaneamento por sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Os tópicos de realizações e conquistas estão posicionados no topo do currículo (logo abaixo do nome) e desconectados dos cargos/empresas listados na seção de Experiência Profissional.",
+    "como_corrigir": "Reorganize o layout movendo cada bullet point para abaixo da empresa e cargo correspondentes (Nomad Digital, Studio Criativo ou Freelancer)."
+  },
+  "palavras_chave_presentes": [
+    "Figma",
+    "Adobe XD",
+    "Sketch",
+    "Photoshop",
+    "Illustrator",
+    "User Research",
+    "Wireframing",
+    "Prototipagem",
+    "Design System",
+    "Usabilidade",
+    "HTML/CSS",
+    "JavaScript",
+    "Framer Motion"
+  ],
+  "palavras_chave_faltantes": [
+    "LinkedIn",
+    "Acessibilidade / WCAG",
+    "Design Tokens",
+    "Testes de Usabilidade",
+    "Agile / Scrum"
+  ],
+  "pontos_fortes": [
+    "Uso consistente da fórmula XYZ com métricas de alto impacto (ex: redução de 45% no tempo de onboarding, 120+ componentes em design system, app com 4.8 estrelas).",
+    "Resumo profissional enxuto, direto e alinhado ao tempo de experiência (4 anos).",
+    "Presença de links para portfólios no Dribbble e Behance.",
+    "Seção de habilidades bem agrupada com ferramentas, metodologias e tecnologias front-end."
+  ],
+  "pontos_fracos": [
+    "Desconexão entre as atividades realizadas e as empresas/cargos onde foram exercidas.",
+    "Ausência de link para o perfil profissional no LinkedIn nos dados de contato.",
+    "A seção de Experiência Profissional funciona apenas como uma lista de cargos/datas sem descrição direta abaixo deles."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "secao_desagregada",
+      "descricao": "Bullet points de conquistas soltos no topo do currículo sem vinculação direta a uma empresa/cargo.",
+      "exemplo": "Reduzi em 45% o tempo de onboarding... (listado antes dos dados de contato e experiências)"
+    },
+    {
+      "tipo": "link_faltante",
+      "descricao": "Falta do link do perfil no LinkedIn na seção de dados pessoais.",
+      "exemplo": "Pedro.almeida@email.com | (31) 97777-6666 | Belo Horizonte, MG (sem LinkedIn)"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 75,
+      "problema": "Ausência do link para o perfil do LinkedIn.",
+      "como_corrigir": "Incluir o link clicável do LinkedIn junto ao e-mail, telefone e localização.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "As experiências profissionais contêm apenas o nome da empresa, cargo e período, pois os bullet points de realizações foram colocados no início do documento.",
+      "como_corrigir": "Distribuir as realizações/bullets diretamente abaixo de cada cargo correspondente.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 60,
+    "palavras_chave_faltantes": [
+      "LinkedIn",
+      "WCAG / Acessibilidade",
+      "Scrum / Agile"
+    ],
+    "gargalos_formatacao": [
+      "Estrutura com bullet points fora de contexto dificulta a associação de competências às experiências pelo robô leitor de currículos (ATS)."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível em formato texto, mas como as realizações estão isoladas no início do documento, os parsers de ATS não conseguirão atribuir a experiência na Nomad Digital ou Studio Criativo às conquistas que você alcançou."
+  },
+  "sugestoes": [
+    "Mova os tópicos de impacto/realizações para abaixo dos seus respectivos cargos na seção Experiência Profissional.",
+    "Adicione a URL do seu perfil no LinkedIn no cabeçalho de dados de contato.",
+    "Se trabalhar com Acessibilidade (WCAG) ou Design Tokens, mencione esses conceitos na área de habilidades ou nos bullet points."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2372,
+    "completion_tokens": 1248,
+    "total_tokens": 3620
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "8445583d-4188-424c-860b-be8c60cfba8a",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://dribbble.com/pedroalmeida",
+    "https://behance.net/pedroalmeida"
+  ]
+}

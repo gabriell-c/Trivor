@@ -1,0 +1,132 @@
+{
+  "nota": 72.0,
+  "score_ats": 60,
+  "resumo_executivo": "O currículo apresenta excelente conteúdo técnico e fortes métricas quantitativas alinhadas à Fórmula XYZ do Google (ex: 1M+ req/dia, 60% redução, 99.9% confiabilidade). Contudo, possui graves falhas de formatação e estrutura: a extração por OCR revelou que os bullet points de experiências e o resumo profissional estão desconectados da seção de 'Experiência Profissional', onde figuram apenas os nomes das empresas. Além disso, há erro de conjugação verbal gramatical ('REDUSEI') e o link do LinkedIn não é clicável.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "O resumo e as conquistas profissionais estão posicionados no topo antes do cabeçalho de Experiência Profissional, deixando as empresas (CloudBase, DataSoft, WebApps) isoladas sem seus respectivos bullet points.",
+    "como_corrigir": "Reorganize na sequência lógica: 1. Cabeçalho/Dados Pessoais -> 2. Resumo Profissional -> 3. Experiência Profissional (cada cargo/empresa acompanhado imediatamente dos seus bullet points) -> 4. Formação Acadêmica -> 5. Habilidades -> 6. Links."
+  },
+  "palavras_chave_presentes": [
+    "Go",
+    "Kubernetes",
+    "Kafka",
+    "Redis",
+    "Node.js",
+    "React",
+    "PostgreSQL",
+    "MongoDB",
+    "AWS",
+    "GCP",
+    "Terraform",
+    "CI/CD",
+    "GraphQL",
+    "APIs REST",
+    "Microsserviços"
+  ],
+  "palavras_chave_faltantes": [
+    "Docker (na seção de experiência prática)",
+    "Testes Unitários / TDD",
+    "Arquitetura Limpa / Clean Architecture"
+  ],
+  "pontos_fortes": [
+    "Uso consistente da fórmula XYZ com métricas quantitativas de alto impacto (1M+ requisições/dia, 60% redução de tempo de resposta, 99.9% confiabilidade, 35% ganho de performance).",
+    "Resumo profissional objetivo e sem clichês comportamentais vago (foco em tempo de experiência, stack e especialidade).",
+    "Ausência de dados pessoais sensíveis desnecessários (CPF, RG, foto, endereço completo).",
+    "Boa variedade de tecnologias relevantes para Engenharia de Software Backend e Infraestrutura/DevOps."
+  ],
+  "pontos_fracos": [
+    "Layout/Estrutura desalinhada: os resultados estão desvinculados dos cargos/empresas onde foram realizados.",
+    "Erro gramatical no verbo 'REDUSEI' (correto: 'reduzi').",
+    "Link do LinkedIn fornecido como texto simples sem hiperlink clicável incorporado.",
+    "Presença de artefatos de encoding/OCR decorrentes da conversão do PDF (ex: 'microsserviˆ§os', 'EXPERIˆŠNCIA')."
+  ],
+  "erros_ortograficos": [
+    "REDUSEI"
+  ],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "erro_conjugacao_verbal",
+      "descricao": "Uso da palavra 'REDUSEI' como conjugação do verbo reduzir.",
+      "exemplo": "REDUSEI o tempo de carga das páginas..."
+    },
+    {
+      "tipo": "link_nao_clicavel",
+      "descricao": "O perfil do LinkedIn foi incluído apenas em texto simples sem a marcação de URL clicável.",
+      "exemplo": "linkedin.com/in/lucasfernandes"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "atencao",
+      "score": 70,
+      "problema": "O conteúdo é bom e direto, porém está posicionado em local incorreto no documento (no meio dos bullet points de experiência).",
+      "como_corrigir": "Mova o texto 'Engenheiro de Software com 6 anos de experiência em sistemas distribuídos...' para logo abaixo dos dados de contato.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "critico",
+      "score": 50,
+      "problema": "Os bullet points com as realizações foram colocados no topo do currículo, enquanto a seção de Experiência Profissional apenas lista os nomes das empresas e datas sem nenhuma descrição.",
+      "como_corrigir": "Agrupe cada bloco de realizações logo abaixo da respectiva empresa (CloudBase Inc, DataSoft, WebApps LTDA).",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 60,
+    "palavras_chave_faltantes": [
+      "Testes Unitários",
+      "Docker em Experiência Prática"
+    ],
+    "gargalos_formatacao": [
+      "Layout em colunas ou caixas de texto desalinhadas que fizeram o leitor de PDF/ATS extrair os textos fora de ordem.",
+      "LinkedIn listado apenas como texto simples, impedindo parsing automático de link."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O leitor ATS consegue identificar termos técnicos relevantes e dados de contato, porém a associação entre as conquistas profissionais e os empregadores foi perdida devido à quebra de ordem no layout do arquivo PDF."
+  },
+  "sugestoes": [
+    "Corrija a palavra 'REDUSEI' para 'Reduzi' (e padronize a capitalização dos verbos no início das frases em caixa alta/baixa, ex: 'Otimizei' e 'Reduzi').",
+    "Reestruture a seção de Experiência Profissional distribuindo os 7 bullet points de conquistas entre as 3 empresas citadas (CloudBase, DataSoft e WebApps).",
+    "Adicione o protocolo https:// e hyperlink ativo no perfil do LinkedIn, assim como feito no GitHub.",
+    "Utilize um modelo de currículo em coluna única simples (Single Column System) para evitar que a ferramenta de conversão em PDF altere a ordem de leitura das seções.",
+    "Para os bullet points descritivos ('Desenvolvi APIs REST em Node.js...'), aplique a fórmula XYZ adicionando o impacto quantitativo ou volumetria (ex: atendendo X mil usuários ativos)."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2305,
+    "completion_tokens": 1521,
+    "total_tokens": 3826
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "f7e584d7-eaf7-4765-9077-747ee04d4910",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/lucasfernandes"
+  ]
+}

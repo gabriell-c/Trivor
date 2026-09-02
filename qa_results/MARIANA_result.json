@@ -1,0 +1,132 @@
+{
+  "nota": 80.0,
+  "score_ats": 75,
+  "resumo_executivo": "Currículo de alto nível técnico e com excelente uso da Fórmula XYZ do Google, apresentando métricas quantitativas de forte impacto. No entanto, apresenta um problema estrutural relevante: os bullet points de realizações técnicas foram colocados no topo do documento (logo abaixo do cabeçalho), deixando os cargos na seção 'EXPERIÊNCIA PROFISSIONAL' sem nenhum detalhamento ou contexto.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Os bullet points com as realizações profissionais estão posicionados no topo do currículo (logo após o título), totalmente desconectados das experiências profissionais listadas mais abaixo.",
+    "como_corrigir": "Mova cada bullet point de realização/conquista para baixo da respectiva empresa e cargo onde o trabalho foi realizado dentro da seção 'EXPERIÊNCIA PROFISSIONAL'."
+  },
+  "palavras_chave_presentes": [
+    "React",
+    "Node.js",
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "Java",
+    "Docker",
+    "Kubernetes",
+    "Jenkins",
+    "AWS",
+    "CI/CD",
+    "Jest",
+    "Microsserviços",
+    "PostgreSQL",
+    "MongoDB",
+    "Redis",
+    "Spring Boot",
+    "Django",
+    "Scrum",
+    "Kanban",
+    "TDD",
+    "BDD",
+    "API REST"
+  ],
+  "palavras_chave_faltantes": [
+    "GraphQL",
+    "Arquitetura de Software",
+    "Observabilidade",
+    "Cloud Native"
+  ],
+  "pontos_fortes": [
+    "Uso primoroso da Fórmula XYZ do Google em praticamente todas as realizações (ex: redução de deploy em 55%, 50k usuários, R$ 2M/dia, cobertura de testes de 30% para 85%).",
+    "Resumo profissional objetivo, direto e sem clichês, contendo cargo, tempo de experiência e principais tecnologias.",
+    "Stack tecnológica moderna e consistente para posições de Senior Fullstack / Analista de Sistemas.",
+    "Presença de certificações relevantes no mercado (AWS Certified Solutions Architect, Scrum Master).",
+    "Links profissionais completos e funcionais para GitHub, LinkedIn e site próprio."
+  ],
+  "pontos_fracos": [
+    "Estrutura de tópicos desalinhada: realizações estão flutuando no topo do documento antes do resumo e fora dos cargos ocupados.",
+    "A seção 'EXPERIÊNCIA PROFISSIONAL' apenas lista as empresas e datas, sem detalhar o que foi feito em cada uma delas."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "desconexao_estrutural_experiencia",
+      "descricao": "Tópicos de conquistas desvinculados dos cargos e empresas correspondentes.",
+      "exemplo": "Bullet points com métricas posicionados no topo do currículo e histórico profissional listado sem descrições."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "As experiências profissionais estão registradas apenas como nome da empresa, cargo e período, sem conter os bullet points de atividades e conquistas.",
+      "como_corrigir": "Distribuir os bullet points com métricas que estão no topo do documento para debaixo dos seus respectivos cargos (BancoTech SA, Fintech solutions e TechStart).",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 75,
+    "palavras_chave_faltantes": [
+      "GraphQL",
+      "Cloud Native",
+      "Arquitetura de Software"
+    ],
+    "gargalos_formatacao": [
+      "Realizações técnicas soltas no topo do documento podem não ser associadas às datas e empresas pelos leitores de ATS."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo tem termos técnicos e palavras-chave de altíssima relevância. No entanto, por estar com as realizações desvinculadas das datas de emprego, a inteligência dos sistemas ATS pode não conseguir atribuir o tempo correto de experiência prática para cada tecnologia demonstrada nas conquistas."
+  },
+  "sugestoes": [
+    "Reorganize o layout: coloque o Resumo Profissional logo após os Dados Pessoais.",
+    "Associe cada conquista (bullet point) à empresa em que ela foi realizada na seção 'EXPERIÊNCIA PROFISSIONAL'. Por exemplo, vincule o liderança de equipe e microsserviços ao cargo Sênior no BancoTech SA.",
+    "Mantenha todos os números e porcentagens atuais, pois demonstram um excelente nível de senioridade e orientação a resultados."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2492,
+    "completion_tokens": 1211,
+    "total_tokens": 3703
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "a3d217f1-db57-4ce3-b768-6b09b8a47861",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/marianacosta",
+    "https://linkedin.com/in/marianacosta"
+  ]
+}

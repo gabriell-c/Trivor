@@ -1,0 +1,110 @@
+{
+  "nota": 45.0,
+  "score_ats": 40,
+  "resumo_executivo": "O currículo apresenta uma estrutura básica, mas carece de elementos fundamentais para competitividade no mercado atual. A ausência de um resumo profissional, a falta de resultados quantitativos (fórmula XYZ) e a formatação da experiência profissional dificultam a leitura por sistemas ATS e recrutadores.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "A ordem das experiências profissionais está invertida ou confusa, e falta um resumo profissional no topo.",
+    "como_corrigir": "Adicione um resumo profissional logo abaixo dos dados de contato e organize as experiências da mais recente para a mais antiga."
+  },
+  "palavras_chave_presentes": [
+    "Excel",
+    "Power BI",
+    "SAP",
+    "Administração"
+  ],
+  "palavras_chave_faltantes": [
+    "Gestão de Processos",
+    "KPIs",
+    "Automação",
+    "ERP"
+  ],
+  "pontos_fortes": [
+    "Informações de contato claras.",
+    "Formação acadêmica bem definida."
+  ],
+  "pontos_fracos": [
+    "Ausência total de resultados quantitativos (Fórmula XYZ).",
+    "Falta de resumo profissional.",
+    "Experiências profissionais descritas apenas como tarefas, sem impacto.",
+    "Ausência de links para LinkedIn ou portfólio."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "falta_formula_xyz",
+      "descricao": "As experiências profissionais listam apenas responsabilidades, não resultados.",
+      "exemplo": "Em vez de 'Responsável por análise de dados', use 'Reduzi o tempo de fechamento mensal em 20% através da automação de relatórios em Power BI'."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "critico",
+      "score": 0,
+      "problema": "Seção ausente",
+      "como_corrigir": "Adicionar resumo com Cargo + Anos XP + Stack + Destaque de impacto.",
+      "presente": false
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 30,
+      "problema": "Apenas descritivo, sem métricas ou resultados.",
+      "como_corrigir": "Aplicar a fórmula XYZ em todos os pontos.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 70,
+      "problema": null,
+      "como_corrigir": "Adicionar nível de proficiência em ferramentas técnicas sem usar barras de progresso.",
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 40,
+    "palavras_chave_faltantes": [
+      "Gestão de Projetos",
+      "Análise de Dados",
+      "KPIs"
+    ],
+    "gargalos_formatacao": [
+      "Falta de hierarquia clara nas experiências profissionais",
+      "Ausência de resumo executivo"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O currículo é legível, mas o baixo score se deve à falta de palavras-chave de impacto e à ausência de métricas que validem a experiência da candidata."
+  },
+  "sugestoes": [
+    "Adicione um resumo profissional: 'Analista Administrativa com 6 anos de experiência em gestão financeira e análise de dados. Especialista em Excel e Power BI, com foco em otimização de processos e redução de custos operacionais.'",
+    "Transforme as tarefas em conquistas: 'Conciliação bancária' -> 'Realizei a conciliação bancária diária de 5 contas, reduzindo erros de lançamento em 15%'.",
+    "Inclua o link do seu LinkedIn (personalizado) no cabeçalho."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2039,
+    "completion_tokens": 967,
+    "total_tokens": 3006
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "d668995a-5839-4761-b217-95e98dcc034e",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": []
+}

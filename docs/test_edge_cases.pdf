@@ -1,0 +1,124 @@
+%PDF-1.4
+1 0 obj
+<<
+  /Type /Catalog
+  /Pages 2 0 R
+>>
+endobj
+2 0 R
+<<
+  /Type /Pages
+  /Kids [3 0 R]
+  /Count 1
+>>
+endobj
+3 0 R
+<<
+  /Type /Page
+  /Parent 2 0 R
+  /MediaBox [0 0 612 792]
+  /Contents 4 0 R
+  /Resources <<
+    /Font <<
+      /F1 5 0 R
+      /F2 6 0 R
+    >>
+  >>
+>>
+endobj
+4 0 R
+<<
+  /Length 2000
+>>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(GABRIEL SILVA SANTOS) Tj
+/F2 10 Tf
+0 -20 Td
+(gabriel.santos@email.com | (11) 99999-8888 | São Paulo, SP) Tj
+0 -30 Td
+/F1 11 Tf
+(DESENVOLVEDOR FULLSTACK) Tj
+0 -25 Td
+/F2 9 Tf
+(Desenvolvedor Fullstack com 5 anos de experiência em Python, Django e React.) Tj
+0 -15 Td
+(Com foco em APIs RESTful, autenticação JWT e integração com IA/NLP.) Tj
+0 -30 Td
+/F1 11 Tf
+(EXPERIÊNCIA PROFISSIONAL) Tj
+0 -20 Td
+/F2 9 Tf
+(TechCorp Ltda | Desenvolvedor Python Pleno | Jan 2023 - Presente) Tj
+0 -15 Td
+(- Automatizei 80% do atendimento ao cliente usando LLMs, reduzindo o tempo de resposta em 60%) Tj
+0 -12 Td
+(- Reduzi em 30% os erros de processamento de dados através de validação automatizada com PyTest) Tj
+0 -12 Td
+(- Aumentei em 40% a precisão das previsões de churn implementando modelo NLP com Django) Tj
+0 -18 Td
+(StartupXYZ | Desenvolvedor Júnior | Mar 2021 - Dez 2022) Tj
+0 -12 Td
+(- Desenvolvi API REST com Django REST Framework atendendo 10k+ usuários diários) Tj
+0 -12 Td
+(- Implementei pipeline CI/CD com GitHub Actions, reduzindo tempo de deploy em 70%) Tj
+0 -12 Td
+(- Criei dashboard em React com gráficos interativos para análise de métricas de negócio) Tj
+0 -30 Td
+/F1 11 Tf
+(FORMAÇÃO ACADÊMICA) Tj
+0 -20 Td
+/F2 9 Tf
+(Faculdade Estácio | Ciência da Computação | 2017 - 2021) Tj
+0 -15 Td
+(B7Web - Bootcamp Fullstack | 2021) Tj
+0 -15 Td
+(Django Master - Especialização | 2022) Tj
+0 -30 Td
+/F1 11 Tf
+(HABILIDADES) Tj
+0 -20 Td
+/F2 9 Tf
+(Python, Django, React, JavaScript, TypeScript, PostgreSQL, Docker, Git, API REST, JWT, NLP, LLMs) Tj
+0 -30 Td
+/F1 11 Tf
+(Links) Tj
+0 -20 Td
+/F2 9 Tf
+(https://github.com/gabriel-santos | https://linkedin.com/in/gabriel-santos | https://gabriel.dev) Tj
+ET
+endstream
+endobj
+5 0 R
+<<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Helvetica-Bold
+>>
+endobj
+6 0 R
+<<
+  /Type /Font
+  /Subtype /Type1
+  /BaseFont /Helvetica
+>>
+endobj
+xref
+0 7
+0000000000 65535 f
+0000000009 00000 n
+0000000074 00000 n
+0000000123 00000 n
+0000000306 00000 n
+0000002407 00000 n
+0000002486 00000 n
+trailer
+<<
+  /Size 7
+  /Root 1 0 R
+>>
+startxref
+2563
+%%EOF

@@ -485,7 +485,7 @@ async def analyze_cv(
             if not key or key.strip() == "":
                 raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
-            selected_model = model_name if (model_name and model_name.strip()) else "gpt-4o"
+            selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
             base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
             if not base_url:
                 base_url = "http://localhost:20128/v1"  # omniroute local

@@ -1,0 +1,120 @@
+{
+  "nota": 58.0,
+  "score_ats": 45,
+  "resumo_executivo": "O currículo apresenta uma base sólida de experiência operacional, mas sofre com uma estrutura de seções desorganizada e falta de foco em resultados quantitativos. A ordem das seções está invertida (Objetivo e Resumo ao final), o que prejudica a leitura imediata por recrutadores e sistemas ATS.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "As seções de 'Objetivo' e 'Resumo Profissional' estão posicionadas ao final do documento, quando deveriam ser as primeiras.",
+    "como_corrigir": "Reorganize o currículo na seguinte ordem: Cabeçalho, Resumo Profissional, Experiência Profissional, Formação Acadêmica e Habilidades."
+  },
+  "palavras_chave_presentes": [
+    "Administração",
+    "Atendimento ao cliente",
+    "Pacote Office",
+    "Planilhas",
+    "Relatórios"
+  ],
+  "palavras_chave_faltantes": [
+    "ERP",
+    "Gestão de documentos",
+    "Excel Avançado",
+    "KPIs",
+    "Atendimento ao cliente (CRM)"
+  ],
+  "pontos_fortes": [
+    "Experiência profissional clara e com tempo de permanência estável.",
+    "Domínio de ferramentas básicas de escritório (Office).",
+    "Formação técnica em andamento na área de interesse."
+  ],
+  "pontos_fracos": [
+    "Estrutura das seções fora do padrão de mercado.",
+    "Ausência de métricas de impacto (fórmula XYZ).",
+    "Dados pessoais incluem endereço completo (risco de privacidade)."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "dados_sensiveis",
+      "descricao": "Inclusão de endereço completo",
+      "exemplo": "Sebastião Martins Viana - Recreio Anhanguera, Ribeirão Preto"
+    },
+    {
+      "tipo": "ordem_secoes",
+      "descricao": "Seções de resumo e objetivo ao final do documento",
+      "exemplo": "Resumo Profissional posicionado após Habilidades"
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "atencao",
+      "score": 60,
+      "problema": "Endereço completo exposto",
+      "como_corrigir": "Remover endereço completo, manter apenas Cidade/Estado.",
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 70,
+      "problema": "Posição incorreta",
+      "como_corrigir": "Mover para o topo do currículo.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 50,
+      "problema": "Falta de métricas (Fórmula XYZ)",
+      "como_corrigir": "Adicionar resultados, ex: 'Redução de X% no tempo de resposta' ou 'Gestão de Y demandas diárias'.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 85,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 75,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 45,
+    "palavras_chave_faltantes": [
+      "Gestão de processos",
+      "Suporte administrativo",
+      "Organização"
+    ],
+    "gargalos_formatacao": [
+      "Ordem das seções confusa para leitura de robôs"
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O ATS pode ter dificuldade em identificar o resumo e objetivo devido à posição atípica no final do arquivo. A falta de métricas quantitativas reduz a pontuação de relevância."
+  },
+  "sugestoes": [
+    "Mova o 'Resumo Profissional' e 'Objetivo' para o topo, logo abaixo dos dados de contato.",
+    "Remova o endereço completo, deixando apenas 'Ribeirão Preto, SP'.",
+    "Aplique a fórmula XYZ na experiência: em vez de 'Atendimento ao cliente', use 'Realizei atendimento a X clientes/dia, garantindo 95% de satisfação através de agilidade no suporte'.",
+    "Destaque o curso técnico no SENAC como um diferencial competitivo."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2276,
+    "completion_tokens": 1010,
+    "total_tokens": 3286
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "ac12bfb9-87bf-415a-b0b4-cb4ff6d86b4c",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "http://wa.me/5516992472832",
+    "mailto:milena.scardoso09@gmail.com"
+  ]
+}

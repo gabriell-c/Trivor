@@ -1,0 +1,130 @@
+{
+  "nota": 82.0,
+  "score_ats": 65,
+  "resumo_executivo": "O currículo possui um excelente conteúdo técnico, destacando-se pelo uso brilhante de métricas e resultados (Fórmula XYZ) nas experiências profissionais. O resumo é objetivo e focado na stack. No entanto, a formatação do documento gerou um problema grave de hierarquia de leitura (cargos e datas aparecem após os bullet points), o que prejudicará severamente a leitura por sistemas ATS. Além disso, há mistura de cursos livres com educação formal e uma inconsistência cronológica na data da graduação.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": false,
+    "problema": "Na seção de Experiência, os bullet points descritivos estão aparecendo antes dos títulos dos cargos e datas. Na seção de Formação, cursos livres estão misturados com a graduação formal.",
+    "como_corrigir": "Reestruture a experiência para: 'Cargo | Empresa | Datas' e, abaixo, os bullet points. Separe a graduação (Estácio) em 'Formação Acadêmica' e mova B7Web e Django Master para uma seção de 'Cursos e Certificações'."
+  },
+  "palavras_chave_presentes": [
+    "Python",
+    "Django",
+    "React",
+    "API RESTful",
+    "JWT",
+    "NLP",
+    "LLMs",
+    "MySQL",
+    "Git",
+    "GitHub",
+    "PHP",
+    "Docker"
+  ],
+  "palavras_chave_faltantes": [
+    "Testes Automatizados",
+    "CI/CD",
+    "AWS",
+    "Cloud",
+    "Metodologias Ágeis (Scrum/Kanban)"
+  ],
+  "pontos_fortes": [
+    "Excelente aplicação da fórmula XYZ do Google, com métricas claras de impacto (ex: automatizando 80%, aumentando precisão em 40%, reduzindo erros em 30%).",
+    "Resumo profissional direto ao ponto, sem uso de clichês comportamentais vazios.",
+    "Stack tecnológica muito bem categorizada e alinhada com o perfil Fullstack."
+  ],
+  "pontos_fracos": [
+    "Problema de formatação/leitura: o ATS lerá as atividades antes de saber a qual cargo elas pertencem.",
+    "Data de início da graduação no futuro com status 'Presente' ('Fev. De 2026 – Presente'), o que é ilógico e confunde parsers.",
+    "Cursos livres estão ocupando muito espaço descritivo e competindo com a graduação formal."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [
+    {
+      "tipo": "inversao_hierarquia",
+      "descricao": "Atividades listadas antes do cargo e data correspondente.",
+      "exemplo": "Os bullets sobre o Chatbot aparecem antes do título 'Desenvolvedor Backend Freelancer'."
+    },
+    {
+      "tipo": "data_incoerente",
+      "descricao": "Uso de data futura como início de uma atividade em andamento.",
+      "exemplo": "'Fev. De 2026 – Presente' na Estácio de Sá."
+    }
+  ],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 90,
+      "problema": "Contém um pequeno artefato de extração ('segurançe arquitetura').",
+      "como_corrigir": "Revisar o PDF original para garantir que o texto seja 'segurança e arquitetura'.",
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "critico",
+      "score": 60,
+      "problema": "Apesar do excelente conteúdo e métricas, a estrutura está invertida (bullets antes do cargo), o que quebra a leitura do ATS.",
+      "como_corrigir": "Coloque o Cargo, Empresa e Período no topo de cada experiência, seguidos pelos bullet points.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "atencao",
+      "score": 65,
+      "problema": "Mistura de graduação com cursos livres e erro cronológico na data da faculdade.",
+      "como_corrigir": "Corrija a data da Estácio (ex: 'Início: 2024 - Previsão: Fev/2026'). Remova as descrições longas dos cursos livres e coloque-os em uma seção separada.",
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 65,
+    "palavras_chave_faltantes": [
+      "Testes Unitários",
+      "CI/CD",
+      "Cloud"
+    ],
+    "gargalos_formatacao": [
+      "Inversão de blocos de texto (descrições precedendo os títulos das vagas).",
+      "Quebras de linha no meio de frases (ex: 'reduzindo tempo de registro em \\n Até 40%')."
+    ],
+    "veredito_robos": "com_ressalvas",
+    "explicacao": "O robô terá extrema dificuldade em associar as excelentes conquistas descritas aos cargos corretos devido à inversão de formatação. Além disso, as quebras de linha inesperadas podem truncar a leitura de métricas importantes."
+  },
+  "sugestoes": [
+    "Reestruture o layout do seu PDF na seção de Experiência. A ordem obrigatória para ATS é: 1. Cargo, 2. Empresa, 3. Datas, 4. Bullet points.",
+    "Corrija a data da sua graduação. Se você se forma em 2026, escreva 'Fev. de [Ano de Início] - Previsão: Fev. de 2026'.",
+    "Crie uma seção 'Cursos e Certificações' apenas com os nomes e anos da B7Web e Django Master. Remova as descrições longas deles para dar mais destaque à sua experiência prática e à graduação.",
+    "Revise o PDF gerado para evitar quebras de linha no meio de frases (como ocorreu com 'Até 40%' e 'Usuário e clareza')."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2626,
+    "completion_tokens": 1646,
+    "total_tokens": 4272
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "7a929f03-00d2-4562-8c67-b32143089460",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "mailto:gabri3lcardoso07@gmail.com",
+    "https://portfolio--gabriel.vercel.app",
+    "https://linkedin.com/in/gabriell-cardoso",
+    "https://github.com/gabriell-c"
+  ]
+}
