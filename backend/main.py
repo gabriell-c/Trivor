@@ -351,27 +351,33 @@ def _detect_hyperlinks(text: str) -> list[dict[str, str]]:
     return results
 
 def _text_to_markdown(text: str) -> str:
-    """Converte texto extraído para markdown estruturado, PRESERVANDO a ordem original."""
+    """Converte texto extraído para markdown estruturado, PRESERVANDO a ordem original.
+
+    Headers de seção só são detectados quando a linha é CURTA (~35 chars) e corresponde
+    exatamente a um nome de seção conhecido — evita que bullets descritivos como
+    'Atuação em telemarketing...' sejam tratados como cabeçalho.
+    """
     import re
     lines = text.split('\n')
     result = []
 
     # Nomes de seções conhecidos (com variações possíveis)
+    # Todos usam $ no final para exigir match EXATO — evita falsos positivos
     SECTION_PATTERNS = [
-        r'^EXPERIÊNCIA', r'^EXPERIENCIA', r'^EXPERIENCIA(S|PROFISSIONAL)?',
-        r'^EDUCAÇÃO', r'^EDUCACAO',
-        r'^FORMAÇÃO', r'^FORMACAO',
-        r'^HABILIDADES', r'^SKILLS',
-        r'^IDIOMAS',
-        r'^OBJETIVO',
-        r'^RESUMO', r'^SOBRE',
-        r'^CERTIFICAÇÕES', r'^CERTIFICACOES',
-        r'^PROJETOS?', r'^LINKS?', r'^CONTATO',
-        r'^INFORMAÇÕES', r'^INFORMACOES',
-        r'^TRABALHO', r'^ATUAÇÃO', r'^ATUACAO',
-        r'^QUALIFICAÇÕES', r'^QUALIFICACOES',
-        r'^DADOS PESSOAIS', r'^DADOSPESSOAIS',
-        r'^INTERESSE', r'^INTERESSES',
+        r'^EXPERIÊNCIA(\s+PROFISSIONAL)?$', r'^EXPERIENCIA(\s+PROFISSIONAL)?$',
+        r'^EDUCAÇÃO(\s+ACADÊMICA)?$', r'^EDUCACAO(\s+ACADEMICA)?$',
+        r'^FORMAÇÃO(\s+ACADÊMICA)?$', r'^FORMACAO(\s+ACADEMICA)?$',
+        r'^HABILIDADES$', r'^SKILLS$',
+        r'^IDIOMAS$',
+        r'^OBJETIVO$',
+        r'^RESUMO(\s+PROFISSIONAL)?$', r'^SOBRE(\s+MIM|\s+EU)?$',
+        r'^CERTIFICAÇÕES(\s+E\s+QUALIFICAÇÕES)?$', r'^CERTIFICACOES(\s+E\s+QUALIFICACOES)?$',
+        r'^PROJETOS$', r'^LINKS$', r'^CONTATO$',
+        r'^INFORMAÇÕES(\s+PESSOAIS)?$', r'^INFORMACOES(\s+PESSOAIS)?$',
+        r'^TRABALHO$', r'^ATUAÇÃO$', r'^ATUACAO$',
+        r'^QUALIFICAÇÕES(\s+E\s+CERTIFICAÇÕES)?$', r'^QUALIFICACOES(\s+E\s+CERTIFICACOES)?$',
+        r'^DADOS\s+PESSOAIS$', r'^DADOSPESSOAIS$',
+        r'^INTERESSES?$',
     ]
 
     for line in lines:
@@ -380,13 +386,16 @@ def _text_to_markdown(text: str) -> str:
             result.append('')
             continue
 
-        # Detectar títulos de seção APENAS por nomes conhecidos
+        # Detectar títulos de seção APENAS se a linha for CURTA E corresponder EXATAMENTE
+        # a um nome de seção conhecido. Isso evita falsos positivos como
+        # "Atuação em telemarketing de cobrança ativa e receptiva" que não é header.
         is_header = False
         upper_stripped = stripped.upper()
-        for pattern in SECTION_PATTERNS:
-            if re.match(pattern, upper_stripped):
-                is_header = True
-                break
+        if len(stripped) <= 40:
+            for pattern in SECTION_PATTERNS:
+                if re.match(pattern, upper_stripped):
+                    is_header = True
+                    break
 
         if is_header:
             result.append(f'## {stripped}')
