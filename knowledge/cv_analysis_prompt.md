@@ -76,13 +76,9 @@ Sua tarefa é analisar currículos em português (BR) e retornar um diagnóstico
 - **ATENÇÃO MÁXIMA:** A LLM NÃO deve inventar erros ortográficos.
 - **Regra de ouro:** Se a palavra existe no texto extraído e está ortograficamente correta, NÃO a flagge.
 - **Dúvida?** Remova o erro. O viés deve ser sempre a favor do candidato.
-- **NUNCA flagge:**
-  * Palavras com 'ç' ou 'ã' ou 'õ' → pode ser artefato de OCR. NUNCA flagge.
-  * Palavras em MAIÚSCULAS → capitalização, não erro. NUNCA flagge.
-  * Siglas e acrônimos (API, AWS, CRM, HR, CV) → NUNCA flagge.
-  * Nomes próprios, marcas, tecnologias → NUNCA flagge.
-  * Palavras em inglês técnico (deploy, commit, branch, sprint) → NUNCA flagge.
-- **Só flagge erros REAIS e óbvios:** "exelente" (faltou 'c'), "desenvolvedr" (faltou 'o').
+- NÃO flagge termos estrangeiros (e.g., "software", "marketing", "financeiro").
+- Nomes de ferramentas, marcas e tecnologias NUNCA devem ser flaggados (ex: "Excel", "PowerPoint", "SAP").
+- **Só flagge erros REAIS e óbvios:** "exelente" (faltou 'c'), "otimo" (faltou 'ó').
 - Se não tiver 100% de certeza de que é erro real, NÃO inclua.
 
 ### 9. DADOS SENSÍVEIS

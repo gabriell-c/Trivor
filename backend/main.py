@@ -699,6 +699,53 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
 
+            # PÓS-PROCESSAMENTO: remover falsos positivos em outros campos
+            # 1) Quando área NÃO é especificada: zerar palavras-chave faltantes e forçar ordem correta
+            if not area_info:
+                analysis['palavras_chave_faltantes'] = []
+                if 'ordem_secoes' in analysis:
+                    analysis['ordem_secoes']['correta'] = True
+                    analysis['ordem_secoes']['problema'] = None
+                    analysis['ordem_secoes']['como_corrigir'] = None
+                # Remover pontos fracos que parecem assumir área de tech/dev
+                dev_keywords = {
+                    'linguagem', 'linguagen', 'framework', 'tech', 'tecnologia', 'api', 'banco de dados',
+                    'sql', 'javascript', 'python', 'java', 'react', 'angular', 'node', 'dev',
+                    'desenvolvimento', 'programação', 'código', 'software', 'frontend', 'backend',
+                    'fullstack', 'git', 'github', 'aws', 'azure', 'docker', 'kubernetes',
+                    'linguagens', 'programar', 'programação', 'scripts', 'biblioteca', 'frameworks',
+                }
+                if 'pontos_fracos' in analysis and isinstance(analysis['pontos_fracos'], list):
+                    analysis['pontos_fracos'] = [
+                        pf for pf in analysis['pontos_fracos']
+                        if not any(kw in pf.lower() for kw in dev_keywords)
+                    ]
+
+            # 2) Filtrar erros comuns detectados (mesmos critérios de grounding)
+            import unicodedata as _ud
+            def _norm(s):
+                return _ud.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
+            extracted_norm = _norm(markdown_text) if markdown_text else ""
+            if 'erros_comuns_detectados' in analysis and isinstance(analysis['erros_comuns_detectados'], list):
+                valid_comuns = []
+                for err in analysis['erros_comuns_detectados']:
+                    if not isinstance(err, dict):
+                        continue
+                    descricao = err.get('descricao', '')
+                    exemplo = err.get('exemplo', '')
+                    tipo = err.get('tipo', '')
+                    # Remover se o exemplo não existe no texto extraído
+                    if exemplo and _norm(exemplo) not in extracted_norm:
+                        continue
+                    # Remover se contém chars suspeitos de OCR
+                    if 'ç' in (exemplo or '') or 'ñ' in (exemplo or ''):
+                        continue
+                    # Remover se tipo é sobre capitalização
+                    if 'maiúscula' in descricao.lower() or 'capitaliz' in descricao.lower():
+                        continue
+                    valid_comuns.append(err)
+                analysis['erros_comuns_detectados'] = valid_comuns
+
             # Adicionar metadados compatíveis com o frontend
             analysis['uso_tokens'] = {
                 "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
