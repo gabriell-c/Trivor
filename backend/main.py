@@ -704,6 +704,9 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
             import re
             def _norm(s):
                 return _ud.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
+            # Normalização sem remover acentos — só lowercase + normalizaçao NFD
+            def _norm_accent(s):
+                return _ud.normalize('NFD', s).lower()
 
             # Extrair TODAS as palavras do texto extraído (tokenização por espaço+pontuação)
             _words_raw = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", markdown_text or "")
@@ -722,8 +725,8 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     # A) Palavra precisa existir como token isolado no texto extraído
                     if not word or _norm(word) not in _words_norm:
                         continue
-                    # B) Correcao não pode ser igual à palavra
-                    if correcao and _norm(correcao) == _norm(word):
+                    # B) Correcao não pode ser igual à palavra (comparação exata, não normalizada)
+                    if correcao and _norm_accent(correcao) == _norm_accent(word):
                         continue
                     # C) Tudo maiúsculo = capitalização, não erro
                     if word == word.upper() and len(word) > 1:
@@ -734,9 +737,15 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     # E) Acrônimos 3+ letras → ignorar
                     if len(word) >= 3 and word.isupper():
                         continue
-                    # F) Contexto NÃO pode conter palavras inexistentes no texto extraído
+                    # F) Correcao = word.upper() → é capitalização, não erro ortográfico
+                    if correcao and correcao == word.upper():
+                        continue
+                    # G) Palavra lowercase + correcao uppercase = capitalização, não erro
+                    if word.islower() and correcao and correcao.isupper():
+                        continue
+                    # H) Contexto NÃO pode conter palavras inexistentes no texto extraído
                     ctx_words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", contexto or '')
-                    if ctx_words and not all(_norm(w) in _words_norm for w in ctx_words):
+                    if ctx_words and not all(_norm(x) in _words_norm for x in ctx_words):
                         continue
                     valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
@@ -779,15 +788,22 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                         continue
                     descricao = err.get('descricao', '')
                     exemplo = err.get('exemplo', '')
-                    tipo = err.get('tipo', '')
+                    tipo = err.get('tipo', '').lower()
                     # Remover se exemplo não existe no texto
                     if exemplo and _norm(exemplo) not in _words_norm:
                         continue
                     # Remover se exemplo contém chars de OCR
                     if 'ç' in (exemplo or '') or 'ñ' in (exemplo or ''):
                         continue
-                    # Remover se tipo é capitalização
-                    if 'maiúscula' in descricao.lower() or 'capitaliz' in descricao.lower():
+                    # Remover se tipo/descrição é sobre capitalização (várias variações)
+                    desc_lower = descricao.lower()
+                    if (tipo in ('capitalizacao', 'capitalização', 'capitalization', 'uppercase', 'maiúscula', 'maiscula')
+                        or 'capitaliz' in desc_lower
+                        or 'maiúscula' in desc_lower
+                        or 'maiscula' in desc_lower
+                        or 'uppercase' in desc_lower
+                        or 'maiúscul' in desc_lower
+                        or 'maiúsc' in desc_lower):
                         continue
                     valid_comuns.append(err)
                 analysis['erros_comuns_detectados'] = valid_comuns
