@@ -619,6 +619,7 @@ REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
 }"""
 
             # Montar user message
+            area_info = target_role or area or ''
             user_content = f"""ANALISE ESTE CURRÍCULO COMPLETAMENTE.
 
 CURRÍCULO (Markdown):
@@ -631,7 +632,9 @@ INFORMAÇÕES ADICIONAIS:
 - Tipo de arquivo: {ext}
 - Extrator usado: {extractor_used}
 - Job description (se fornecida): {job_description or 'Nenhuma'}
-- Target role: {target_role or area or 'Não especificado'}
+- Target role: {area_info or 'Não especificado'}
+
+{f'- O candidato busca posição na área de: {area_info}' if area_info else '- ÁREA DO CANDIDATO NÃO ESPECIFICADA: não assuma nenhuma área (não assuma que é tecnologia, desenvolvimento, etc.). Analise o CV de forma genérica, avaliando apenas o que está escrito.'}
 
 Faça uma análise COMPLETA e DETALHADA do currículo."""
 
@@ -660,16 +663,32 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
 
             # VALIDAÇÃO DE GROUNDING: remover erros ortográficos alucinados
-            # Se a LLM reporta um erro, a palavra ERRADA deve EXISTIR no texto extraído.
-            # Se não existe, é alucinação e deve ser removida.
-            extracted_lower = markdown_text.lower() if markdown_text else ""
+            # Critérios de remoção:
+            # 1) Palavra não existe no texto extraído (normaliza acentos) → alucinação
+            # 2) Palavra == correcao → erro inexistente
+            # 3) Palavra toda em maiúsculas → capitalização, não erro
+            import unicodedata
+            def _norm(s: str) -> str:
+                return unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
+            extracted_norm = _norm(markdown_text) if markdown_text else ""
             if 'erros_ortograficos' in analysis and isinstance(analysis['erros_ortograficos'], list):
                 valid_errors = []
                 for err in analysis['erros_ortograficos']:
-                    word = err.get('palavra', '') if isinstance(err, dict) else str(err)
-                    if word and word.lower() in extracted_lower:
-                        valid_errors.append(err)
-                    # Se a palavra NÃO existe no texto extraído, é alucinação → remover
+                    if not isinstance(err, dict):
+                        continue
+                    word = err.get('palavra', '')
+                    correcao = err.get('correcao', '')
+
+                    # Critério 1: palavra deve existir no texto extraído (ignora acentos)
+                    if not word or _norm(word) not in extracted_norm:
+                        continue
+                    # Critério 2: correcao deve ser diferente da palavra
+                    if correcao and _norm(correcao) == _norm(word):
+                        continue
+                    # Critério 3: palavra toda em maiúsculas é capitalização, não erro
+                    if word == word.upper() and len(word) > 1:
+                        continue
+                    valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
 
             # Adicionar metadados compatíveis com o frontend
