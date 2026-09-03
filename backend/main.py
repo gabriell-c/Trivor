@@ -699,33 +699,79 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
 
-            # PÓS-PROCESSAMENTO: remover falsos positivos em outros campos
-            # 1) Quando área NÃO é especificada: zerar palavras-chave faltantes e forçar ordem correta
+            # === PÓS-PROCESSAMENTO DEFINITIVO: blindar contra falsos positivos ===
+            import unicodedata as _ud
+            import re
+            def _norm(s):
+                return _ud.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
+
+            # Extrair TODAS as palavras do texto extraído (tokenização por espaço+pontuação)
+            _words_raw = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", markdown_text or "")
+            _words_norm = set(_norm(w) for w in _words_raw)
+
+            # 1) ERRORS ORTOGRÁFICOS: validação rigorosa em nível de palavra
+            if 'erros_ortograficos' in analysis and isinstance(analysis['erros_ortograficos'], list):
+                valid_errors = []
+                for err in analysis['erros_ortograficos']:
+                    if not isinstance(err, dict):
+                        continue
+                    word = err.get('palavra', '')
+                    correcao = err.get('correcao', '')
+                    contexto = err.get('contexto', '')
+
+                    # A) Palavra precisa existir como token isolado no texto extraído
+                    if not word or _norm(word) not in _words_norm:
+                        continue
+                    # B) Correcao não pode ser igual à palavra
+                    if correcao and _norm(correcao) == _norm(word):
+                        continue
+                    # C) Tudo maiúsculo = capitalização, não erro
+                    if word == word.upper() and len(word) > 1:
+                        continue
+                    # D) Chars suspeitos de OCR → ignorar
+                    if 'ç' in word or 'ñ' in word:
+                        continue
+                    # E) Acrônimos 3+ letras → ignorar
+                    if len(word) >= 3 and word.isupper():
+                        continue
+                    # F) Contexto NÃO pode conter palavras inexistentes no texto extraído
+                    ctx_words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", contexto or '')
+                    if ctx_words and not all(_norm(w) in _words_norm for w in ctx_words):
+                        continue
+                    valid_errors.append(err)
+                analysis['erros_ortograficos'] = valid_errors
+
+            # 2) Quando área NÃO é especificada: blindagem total contra viés dev
             if not area_info:
                 analysis['palavras_chave_faltantes'] = []
                 if 'ordem_secoes' in analysis:
                     analysis['ordem_secoes']['correta'] = True
                     analysis['ordem_secoes']['problema'] = None
                     analysis['ordem_secoes']['como_corrigir'] = None
-                # Remover pontos fracos que parecem assumir área de tech/dev
+                # Palavras-chave que indicam viés de tech/dev
                 dev_keywords = {
-                    'linguagem', 'linguagen', 'framework', 'tech', 'tecnologia', 'api', 'banco de dados',
-                    'sql', 'javascript', 'python', 'java', 'react', 'angular', 'node', 'dev',
-                    'desenvolvimento', 'programação', 'código', 'software', 'frontend', 'backend',
-                    'fullstack', 'git', 'github', 'aws', 'azure', 'docker', 'kubernetes',
-                    'linguagens', 'programar', 'programação', 'scripts', 'biblioteca', 'frameworks',
+                    'linguagem', 'linguagen', 'linguagens', 'framework', 'frameworks',
+                    'tech', 'tecnologia', 'tecnologias', 'api', 'apis',
+                    'banco de dados', 'database', 'sql',
+                    'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'csharp',
+                    'react', 'angular', 'vue', 'node', 'nodejs', 'dev',
+                    'desenvolvimento', 'desenvolver', 'programação', 'programar',
+                    'código', 'codigos', 'software', 'frontend', 'backend', 'fullstack',
+                    'git', 'github', 'gitlab', 'aws', 'azure', 'docker', 'kubernetes',
+                    'k8s', 'ci/cd', 'pipeline', 'agile', 'scrum', 'sprint',
+                    'biblioteca', 'bibliotecas', 'scripts', 'script',
+                    'computador', 'computação', 'ti', 't.i.', 'informática',
                 }
                 if 'pontos_fracos' in analysis and isinstance(analysis['pontos_fracos'], list):
                     analysis['pontos_fracos'] = [
                         pf for pf in analysis['pontos_fracos']
                         if not any(kw in pf.lower() for kw in dev_keywords)
                     ]
+                # Se ainda sobrou algum ponto fraco com viés tech, zerar
+                if any(any(kw in pf.lower() for kw in dev_keywords) for pf in analysis.get('pontos_fracos', [])):
+                    analysis['pontos_fracos'] = []
 
-            # 2) Filtrar erros comuns detectados (mesmos critérios de grounding)
-            import unicodedata as _ud
-            def _norm(s):
-                return _ud.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
-            extracted_norm = _norm(markdown_text) if markdown_text else ""
+            # 3) ERROS COMUNS DETECTADOS: filtrar capitalização e OCR
             if 'erros_comuns_detectados' in analysis and isinstance(analysis['erros_comuns_detectados'], list):
                 valid_comuns = []
                 for err in analysis['erros_comuns_detectados']:
@@ -734,13 +780,13 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     descricao = err.get('descricao', '')
                     exemplo = err.get('exemplo', '')
                     tipo = err.get('tipo', '')
-                    # Remover se o exemplo não existe no texto extraído
-                    if exemplo and _norm(exemplo) not in extracted_norm:
+                    # Remover se exemplo não existe no texto
+                    if exemplo and _norm(exemplo) not in _words_norm:
                         continue
-                    # Remover se contém chars suspeitos de OCR
+                    # Remover se exemplo contém chars de OCR
                     if 'ç' in (exemplo or '') or 'ñ' in (exemplo or ''):
                         continue
-                    # Remover se tipo é sobre capitalização
+                    # Remover se tipo é capitalização
                     if 'maiúscula' in descricao.lower() or 'capitaliz' in descricao.lower():
                         continue
                     valid_comuns.append(err)
