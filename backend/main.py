@@ -663,10 +663,12 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
 
             # VALIDAÇÃO DE GROUNDING: remover erros ortográficos alucinados
-            # Critérios de remoção:
-            # 1) Palavra não existe no texto extraído (normaliza acentos) → alucinação
-            # 2) Palavra == correcao → erro inexistente
-            # 3) Palavra toda em maiúsculas → capitalização, não erro
+            # Critérios de remoção (todos devem passar para manter o erro):
+            # 1) Palavra deve existir no texto extraído (ignora acentos)
+            # 2) Palavra != correcao (senão é falso positivo)
+            # 3) Palavra NÃO pode ser toda maiúscula (capitalização não é erro)
+            # 4) Palavra NÃO pode conter 'ç' ou outros chars suspeitos de OCR
+            # 5) Palavra NÃO pode ser um acrônimo (3+ letras maiúsculas seguidas)
             import unicodedata
             def _norm(s: str) -> str:
                 return unicodedata.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
@@ -687,6 +689,12 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                         continue
                     # Critério 3: palavra toda em maiúsculas é capitalização, não erro
                     if word == word.upper() and len(word) > 1:
+                        continue
+                    # Critério 4: palavras com 'ç' ou chars suspeitos de OCR → ignorar
+                    if 'ç' in word or 'ñ' in word or any(ord(c) > 127 and c not in 'áéíóúâêîôûãõéèêëïîôùÿáàâéèêëïîôùÿ' for c in word):
+                        continue
+                    # Critério 5: acrônimos (3+ letras maiúsculas) → ignorar
+                    if len(word) >= 3 and word.isupper():
                         continue
                     valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
