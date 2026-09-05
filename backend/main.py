@@ -110,6 +110,8 @@ def success_response(data: dict = None, message: str = "Sucesso") -> JSONRespons
         }
     )
 
+DB_FILE = Path(__file__).parent / "market.db"
+
 app = FastAPI(
     title="Trivor - Motor de Análise de Currículos",
     description="API para análise de currículos, market intelligence e diagnóstico profissional",
@@ -1471,7 +1473,7 @@ async def analyze_market(
     if not base_url or base_url.strip() == "":
         base_url = "https://api.openai.com/v1"
 
-    DB_FILE = Path(__file__).parent / "market.db"
+    db_file = DB_FILE
     start_time = time.time()
 
     try:
