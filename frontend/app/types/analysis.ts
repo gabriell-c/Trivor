@@ -31,6 +31,41 @@ export interface AnaliseATS {
   explicacao?: string
 }
 
+export interface ChecklistValidacao {
+  // Formatação básica
+  pdf_selecionavel?: { selecionavel: boolean; problema?: string | null }
+  numero_paginas?: number
+  numero_paginas_valido?: boolean
+  numero_paginas_problema?: string | null
+  nome_arquivo?: { valido: boolean; nome: string; problema?: string | null }
+
+  // Dados pessoais
+  dados_sensiveis?: Array<{
+    tipo: string
+    descricao: string
+    exemplo?: string
+  }>
+  motivo_saida?: Array<{
+    tipo: string
+    descricao: string
+    exemplo?: string
+  }>
+
+  // Conteúdo
+  abreviacoes?: Array<{
+    tipo: string
+    descricao: string
+    exemplo?: string
+    sugestao?: string
+  }>
+  ordem_cronologica?: { cronologica: boolean; problema?: string | null }
+  profile_summary?: { genérico: boolean; problema?: string | null; sugestao?: string }
+  tech_stack_por_experiencia?: { por_experiencia: boolean; problema?: string | null }
+  projetos_com_link?: { com_links: boolean; problema?: string | null }
+  multiplos_curriculos?: { multiplos: boolean; nomes_encontrados?: string[]; problema?: string | null }
+  cover_letter?: { is_cover_letter: boolean; cover_letter_score?: number; cv_score?: number; problema?: string | null }
+}
+
 export interface AnalysisResult {
   nota?: number
   score_ats?: number
@@ -42,11 +77,20 @@ export interface AnalysisResult {
   palavras_chave_faltantes?: string[]
   pontos_fortes?: string[]
   pontos_fracos?: string[]
+  erros_ortograficos?: Array<{
+    palavra: string
+    contexto: string
+    correcao: string
+    gravidade: 'baixa' | 'medio' | 'alta'
+  }>
   erros_comuns_detectados?: ErroComum[]
   analise_secoes?: Record<string, AnaliseSecao>
   analise_ats?: AnaliseATS
   diagnostico_por_secao?: Record<string, SecaoDiagnostico>
   sugestoes?: string[]
+  checklist_validacao?: ChecklistValidacao
+  _links?: string[]
+  _extractor_used?: string
   uso_tokens?: {
     prompt_tokens: number
     completion_tokens: number

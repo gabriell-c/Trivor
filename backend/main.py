@@ -350,6 +350,376 @@ def _detect_hyperlinks(text: str) -> list[dict[str, str]]:
 
     return results
 
+
+# ---------------------------------------------------------------------------
+# Funções de Validação do Guia
+# ---------------------------------------------------------------------------
+
+def _check_pdf_selectable(pdf_path: str) -> dict:
+    """Verifica se o PDF é selecionável (texto real, não imagem escaneada)."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        page = doc[0]
+        # Verificar se há texto na primeira página
+        text = page.get_text("text")
+        doc.close()
+        if not text or len(text.strip()) < 50:
+            return {"selecionavel": False, "problema": "PDF parece ser imagem escaneada (pouco texto extraído)"}
+        return {"selecionavel": True, "problema": None}
+    except Exception as e:
+        logger.warning(f"[CHECK PDF] Falhou: {e}")
+        return {"selecionavel": True, "problema": None}  # Assume ok se não conseguir verificar
+
+
+def _count_pdf_pages(pdf_path: str) -> int:
+    """Conta número de páginas do PDF."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        pages = len(doc)
+        doc.close()
+        return pages
+    except Exception as e:
+        logger.warning(f"[PAGES] Falhou: {e}")
+        return 1
+
+
+def _detect_sensitive_data(text: str) -> list[dict]:
+    """Detecta CPF, RG, CTPS, dados bancários no texto."""
+    encontrados = []
+
+    # CPF: 11 dígitos com ou sem pontuação
+    cpf_pattern = r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'
+    if re.search(cpf_pattern, text):
+        encontrados.append({"tipo": "cpf", "descricao": "CPF detectado no currículo", "exemplo": "XXX.XXX.XXX-XX"})
+
+    # RG: 8-9 dígitos
+    rg_pattern = r'\b\d{8,9}\b'
+    # Filtrar para não confundir com anos
+    rg_matches = re.findall(rg_pattern, text)
+    for match in rg_matches:
+        num = int(match)
+        if 10000000 <= num <= 999999999:  # Intervalo típico de RG
+            encontrados.append({"tipo": "rg", "descricao": "RG detectado no currículo", "exemplo": match})
+
+    # CTPS
+    ctps_pattern = r'\b\d{6,9}\b'
+    if 'ctps' in text.lower() or 'carteira de trabalho' in text.lower():
+        encontrados.append({"tipo": "ctps", "descricao": "CTPS mencionada no currículo", "exemplo": "CTPS"})
+
+    # Dados bancários
+    banc_pattern = r'(agência|conta|banco|ficha|saldo)\s*[::]?\s*\d+'
+    if re.search(banc_pattern, text, re.IGNORECASE):
+        encontrados.append({"tipo": "dados_bancarios", "descricao": "Possíveis dados bancários detectados", "exemplo": "agência/conta"})
+
+    return encontrados
+
+
+def _detect_abbreviations(text: str) -> list[dict]:
+    """Detecta abreviações que o recrutador pode não entender."""
+    abreviacoes = []
+
+    # Mapeamento de abreviações comuns
+    abrev_map = {
+        'JS': 'JavaScript',
+        'html': 'HTML',
+        'css': 'CSS',
+        'UI': 'Interface do Usuário',
+        'UX': 'Experiência do Usuário',
+        'API': 'API',  # API é aceito, mas verificar contexto
+        'APIs': 'APIs',
+        'SDK': 'SDK',
+        'CLI': 'CLI',
+        'GUI': 'GUI',
+        'RAM': 'Memória RAM',
+        'CPU': 'CPU',
+        'GPU': 'GPU',
+    }
+
+    # Verificar cada abreviação
+    for abrev, expansao in abrev_map.items():
+        # Padrão: a abreviação isolada, não parte de outra palavra
+        pattern = rf'\b{abrev}\b'
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            # Não flaggear se for parte de nome próprio ou sigla conhecida
+            if match == 'API' or match == 'APIs':
+                continue  # API é amplamente aceito
+            # Verificar se está em contexto técnico aceito
+            ctx_start = max(0, text.find(match) - 30)
+            ctx_end = min(len(text), text.find(match) + len(match) + 30)
+            ctx = text[ctx_start:ctx_end].lower()
+            # Se o contexto já tem a expansão, não flaggear
+            if expansao.lower() in ctx:
+                continue
+            abreviacoes.append({
+                "tipo": "abreviacao",
+                "descricao": f"Abreviação '{match}' pode não ser clara para recrutadores",
+                "exemplo": match,
+                "sugestao": f"Escrever por extenso: {expansao}"
+            })
+
+    return abreviacoes
+
+
+def _check_chronological_order(text: str) -> dict:
+    """Verifica se experiências estão em ordem cronológica reversa."""
+    # Extrair padrões de datas
+    date_patterns = [
+        r'(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s+de\s+\d{4}',
+        r'\d{4}\s*[-–]\s*\d{4}',
+        r'(?:20\d{2}|19\d{2})\s*[-–]\s*(?:20\d{2}|19\d{2}|presente|atual)',
+    ]
+
+    dates = []
+    for pattern in date_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        dates.extend(matches)
+
+    # Extrair anos das datas
+    years = []
+    for d in dates:
+        year_matches = re.findall(r'20\d{2}|19\d{2}', d)
+        years.extend(year_matches)
+
+    if len(years) < 2:
+        return {"cronologica": True, "problema": None}  # Poucas datas, não avaliar
+
+    # Verificar se está em ordem decrescente
+    is_reverse = all(int(years[i]) >= int(years[i+1]) for i in range(len(years)-1))
+
+    if is_reverse:
+        return {"cronologica": True, "problema": None}
+    else:
+        return {
+            "cronologica": False,
+            "problema": "Experiências não estão em ordem cronológica reversa (mais recente primeiro)"
+        }
+
+
+def _check_profile_summary(text: str) -> dict:
+    """Verifica se o Profile Summary é genérico demais."""
+    genericos = [
+        'apaixonado por',
+        'adoro trabalhar',
+        'busco crescimento',
+        'em busca de',
+        'em procura de',
+        'interessado em',
+        'desejo atuar',
+        'procurando primeira',
+        'vagas de estagio',
+        'estagio',
+        'primeiro emprego',
+        'inicio de carreira',
+    ]
+
+    # Procurar por resumo/objetivo
+    resumo_patterns = [
+        r'(?i)resumo[:\s]+([^\n]+)',
+        r'(?i)objetivo[:\s]+([^\n]+)',
+        r'(?i)perfil[:\s]+([^\n]+)',
+    ]
+
+    for pattern in resumo_patterns:
+        match = re.search(pattern, text)
+        if match:
+            resumo = match.group(1).lower()
+            for gen in genericos:
+                if gen in resumo:
+                    return {
+                        "genérico": True,
+                        "problema": f"Profile Summary parece genérico: '{gen}'",
+                        "sugestao": "Seja específico: cargo + anos de exp + principal realização"
+                    }
+
+    return {"genérico": False, "problema": None}
+
+
+def _check_tech_stack_by_experience(text: str) -> dict:
+    """Verifica se tecnologias são mencionadas em cada experiência."""
+    # Procurar por experiências
+    exp_patterns = [
+        r'(?i)(desenvolvedor|analista|gerente|coordenador|assistente|vendedor|atendente|operador)[^\n]*\n([^\n]*\n){0,10}',
+    ]
+
+    # Extrair palavras-chave de tecnologia/área
+    tech_keywords = [
+        'python', 'java', 'javascript', 'typescript', 'c#', 'c++', 'php',
+        'react', 'angular', 'vue', 'node', 'django', 'flask', 'spring',
+        'sql', 'nosql', 'mongodb', 'postgresql', 'mysql',
+        'aws', 'azure', 'gcp', 'docker', 'kubernetes',
+        'git', 'github', 'gitlab',
+        'excel', 'power bi', 'tableau', 'sap',
+        'crm', 'erp', 'vendas', 'marketing', 'financeiro',
+        'atendimento', 'suporte', 'gestão', 'projeto',
+    ]
+
+    # Dividir por experiências (presumindo que há seções de experiência)
+    exp_sections = re.split(r'(?i)experiência|experiencia|trabalho|atuação|atuacao', text)
+
+    issues = []
+    for i, section in enumerate(exp_sections[1:]):  # Pular a primeira parte (antes da primeira experiência)
+        if len(section.strip()) < 50:
+            continue
+        # Verificar se há palavras-chave relevantes
+        section_lower = section.lower()
+        has_tech = any(kw in section_lower for kw in tech_keywords)
+        if not has_tech:
+            issues.append({
+                "experiencia": i + 1,
+                "problema": "Tecnologia/ferramenta não mencionada na descrição"
+            })
+
+    if issues:
+        return {
+            "por_experiencia": False,
+            "problema": f"{len(issues)} experiência(s) sem especificar tecnologias/ferramentas"
+        }
+    return {"por_experiencia": True, "problema": None}
+
+
+def _detect_Exit_Reason(text: str) -> list[dict]:
+    """Detecta menção a motivo de saída do emprego."""
+    motivos = [
+        'demissão',
+        'demissao',
+        'dispensa',
+        'justa causa',
+        'justacausa',
+        'pedido de demissão',
+        'pedido de demissa',
+        'rescisão',
+        'rescisao',
+        'saída',
+        'saida',
+        'foi demitido',
+        'fui demitido',
+        'processo seletivo',
+        'vaga aberta',
+    ]
+
+    encontrados = []
+    text_lower = text.lower()
+    for motivo in motivos:
+        if motivo in text_lower:
+            encontrados.append({
+                "tipo": "motivo_saida",
+                "descricao": f"Motivo de saída mencionado: '{motivo}'",
+                "exemplo": motivo
+            })
+
+    return encontrados
+
+
+def _check_project_links(text: str, links_info: list) -> dict:
+    """Verifica se projetos têm links."""
+    # Palavras-chave que indicam link de projeto/portfólio
+    projeto_keywords = {'github', 'gitlab', 'portfolio', 'codepen', 'behance', 'dribbble', 'linkedin', 'vercel', 'netlify'}
+
+    # Verificar se há links de projeto nos links extraídos do PDF
+    for link in links_info:
+        url = link.get('url', '').lower()
+        if any(kw in url for kw in projeto_keywords):
+            return {"com_links": True, "problema": None}
+
+    # Procurar por seção de projetos no texto
+    proj_patterns = [
+        r'(?i)projetos?[^\n]*(?:\n[^\n]+){0,20}',
+    ]
+
+    for pattern in proj_patterns:
+        matches = re.finditer(pattern, text)
+        for match in matches:
+            proj_section = match.group(0)
+            # Verificar se há URLs na seção
+            has_url = bool(re.search(r'https?://|www\.|linkedin\.com|github\.com|portfolio', proj_section, re.IGNORECASE))
+            if not has_url:
+                return {
+                    "com_links": False,
+                    "problema": "Projeto(s) sem link visível"
+                }
+
+    return {"com_links": True, "problema": None}
+
+
+def _detect_multiple_cvs(text: str) -> dict:
+    """Detecta se o documento parece conter múltiplos currículos misturados."""
+    # Procurar nomes de pessoas (padrão: 2+ palavras capitalizadas no início)
+    name_pattern = r'\b([A-Z][a-záàâãéêíóôõúçñ]+\s+[A-Z][a-záàâãéêíóôõúçñ]+(?:\s+[A-Z][a-záàâãéêíóôõúçñ]+)?)\b'
+    names = re.findall(name_pattern, text)
+
+    # Também procurar por padrões de seção de experiência múltipla
+    exp_sections = re.findall(r'(?i)experiência|experiencia|trabalho|atuação|atuacao', text)
+
+    # Se encontrou muitos nomes diferentes no documento, pode ser múltiplos CVs
+    # Nome no topo + nome em outra seção = possível mistura
+    distinct_names = list(set(n.lower() for n in names if len(n) > 5))
+
+    # Contar seções de experiência
+    exp_count = len(exp_sections)
+
+    problema = None
+    if len(distinct_names) >= 3 and exp_count >= 4:
+        problema = (
+            f"Documento parece conter múltiplos currículos: "
+            f"{len(distinct_names)} nomes diferentes encontrados ({', '.join(distinct_names[:3])}). "
+            f"Um currículo deve ter conteúdo de uma única pessoa."
+        )
+
+    return {
+        "multiplos": len(distinct_names) >= 3 and exp_count >= 4,
+        "nomes_encontrados": distinct_names[:5],
+        "problema": problema
+    }
+
+
+def _detect_cover_letter(text: str) -> dict:
+    """Detecta se o documento é uma cover letter em vez de um currículo."""
+    cover_letter_patterns = [
+        r'(?i)prezado\(a\)\s*senhor\(a\)',
+        r'(?i)sra\.?\s+\w+',
+        r'(?i)venho\s+por\s+meio\s+deste',
+        r'(?i)gostaria\s+de\s+me\s+candidatar',
+        r'(?i)vi\s+a\s+vaga',
+        r'(?i)referente\s+a\s+vaga',
+        r'(?i)espero\s+contar\s+com\s+a\s+oportunidade',
+        r'(?i)att\s*\.?\s*\w+',
+        r'(?i)atenciosamente',
+        r'(?i)cordialmente',
+        r'(?i)prezado\s+seletor',
+        r'(?i)respeitavelmente',
+    ]
+
+    cv_section_patterns = [
+        r'(?i)^experiência\s+profissional',
+        r'(?i)^educação\s+acadêmica',
+        r'(?i)^habilidades',
+        r'(?i)^idiomas',
+    ]
+
+    cover_score = 0
+    for pattern in cover_letter_patterns:
+        if re.search(pattern, text, re.MULTILINE):
+            cover_score += 1
+
+    cv_score = 0
+    for pattern in cv_section_patterns:
+        if re.search(pattern, text, re.MULTILINE):
+            cv_score += 1
+
+    # Se tem mais sinais de cover letter que de currículo, é provavelmente uma cover letter
+    is_cover_letter = cover_score >= 2 and cover_score > cv_score
+
+    return {
+        "is_cover_letter": is_cover_letter,
+        "cover_letter_score": cover_score,
+        "cv_score": cv_score,
+        "problema": "O documento parece ser uma Cover Letter, não um currículo. Envie o CV principal." if is_cover_letter else None
+    }
+
+
 def _text_to_markdown(text: str) -> str:
     """Converte texto extraído para markdown estruturado, PRESERVANDO a ordem original.
 
@@ -528,6 +898,91 @@ async def analyze_cv(
                         links_info.append({'url': url, 'valid': True})
             logger.info(f"[CV] Links detectados: {len(links_info)}")
 
+            # ====================================================================
+            # VALIDAÇÕES DO GUIA (CHECKLIST COMPLETO)
+            # ====================================================================
+            checklist_validacao = {}
+
+            # 1. Verificar se PDF é selecionável
+            if ext == '.pdf':
+                checklist_validacao['pdf_selecionavel'] = _check_pdf_selectable(temp_path)
+                checklist_validacao['numero_paginas'] = _count_pdf_pages(temp_path)
+                logger.info(f"[CHECKLIST] Páginas: {checklist_validacao['numero_paginas']}")
+
+            # 2. Verificar nome do arquivo
+            filename = cv_file.filename or ""
+            nome_valido = True
+            nome_problema = None
+            # Padrão: NomeSobrenome_CV.pdf ou NomeSobrenome_Resume.pdf
+            nome_sem_ext = os.path.splitext(filename)[0]
+            if not nome_sem_ext or len(nome_sem_ext) < 3:
+                nome_valido = False
+                nome_problema = "Nome do arquivo muito curto ou genérico"
+            elif re.match(r'^\d', nome_sem_ext):
+                nome_valido = False
+                nome_problema = "Nome do arquivo começa com número"
+            elif '_' not in nome_sem_ext and '-' not in nome_sem_ext:
+                nome_valido = False
+                nome_problema = "Nome do arquivo não segue padrão Nome_Sobrenome"
+            checklist_validacao['nome_arquivo'] = {
+                "valido": nome_valido,
+                "nome": filename,
+                "problema": nome_problema
+            }
+
+            # 3. Detectar dados sensíveis
+            dados_sensiveis = _detect_sensitive_data(markdown_text)
+            if dados_sensiveis:
+                logger.warning(f"[CHECKLIST] Dados sensíveis: {len(dados_sensiveis)} encontrados")
+            checklist_validacao['dados_sensiveis'] = dados_sensiveis
+
+            # 4. Detectar abreviações
+            abreviacoes = _detect_abbreviations(markdown_text)
+            if abreviacoes:
+                logger.info(f"[CHECKLIST] Abreviações: {len(abreviacoes)} encontradas")
+            checklist_validacao['abreviacoes'] = abreviacoes
+
+            # 5. Verificar ordem cronológica
+            ordem_check = _check_chronological_order(markdown_text)
+            checklist_validacao['ordem_cronologica'] = ordem_check
+
+            # 6. Verificar Profile Summary
+            resumo_check = _check_profile_summary(markdown_text)
+            checklist_validacao['profile_summary'] = resumo_check
+
+            # 7. Verificar tecnologias por experiência
+            tech_check = _check_tech_stack_by_experience(markdown_text)
+            checklist_validacao['tech_stack_por_experiencia'] = tech_check
+
+            # 8. Verificar links em projetos
+            projetos_check = _check_project_links(markdown_text, links_info)
+            checklist_validacao['projetos_com_link'] = projetos_check
+
+            # 9. Verificar motivo de saída
+            motivo_saida = _detect_Exit_Reason(markdown_text)
+            if motivo_saida:
+                logger.warning(f"[CHECKLIST] Motivo de saída: {len(motivo_saida)} encontrados")
+            checklist_validacao['motivo_saida'] = motivo_saida
+
+            # 10. Verificar número de páginas (punição se > 2)
+            num_paginas = checklist_validacao.get('numero_paginas', 1)
+            if num_paginas > 2:
+                checklist_validacao['numero_paginas_valido'] = False
+                checklist_validacao['numero_paginas_problema'] = f"Curriculum com {num_paginas} páginas, máximo recomendado é 2"
+            else:
+                checklist_validacao['numero_paginas_valido'] = True
+                checklist_validacao['numero_paginas_problema'] = None
+
+            # 11. Verificar múltiplos currículos
+            multi_check = _detect_multiple_cvs(markdown_text)
+            checklist_validacao['multiplos_curriculos'] = multi_check
+
+            # 12. Verificar se é cover letter
+            cover_check = _detect_cover_letter(markdown_text)
+            checklist_validacao['cover_letter'] = cover_check
+
+            logger.info(f"[CHECKLIST] Validações concluídas: {list(checklist_validacao.keys())}")
+
             # Configurar cliente OpenAI
             key = api_key or os.getenv("OPENAI_API_KEY", "")
             if not key or key.strip() == "":
@@ -701,7 +1156,6 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
 
             # === PÓS-PROCESSAMENTO DEFINITIVO: blindar contra falsos positivos ===
             import unicodedata as _ud
-            import re
             def _norm(s):
                 return _ud.normalize('NFD', s.lower()).encode('ascii', 'ignore').decode('ascii')
             # Normalização sem remover acentos — só lowercase + normalizaçao NFD
@@ -728,15 +1182,24 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     # B) Correcao não pode ser igual à palavra (comparação exata, não normalizada)
                     if correcao and _norm_accent(correcao) == _norm_accent(word):
                         continue
-                    # C) Tudo maiúsculo = capitalização, não erro
+                    # C) Tudo maiúsculo: só ignorar se a forma lowercase existir no texto extraído
+                    #    (ex: "API" é sigla correta, mas "REDUSEI" não existe mesmo em lowercase)
                     if word == word.upper() and len(word) > 1:
-                        continue
+                        # Verificar se a versão lowercase existe no texto como palavra correta
+                        word_lower = word.lower()
+                        if _norm(word_lower) in _words_norm:
+                            continue  # palavra existe no texto em lowercase → é capitalização, não erro
+                        # Se não existe no texto, pode ser erro ortográfico mesmo em caps
+                        # (ex: "REDUSEI" → lowercase "redusei" não existe → erro real)
                     # D) Chars suspeitos de OCR → ignorar
                     if 'ç' in word or 'ñ' in word:
                         continue
-                    # E) Acrônimos 3+ letras → ignorar
+                    # E) Acrônimos 3+ letras que existem no texto → ignorar
                     if len(word) >= 3 and word.isupper():
-                        continue
+                        word_lower = word.lower()
+                        if _norm(word_lower) in _words_norm:
+                            continue
+                        # Se não existe no texto, pode ser erro (ex: "REDUSEI" em caps)
                     # F) Correcao = word.upper() → é capitalização, não erro ortográfico
                     if correcao and correcao == word.upper():
                         continue
@@ -746,6 +1209,14 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                     # H) Contexto NÃO pode conter palavras inexistentes no texto extraído
                     ctx_words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", contexto or '')
                     if ctx_words and not all(_norm(x) in _words_norm for x in ctx_words):
+                        continue
+                    # I) Correção NÃO pode conter palavras inexistentes
+                    if correcao:
+                        corr_words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", correcao)
+                        if corr_words and not all(_norm(x) in _words_norm for x in corr_words):
+                            continue
+                    # J) Palavra não pode ser duas palavras juntas (ex: "seguran ca" → artefato OCR)
+                    if ' ' in word or '\n' in word or '-' in word:
                         continue
                     valid_errors.append(err)
                 analysis['erros_ortograficos'] = valid_errors
@@ -779,6 +1250,18 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                 # Se ainda sobrou algum ponto fraco com viés tech, zerar
                 if any(any(kw in pf.lower() for kw in dev_keywords) for pf in analysis.get('pontos_fracos', [])):
                     analysis['pontos_fracos'] = []
+                # Filtrar resumo_executivo: remover apenas menções a FALTA de skills tech
+                if 'resumo_executivo' in analysis and isinstance(analysis['resumo_executivo'], str):
+                    # Só filtrar se o resumo mencionar falta/déficit de competências tech
+                    missing_tech_pattern = re.compile(
+                        r'(falta|ausência|deveria ter|precisa|deveria possuir|lucro|ganho|vantagem).*(linguagem|framework|tech|tecnolog|api|sql|git|aws|docker|react|node|python|java|frontend|backend|fullstack|programa|código|script)',
+                        re.IGNORECASE
+                    )
+                    sentences = re.split(r'(?<=[.!?])\s+', analysis['resumo_executivo'])
+                    cleaned = [s for s in sentences if not missing_tech_pattern.search(s)]
+                    if len(cleaned) < len(sentences):
+                        analysis['resumo_executivo'] = ' '.join(cleaned)
+                        analysis['resumo_executivo'] = re.sub(r'\s+', ' ', analysis['resumo_executivo']).strip()
 
             # 3) ERROS COMUNS DETECTADOS: filtrar capitalização e OCR
             if 'erros_comuns_detectados' in analysis and isinstance(analysis['erros_comuns_detectados'], list):
@@ -805,8 +1288,42 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                         or 'maiúscul' in desc_lower
                         or 'maiúsc' in desc_lower):
                         continue
+                    # Remover se erro é sobre capitalização: palavra + correção = mesma palavra em cases diferentes
+                    if correcao and word.lower() == correcao.lower() and word != correcao:
+                        continue
+                    # Remover se exemplo é toda maiúscula e a versão lowercase existe no texto
+                    if exemplo and exemplo == exemplo.upper() and len(exemplo) > 1:
+                        if _norm(exemplo.lower()) in _words_norm:
+                            continue
                     valid_comuns.append(err)
                 analysis['erros_comuns_detectados'] = valid_comuns
+
+            # 4) CONSISTÊNCIA NARRATIVA: se não há erros ortográficos, remover pontos fracos que alegam erros ortográficos
+            has_spelling_errors = bool(analysis.get('erros_ortograficos'))
+            spelling_pattern = re.compile(
+                r'erro[s]? ortográfic[os]?|erros? de ortografia|erros? gramaticais|ortograf[icose]?|deslizes? ortográfic[os]?|erros? de digita[çc][ao]|erros? de escrita|digitacao|ajuste[s]? ortográfic[os]?|corre[çc][ao]es? ortográfic[as]?',
+                re.IGNORECASE
+            )
+            if 'pontos_fracos' in analysis and isinstance(analysis['pontos_fracos'], list) and not has_spelling_errors:
+                analysis['pontos_fracos'] = [
+                    pf for pf in analysis['pontos_fracos']
+                    if not spelling_pattern.search(pf)
+                ]
+                # Remover pontos fracos que mencionam artefatos de OCR (ç, ñ, espaços quebrados)
+                ocr_pattern = re.compile(r'segurançe|artefato[zs]? de extra[çc][ao]|artefato[s]? OCR|quebra[s]? de linha|formata[çc][ao]', re.IGNORECASE)
+                analysis['pontos_fracos'] = [
+                    pf for pf in analysis['pontos_fracos']
+                    if not ocr_pattern.search(pf)
+                ]
+            # Filtrar resumo_executivo: remover menções a erros ortográficos se não há erros reais
+            if 'resumo_executivo' in analysis and isinstance(analysis['resumo_executivo'], str) and not has_spelling_errors:
+                # Remover frases inteiras que mencionam erro ortográfico
+                sentences = re.split(r'(?<=[.!?])\s+', analysis['resumo_executivo'])
+                cleaned = [s for s in sentences if not spelling_pattern.search(s)]
+                analysis['resumo_executivo'] = ' '.join(cleaned)
+                # Limpeza final
+                analysis['resumo_executivo'] = re.sub(r'\s+', ' ', analysis['resumo_executivo']).strip()
+                analysis['resumo_executivo'] = re.sub(r'([.,;:!])\s*\1+', r'\1', analysis['resumo_executivo'])
 
             # Adicionar metadados compatíveis com o frontend
             analysis['uso_tokens'] = {
@@ -819,7 +1336,8 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                 "request_id": str(uuid.uuid4()),
                 "response_time_ms": 0,
             }
-            # Links e extractor são campos internos, não expostos ao frontend
+            # Adicionar checklist de validação do guia
+            analysis['checklist_validacao'] = checklist_validacao
             analysis['_extractor_used'] = extractor_used
             analysis['_links'] = [l['url'] for l in links_info]
 

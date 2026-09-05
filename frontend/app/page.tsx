@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Eye, AlertTriangle, Target, FileCode2, ChevronDown } from 'lucide-react'
+import { FileText, Upload, Sparkles, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, RotateCcw, BarChart3, Download, Eye, AlertTriangle, Target, FileCode2, ChevronDown, Link2 } from 'lucide-react'
 import type { AnalysisResult, AnaliseSecao, ErroComum, OrdemSecoes, AnaliseATS } from './types/analysis'
 import { API_BASE_URL } from './lib/api'
 import { CustomSelect } from './components/CustomSelect'
@@ -619,6 +619,37 @@ export default function Home() {
             </div>
           ) : null}
 
+          {/* Erros ortográficos */}
+          {res.erros_ortograficos && res.erros_ortograficos.length > 0 && (
+            <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <XCircle className="w-4 h-4 text-rose-400" /> Erros Ortográficos
+              </h2>
+              <div className="space-y-2">
+                {res.erros_ortograficos.map((err, i) => (
+                  <div key={i} className="rounded-xl bg-slate-950/60 border border-rose-500/20 p-4">
+                    <div className="flex items-start gap-3">
+                      <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-bold text-rose-400 font-mono">{err.palavra}</span>
+                          <span className="text-slate-500">→</span>
+                          <span className="text-xs font-bold text-emerald-400 font-mono">{err.correcao}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                            err.gravidade === 'alta' ? 'bg-rose-500/20 text-rose-300' :
+                            err.gravidade === 'medio' ? 'bg-amber-500/20 text-amber-300' :
+                            'bg-slate-500/20 text-slate-400'
+                          }`}>{err.gravidade}</span>
+                        </div>
+                        <p className="text-xs text-slate-500">{err.contexto}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Erros comuns detectados */}
           {res.erros_comuns_detectados && res.erros_comuns_detectados.length > 0 && (
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
@@ -626,6 +657,225 @@ export default function Home() {
                 <AlertTriangle className="w-4 h-4 text-amber-400" /> Erros Comuns Detectados
               </h2>
               {renderErrosComuns(res.erros_comuns_detectados)}
+            </div>
+          )}
+
+          {/* Checklist do Guia */}
+          {res.checklist_validacao && (
+            <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Checklist do Guia
+              </h2>
+              <div className="space-y-3">
+                {/* Nome do arquivo */}
+                {res.checklist_validacao.nome_arquivo && (
+                  <div className={`flex items-start gap-3 p-3 rounded-xl ${
+                    res.checklist_validacao.nome_arquivo.valido
+                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      : 'bg-rose-500/10 border border-rose-500/20'
+                  }`}>
+                    {res.checklist_validacao.nome_arquivo.valido
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Nome do Arquivo</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.nome_arquivo.valido
+                          ? 'Nome adequado encontrado'
+                          : (res.checklist_validacao.nome_arquivo.problema || 'Verificar nome')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Número de páginas */}
+                {res.checklist_validacao.numero_paginas !== undefined && (
+                  <div className={`flex items-start gap-3 p-3 rounded-xl ${
+                    res.checklist_validacao.numero_paginas_valido
+                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      : 'bg-amber-500/10 border border-amber-500/20'
+                  }`}>
+                    {res.checklist_validacao.numero_paginas_valido
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      : <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Número de Páginas</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.numero_paginas} página{res.checklist_validacao.numero_paginas > 1 ? 's' : ''}
+                        {res.checklist_validacao.numero_paginas_problema && (
+                          <span className="ml-2 text-rose-400">— {res.checklist_validacao.numero_paginas_problema}</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF selecionável */}
+                {res.checklist_validacao.pdf_selecionavel && (
+                  <div className={`flex items-start gap-3 p-3 rounded-xl ${
+                    res.checklist_validacao.pdf_selecionavel.selecionavel
+                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      : 'bg-rose-500/10 border border-rose-500/20'
+                  }`}>
+                    {res.checklist_validacao.pdf_selecionavel.selecionavel
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">PDF Selecionável</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.pdf_selecionavel.selecionavel
+                          ? 'Texto pode ser selecionado (Ctrl+F funciona)'
+                          : (res.checklist_validacao.pdf_selecionavel.problema || 'PDF parece ser imagem escaneada')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dados sensíveis */}
+                {res.checklist_validacao.dados_sensiveis && res.checklist_validacao.dados_sensiveis.length > 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                    <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Dados Sensíveis Detectados</p>
+                      <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
+                        {res.checklist_validacao.dados_sensiveis.map((d, i) => (
+                          <li key={i}>• {d.descricao}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Abreviações */}
+                {res.checklist_validacao.abreviacoes && res.checklist_validacao.abreviacoes.length > 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Abreviações Encontradas</p>
+                      <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
+                        {res.checklist_validacao.abreviacoes.map((a, i) => (
+                          <li key={i}>• {a.descricao} {a.sugestao && <span className="text-emerald-400">→ {a.sugestao}</span>}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ordem cronológica */}
+                {res.checklist_validacao.ordem_cronologica && (
+                  <div className={`flex items-start gap-3 p-3 rounded-xl ${
+                    res.checklist_validacao.ordem_cronologica.cronologica
+                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                      : 'bg-amber-500/10 border border-amber-500/20'
+                  }`}>
+                    {res.checklist_validacao.ordem_cronologica.cronologica
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      : <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    }
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Ordem Cronológica</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.ordem_cronologica.cronologica
+                          ? 'Experiências em ordem reversa (mais recente primeiro)'
+                          : (res.checklist_validacao.ordem_cronologica.problema || 'Verificar ordem')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profile Summary */}
+                {res.checklist_validacao.profile_summary && res.checklist_validacao.profile_summary.genérico && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Profile Summary Genérico</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.profile_summary.problema}
+                        {res.checklist_validacao.profile_summary.sugestao && (
+                          <span className="ml-2 text-emerald-400">— {res.checklist_validacao.profile_summary.sugestao}</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Projetos com link */}
+                {res.checklist_validacao.projetos_com_link && !res.checklist_validacao.projetos_com_link.com_links && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Projetos sem Link</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {res.checklist_validacao.projetos_com_link.problema || 'Adicionar link para projetos'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Motivo de saída */}
+                {res.checklist_validacao.motivo_saida && res.checklist_validacao.motivo_saida.length > 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                    <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Motivo de Saída Detectado</p>
+                      <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
+                        {res.checklist_validacao.motivo_saida.map((m, i) => (
+                          <li key={i}>• {m.descricao}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {res.checklist_validacao.multiplos_curriculos && res.checklist_validacao.multiplos_curriculos.problema && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Múltiplos Currículos</p>
+                      <p className="text-xs text-slate-400 mt-1">{res.checklist_validacao.multiplos_curriculos.problema}</p>
+                    </div>
+                  </div>
+                )}
+
+                {res.checklist_validacao.cover_letter && res.checklist_validacao.cover_letter.problema && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-200">Possível Cover Letter</p>
+                      <p className="text-xs text-slate-400 mt-1">{res.checklist_validacao.cover_letter.problema}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Links Detectados */}
+          {res._links && res._links.length > 0 && (
+            <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <Link2 className="w-4 h-4 text-emerald-400" /> Links Detectados ({res._links.length})
+              </h2>
+              <div className="space-y-2">
+                {res._links.map((url, i) => (
+                  <a
+                    key={i}
+                    href={url.startsWith('http') ? url : `https://${url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-emerald-500/30 transition-colors group"
+                  >
+                    <Link2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    <span className="text-sm text-slate-300 group-hover:text-emerald-300 truncate">{url}</span>
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 
