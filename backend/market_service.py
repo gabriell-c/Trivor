@@ -21,7 +21,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
-_MAX_JOBS_FOR_ANALYSIS = 300
+_MAX_JOBS_FOR_ANALYSIS = 500
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
@@ -123,17 +123,18 @@ _JSEARCH_HEADERS = {
 
 def _fetch_jsearch_jobs(
     query: str,
-    country: str = "cn",
-    language: str = "zh",
-    num_pages: int = 2,
+    country: str = "br",
+    language: str = "pt",
+    num_pages: int = 8,
     api_keys: List[str] = None,
+    date_posted: str = "all",
 ) -> List[Dict]:
     """Através JSearch API busca vagas reais, com fallback entre múltiplas chaves."""
     if not api_keys:
         return []
 
     params = urllib.parse.quote_plus(query)
-    url_template = f"{_JSEARCH_API_URL}?query={params}&country={country}&language={language}&num_pages={num_pages}&date_posted=all"
+    url_template = f"{_JSEARCH_API_URL}?query={params}&country={country}&language={language}&num_pages={num_pages}&date_posted={date_posted}"
 
     keys_tried = []
     for api_key in api_keys:
@@ -262,7 +263,7 @@ def _update_jsearch_usage(db_file: Path, key: str, remaining: int):
     conn.close()
 
 
-def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None):
+def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all"):
     """Gera vagas mock se a base estiver vazia.
     Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro.
     """
@@ -284,7 +285,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
             valid_keys = [k.strip() for k in jsearch_api_keys if k and k.strip()]
             if valid_keys:
                 search_query = job_title.strip()
-                sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=4, api_keys=valid_keys)
+                sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=8, api_keys=valid_keys, date_posted=date_posted)
                 logger.info(f"[MARKET] JSearch retornou {len(sample_jobs)} vagas reais")
                 # Atualiza uso no DB
                 if used_key_remaining is not None and valid_keys:
@@ -522,6 +523,14 @@ def _detect_job_seniority(job_text_lower: str) -> str:
     return ''
 
 
+def map_time_window_to_date_posted(time_window: str) -> str:
+    """Mapeia time_window do frontend para valor da API JSearch."""
+    tw = time_window.lower().strip()
+    if '30' in tw or '60' in tw or '90' in tw:
+        return 'month'
+    return 'all'
+
+
 def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str], seniority: str, location: str) -> int:
     """Retorna score de relevância. Score == 0 = rejeitado no pré-filtro."""
     # Se não tem stack definido, usa o job_title como fallback
@@ -534,25 +543,14 @@ def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str],
     if stack_hits == 0 and title_hits == 0:
         return 0  # Nenhuma keyword encontrada → vaga irrelevante
 
-    # REJEIÇÃO RÍGIDA DE SENIORIDADE INCOMPATÍVEL
-    job_sen = _detect_job_seniority(job_text_lower)
-    if job_sen:
-        user_sen = seniority.lower()
-        rejects = _SENIORITY_REJECTS.get(user_sen, [])
-        for r in rejects:
-            if r in job_text_lower:
-                # Verifica se é a mesma palavra (não parte de outra)
-                if re.search(r'\b' + re.escape(r) + r'\b', job_text_lower, re.IGNORECASE):
-                    return 0  # Senioridade incompatível → rejeita
-
     score = 0
 
-    # Stack keywords
+    # Stack keywords — bônus se encontrar no texto
     for kw in keywords:
         if kw.lower() in job_text_lower:
             score += 3
 
-    # Senioridade — bônus se bater
+    # SENIORITY — bônus se bater, mas NUNCA rejeita (preferencial, não obrigatório)
     sen_matches = _SENIORITY_MATCHES.get(seniority.lower(), [])
     for sm in sen_matches:
         if sm in job_text_lower:
@@ -1059,7 +1057,8 @@ def run_market_analysis(
     conn = sqlite3.connect(db_file)
     conn.cursor().execute("DELETE FROM market_raw_jobs")
     conn.commit()
-    generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys)
+    date_posted = map_time_window_to_date_posted(time_window)
+    generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys, date_posted=date_posted)
 
     stack_list = [s.strip() for s in target_stack.split(",") if s.strip()]
     neg_list = [k.strip().lower() for k in negative_keywords.split(",") if k.strip()]
