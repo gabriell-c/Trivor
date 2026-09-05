@@ -108,10 +108,18 @@ export default function MarketIntelligencePage() {
       formData.set('model_name', marketProvider.modelName)
     }
 
-    // Envia chaves JSearch se configuradas (múltiplas com fallback)
-    const jsearchKeysRaw = localStorage.getItem('trivor_jsearch_keys')
-    const jsearchKeys = jsearchKeysRaw ? JSON.parse(jsearchKeysRaw) : []
-    formData.set('jsearch_api_keys', Array.isArray(jsearchKeys) ? jsearchKeys.join(',') : '')
+    // Busca chaves JSearch do backend (onde são salvas na página de settings)
+    let jsearchKeysStr = ''
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/jsearch/keys`)
+      if (res.ok) {
+        const data = await res.json()
+        jsearchKeysStr = (data.keys || [])
+          .map((k: { api_key: string }) => k.api_key)
+          .join(',')
+      }
+    } catch {}
+    formData.set('jsearch_api_keys', jsearchKeysStr)
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/market/analyze`, { method: 'POST', body: formData })

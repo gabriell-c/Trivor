@@ -1624,22 +1624,25 @@ async def api_test_jsearch_key(
     """Testa uma chave JSearch e retorna status."""
     import urllib.request, json
     try:
+        import urllib.parse
+        query = urllib.parse.quote_plus("test")
         req = urllib.request.Request(
-            'https://jsearch.p.rapidapi.com/jobs',
+            f'https://api.openwebninja.com/jsearch/search-v2?query={query}&country=br&language=pt&num_pages=1',
             headers={
-                'X-RapidAPI-Key': api_key,
-                'X-RapidAPI-Host': 'jsearch.p.rapidapi.com'
+                'X-API-Key': api_key,
+                'Accept': 'application/json'
             },
             method='GET'
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
+            jobs = data.get("data", {}).get("jobs", [])
             return {
                 "valid": True,
                 "data": {
-                    "rate_limit": data.get('x-ratelimit-limit', 'N/A'),
-                    "rate_limit_remaining": data.get('x-ratelimit-remaining', 'N/A'),
-                    "total_results": data.get('data', {}).get('total', 0)
+                    "rate_limit": resp.headers.get("x-ratelimit-limit"),
+                    "rate_limit_remaining": resp.headers.get("x-ratelimit-remaining"),
+                    "total_results": len(jobs)
                 }
             }
     except Exception as e:
