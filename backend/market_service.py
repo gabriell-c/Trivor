@@ -150,7 +150,7 @@ def _fetch_jsearch_jobs(
                 data = json.loads(resp.read().decode("utf-8"))
 
             if data.get("status") == "OK":
-                raw_jobs = data.get("data", [])
+                raw_jobs = data.get("data", {}).get("jobs", [])
                 jobs = _build_jobs_from_raw(raw_jobs, country)
                 remaining = resp.headers.get("x-ratelimit-remaining")
                 total = resp.headers.get("x-ratelimit-limit")
