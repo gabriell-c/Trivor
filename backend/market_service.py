@@ -177,7 +177,7 @@ def _generate_sample_jobs(job_title: str) -> List[Dict]:
         n_tech = random.randint(3, min(6, max(1, len(tech_keywords)))) if tech_keywords else 3
         n_tech = min(n_tech, len(tech_keywords))
         skills = random.sample(tech_keywords, n_tech)
-        n_soft = random.randint(2, min(4, len(soft_skills_pool)))
+        n_soft = random.randint(2, min(8, len(soft_skills_pool)))
         soft = random.sample(soft_skills_pool, n_soft)
         n_cert = min(random.randint(0, 2) if level != "Júnior" else 0, len(certs_pool))
         certs = random.sample(certs_pool, n_cert)
@@ -790,45 +790,55 @@ def _pre_filter_jobs(
 # Extração com IA (vaga única)
 # ---------------------------------------------------------------------------
 
-def extract_job_with_ai(client: OpenAI, selected_model: str, job_text: str, target_stack: List[str]) -> Dict[str, Any]:
+def extract_job_with_ai(client: OpenAI, selected_model: str, job_text: str, target_stack: List[str], seniority: str = "Pleno", location: str = "Remoto Nacional") -> Dict[str, Any]:
     """Usa IA para extrair dados estruturados de uma vaga de forma rigorosa."""
     job_title_context = target_stack[0] if target_stack else "diversas áreas"
-    prompt = f"""
-Você é um extrator de dados de vagas de emprego. Sua tarefa é extrair TODOS os dados estruturados da descrição da vaga.
+    prompt = f"""Analise esta vaga e extraia dados estruturados.
 
-REGRAS FUNDAMENTAIS:
-1. Grounding: Apenas extraia o que estiver EXPLICITAMENTE mencionado na vaga. Nunca invente dados.
-2. Se um campo não estiver mencionado, retorne null / array vazio.
-3. requirements: Extraia TUDO que a vaga exige — skills técnicas, ferramentas, softwares, idiomas, certificações, formações, registros profissionais. Seja abrangente.
-4. nice_to_have: Extraia diferenciais, desejáveis ou preferenciais listados na vaga.
-5. certifications: Extraia certificações, registros profissionais, qualificações formais (ex: AWS, Azure, PMP, Kubernetes, Scrum Master, MBA, etc).
-6. soft_skills: Extraia habilidades comportamentais mencionadas — comunicação, liderança, trabalho em equipe, proatividade, resolução de problemas, etc.
-7. role_level: Identifique o nível (Júnior/Pleno/Sênior/Especialista) baseado na experiência exigida e no título.
-8. exp_years_min/max: Extraia os anos mínimos e máximos de experiência.
+CLASSIFICAÇÃO — pergunte a si mesma para CADA item:
+1. É um CONHECIMENTO/FERRAMENTA que a pessoa PRECISA TER? -> requirements
+2. É um TRAÇO COMPORTAMENTAL (atitude, forma de agir)? -> soft_skills
+3. É um TÍTULO OFICIAL de certificação? -> certifications
+4. É Desejável mas não Obrigatório? -> nice_to_have
+5. Se NÃO se encaixa em 1-4 -> NÃO é skill. Ignore.
 
-JSON Esperado:
-{{
+CATEGORIAS:
+- requirements: só conhecimento técnico, ferramentas, linguagens, idiomas, formação acadêmica
+- soft_skills: só traços comportamentais (proatividade, liderança, comunicação, etc)
+- certifications: só certificações formais (AWS, PMP, OAB, etc)
+- nice_to_have: diferenciais técnicos não obrigatórios
+
+RELEVÂNCIA: is_relevant=TRUE se o cargo for compatível com o perfil do usuário.
+
+Perfil: cargo={job_title_context}, stack={", ".join(target_stack)}, seniority={seniority}, location={location}
+
+Descrição da vaga:
+{job_text}
+
+*** VERIFICAÇÃO FINAL (leia ANTES de gerar o JSON) ***
+PARA CADA ITEM nos campos requirements e soft_skills, responda:
+"Isso é conhecimento/traço da PESSOA, ou algo que a EMPRESA oferece/processa?"
+- EMPRESA PAGA (auxílio, vale, plano, bônus, refeição, Gympass) -> NÃO é skill
+- EMPRESA ORGANIZA (remoto, híbrido, home office, flexível) -> NÃO é skill
+- PROCESSO/ROTINA (code review, standup, pair programming, reunião) -> NÃO é skill
+- RESPONSABILIDADE DO CARGO (o que a pessoa faz no dia a dia) -> NÃO é skill
+- ANOS DE EXPERIÊNCIA (X anos, 2-5 anos, mínimo X anos) -> vai para exp_years_min/exp_years_max, NÃO é skill
+- SOMENTE se a PESSOA PRECISA SABER/TER -> é skill.
+
+Apenas depois dessa verificação, retorne o JSON abaixo:
+{
   "is_relevant": true|false,
   "role_level": "Júnior"|"Pleno"|"Sênior"|"Especialista"|null,
   "exp_years_min": número|null,
   "exp_years_max": número|null,
-  "requirements": ["requisito1", "ferramenta1", "idioma"],
-  "nice_to_have": ["diferencial1"],
-  "certifications": ["certificação1", "AWS", "PMP"],
-  "soft_skills": ["comunicação", "trabalho em equipe", "proatividade"],
+  "requirements": ["Python", "React"],
+  "nice_to_have": ["AWS"],
+  "certifications": ["PMP"],
+  "soft_skills": ["proatividade", "trabalho em equipe"],
   "salary_min": número|null,
   "salary_max": número|null,
   "currency": "BRL"|"USD"|null
-}}
-
-Cargo Alvo do Usuário: {job_title_context}
-Skills Principais do Usuário: {", ".join(target_stack)}
-Senioridade Alvo: {seniority}
-Localização Alvo: {location}
-
-Descrição da Vaga:
-{job_text}
-""".strip()
+}"""
     try:
         response = client.chat.completions.create(
             model=selected_model,
@@ -855,7 +865,201 @@ Descrição da Vaga:
 # Extração em lote (múltiplas vagas por chamada — muito mais rápido)
 # ---------------------------------------------------------------------------
 
+
+def _sanitize_requirements(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Safety net: remove obvious non-skills from requirements and soft_skills."""
+    import re as _re
+    # Each pattern matches a SUBSTRING of the term — if found, the term is NOT a skill
+    benefit_patterns = [
+        r"auxílio", r"auxilio", r"vale\s+\w+", r"vr[/\-]\s*va", r"va[/\-]\s*vr",
+        r"plano\s+de\s+saúde", r"plano\s+de\s+saude",
+        r"refeição", r"alimentação", r"alimentacao", r"transporte\b", r"bônus", r"bonus",
+        r"profit\s*share", r"stock\s*(options?|option)", r"seguro\s+de\s+vida",
+        r"previdência", r"previdencia", r"participação\s+nos\s+lucros",
+        r"vaga\s+de\s+férias", r"day\s+off", r"psychological\s+support",
+        r"\bgympass\b", r"\bgypass\b", r"\bgoldpass\b",
+        r"carteira\s+(refeição|alimentação|alimentacao)",
+        r"reembolso",
+    ]
+    modality_patterns = [
+        r"\bremoto\b", r"\bhíbrido\b", r"\bhibrido\b", r"\bhome\s+office\b",
+        r"\bflexível\b", r"\bflexivel\b", r"\bpresencial\b",
+        r"modelo\s+(híbrido|hibrido)\b", r"\btrabalho\s+(remoto|hibrido|híbrido)\b",
+        r"\bescritório\s+(híbrido|hibrido)\b",
+    ]
+    process_patterns = [
+        r"\bcode\s+review\b", r"\bpair\s+(programming|program)\b", r"\bstandup\b",
+        r"\bretro\b", r"\breunião?\b", r"\bcerimônia?\b", r"\bcerimonia?\b",
+    ]
+    experience_patterns = [
+        r"[\d]+\s*(?:a\s+[\d]+)?\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
+        r"[\d]+\s*[\+]\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
+        r"experiência\s+(?:de\s+)?[\d]+\s*anos?",
+        r"[\d]+\s*(?:a|até)\s*[\d]+\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
+        r"mínimo\s*de\s*[\d]+\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
+    ]
+
+    combined = "|".join(benefit_patterns + modality_patterns + process_patterns + experience_patterns)
+    term_pattern = _re.compile(combined, _re.IGNORECASE)
+
+    for field in ("requirements", "soft_skills"):
+        if field not in item or not isinstance(item[field], list):
+            continue
+        original = item[field]
+        cleaned = [term for term in original if not term_pattern.search(term.strip())]
+        item[field] = cleaned
+    return item
+
+
+def _extract_languages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Detecta idiomas nos requirements/nice_to_have e os separa para o campo languages."""
+    import re as _re
+
+    # Padrões de idioma: nome do idioma + nível (opcional)
+    # Aceita: "Inglês Avançado", "Inglês C1", "B2 Inglês", "Português (Nativo)", "Intermediate Spanish", etc.
+    language_name_pattern = _re.compile(
+        r'''(?:inglês|english|espanhol|spanish|português|portuguese|francês|french|alemão|german|
+ italiano|italian|holandês|dutch|japonês|japanese|chinês|chinese|coreano|korean|
+ árabe|arabic|russo|russian|italiano| italian|mandarim|mandarin|turco|turkish|
+ polonês|polish|hindi|hebra|hebrew|sueco|swedish|norueguês|norwegian|
+ grego|greek|tâmil|tamil|tailandês|thai|vietnamita|vietnamese)''',
+        _re.IGNORECASE
+    )
+
+    # Padrões de nível
+    cefr_levels = _re.compile(
+        r'\b(a1|a2|b1|b2|c1|c2)\b',
+        _re.IGNORECASE
+    )
+    level_words = _re.compile(
+        r'''\b(básico|basico|intermediário|intermediario|avançado|avancado|
+ avançado|avançada|fluente|nativo|nativa|elementar|proficiente|
+ native|fluent|advanced|intermediate|beginner|basic|upper|upper.?intermediate)\b''',
+        _re.IGNORECASE
+    )
+
+    languages = []
+    for field in ("requirements", "nice_to_have"):
+        if field not in item or not isinstance(item[field], list):
+            continue
+        original = item[field]
+        cleaned = []
+        for term in original:
+            term_stripped = term.strip()
+            if language_name_pattern.search(term_stripped):
+                # Extrai nome do idioma
+                lang_match = language_name_pattern.search(term_stripped)
+                lang_name = lang_match.group(0)
+                # Normaliza nome
+                lang_name_lower = lang_name.lower().strip()
+                name_map = {
+                    "inglês": "Inglês", "english": "Inglês",
+                    "espanhol": "Espanhol", "spanish": "Espanhol",
+                    "português": "Português", "portuguese": "Português",
+                    "francês": "Francês", "french": "Francês",
+                    "alemão": "Alemão", "german": "Alemão",
+                    "italiano": "Italiano", "italian": "Italiano",
+                    "holandês": "Holandês", "dutch": "Holandês",
+                    "japonês": "Japonês", "japanese": "Japonês",
+                    "chinês": "Chinês", "chinese": "Chinês",
+                }
+                display_name = name_map.get(lang_name_lower, lang_name.capitalize())
+
+                # Extrai nível
+                level = None
+                cefr = cefr_levels.search(term_stripped)
+                if cefr:
+                    level = cefr.group(1).upper()
+                else:
+                    lvl_match = level_words.search(term_stripped)
+                    if lvl_match:
+                        lvl_lower = lvl_match.group(1).lower()
+                        level_map = {
+                            "básico": "Básico", "basico": "Básico", "beginner": "Básico", "basic": "Básico",
+                            "intermediário": "Intermediário", "intermediario": "Intermediário", "intermediate": "Intermediário",
+                            "avançado": "Avançado", "avancado": "Avançado", "advanced": "Avançado",
+                            "fluente": "Fluente", "fluent": "Fluente",
+                            "nativo": "Nativo", "nativa": "Nativo", "native": "Nativo",
+                            "elementar": "Elementar", "proficiente": "Proficiente",
+                        }
+                        level = level_map.get(lvl_lower, lvl_match.group(1).capitalize())
+
+                languages.append({
+                    "name": display_name,
+                    "level": level,
+                    "raw": term_stripped,
+                })
+            else:
+                cleaned.append(term)
+        item[field] = cleaned
+
+    return languages
+
+
 _BATCH_SIZE = 6  # vagas por chamada IA — menor para maior confiabilidade
+
+# Controla se o warning de batch mismatch já foi logado na execução atual
+_batch_mismatch_warned = False
+
+
+def _parse_batch_response(data: Any, expected: int) -> List[Dict[str, Any]]:
+    """Tenta extrair a lista de jobs da resposta da IA, lidando com formatos variados."""
+    # Caso 1: resposta já é uma lista
+    if isinstance(data, list):
+        valid = [item for item in data if isinstance(item, dict)]
+        return valid
+    # Caso 2: resposta é um dict — tenta extrair array de chaves conhecidas
+    if isinstance(data, dict):
+        for key in ("results", "data", "jobs", "extraction", "vagas"):
+            if key in data and isinstance(data[key], list):
+                return [item for item in data[key] if isinstance(item, dict)]
+        # Se o dict parece um job individual, retorna como lista de 1
+        # O chamador deve lidar com a discrepância de tamanho
+        if "requirements" in data or "soft_skills" in data:
+            return [data]
+    # Caso 3: não consegue extrair nada
+    return []
+
+
+def _pad_missing_jobs(
+    data: List[Dict[str, Any]],
+    expected: int,
+    client: OpenAI,
+    selected_model: str,
+    job_texts: List[str],
+    target_stack: List[str],
+    seniority: str,
+    location: str,
+) -> List[Dict[str, Any]]:
+    """Completa jobs faltantes usando heurística quando a IA não retorna todos."""
+    if len(data) >= expected:
+        return data
+
+    # Limita aos primeiros N jobs que a IA retornou
+    jobs_from_ai = data[:expected]
+
+    # Para os jobs faltantes, usa heurística
+    missing_count = expected - len(jobs_from_ai)
+    for i in range(missing_count):
+        if i < len(job_texts):
+            heuristic_result = heuristic_extract(job_texts[i])
+            jobs_from_ai.append(heuristic_result)
+        else:
+            jobs_from_ai.append({
+                "is_relevant": True,
+                "role_level": None,
+                "exp_years_min": None,
+                "exp_years_max": None,
+                "requirements": [],
+                "nice_to_have": [],
+                "certifications": [],
+                "soft_skills": [],
+                "salary_min": None,
+                "salary_max": None,
+                "currency": None,
+            })
+
+    return jobs_from_ai
 
 
 def _fallback_extract_jobs(
@@ -907,53 +1111,52 @@ def extract_jobs_batched(
 
     start_time = time.time()
 
-    prompt = f"""
-Você é um extrator de dados de vagas de emprego.
-Analise CADA vaga abaixo e extraia os dados estruturados.
+    prompt = f"""Analise CADA vaga abaixo e extraia dados estruturados.
 
-REGRAS DE EXTRAÇÃO:
-1. Grounding: Apenas extraia o que estiver EXPLICITAMENTE mencionado. Nunca invente dados.
-2. Se um campo não estiver mencionado, retorne null / array vazio.
-3. requirements: Extraia TUDO que a vaga exige — skills, ferramentas, softwares, idiomas, certificações, formações, registros profissionais, conhecimentos específicos. Para qualquer tipo de trabalho (médico, advogado, enfermeiro, vendedora, aeromoça, professor, etc), liste os requisitos concretos mencionados.
-4. nice_to_have: Extraia diferenciais, desejáveis ou preferenciais listados na vaga.
-5. certifications: Extraia certificações, registros profissionais, habilitações ou qualificações formais exigidas ou desejáveis (ex: CRM, OAB, CREFITO, etc).
+CLASSIFICAÇÃO — pergunte a si mesma para CADA item de CADA vaga:
+1. É um CONHECIMENTO/FERRAMENTA que a pessoa PRECISA TER? -> requirements
+2. É um TRAÇO COMPORTAMENTAL (atitude, forma de agir)? -> soft_skills
+3. É um TÍTULO OFICIAL de certificação? -> certifications
+4. É Desejável mas não Obrigatório? -> nice_to_have
+5. Se NÃO se encaixa em 1-4 -> NÃO é skill. Ignore.
 
-REGRAS DE RELEVÂNCIA (is_relevant):
-- Defina is_relevant=TRUE SE a vaga for potencialmente interessante para o usuário, considerando:
-  1. O cargo/título da vaga está relacionado com as skills do usuário
-  2. A senioridade (Júnior/Pleno/Sênior) é compatível ou próxima da senioridade alvo
-  3. A modalidade (Remoto/Híbrido/Presencial) é aceitável
-- Para vagas de saúde/direito/educação etc, considere relevante se o cargo corresponder à área de atuação do usuário
-- Defina is_relevant=FALSE apenas se a vaga for claramente fora do perfil do usuário
-- NÃO descarte vagas só porque não menciona todas as skills do usuário — se o cargo for compatível, marque como relevante
-- Vagas remotas são SEMPRE relevantes independentemente da localização
-- Para cargos de nível júnior/pleno, vagas que exigem 1-3 anos de experiência são relevantes
+CATEGORIAS:
+- requirements: só conhecimento técnico, ferramentas, linguagens, idiomas, formação acadêmica
+- soft_skills: só traços comportamentais (proatividade, liderança, comunicação, etc)
+- certifications: só certificações formais (AWS, PMP, OAB, etc)
+- nice_to_have: diferenciais técnicos não obrigatórios
 
-Você DEVE retornar APENAS um JSON array, sem texto adicional. Formato:
-[
-  {{
-    "is_relevant": true|false,
-    "role_level": "Júnior"|"Pleno"|"Sênior"|"Especialista"|null,
-    "exp_years_min": número|null,
-    "exp_years_max": número|null,
-    "requirements": ["requisito1"],
-    "nice_to_have": ["diferencial1"],
-    "certifications": ["certificação1"],
-    "soft_skills": ["comunicação"],
-    "salary_min": número|null,
-    "salary_max": número|null,
-    "currency": "BRL"|"USD"|null
-  }}
-]
+RELEVÂNCIA: is_relevant=TRUE se o cargo for compatível com o perfil do usuário. Vagas remotas são SEMPRE relevantes.
 
-Perfil do Usuário:
-- Cargo alvo: {job_title_context}
-- Skills/habilidades: {stack_str}
-- Senioridade alvo: {seniority}
-- Localidade: {location}
+Perfil: cargo={job_title_context}, stack={stack_str}, seniority={seniority}, location={location}
 
 {jobs_section}
-"""
+
+*** VERIFICAÇÃO FINAL (leia ANTES de gerar o JSON) ***
+PARA CADA ITEM nos campos requirements e soft_skills de CADA vaga, responda:
+"Isso é conhecimento/traço da PESSOA, ou algo que a EMPRESA oferece/processa?"
+- EMPRESA PAGA (auxílio, vale, plano, bônus, refeição, Gympass) -> NÃO é skill
+- EMPRESA ORGANIZA (remoto, híbrido, home office, flexível) -> NÃO é skill
+- PROCESSO/ROTINA (code review, standup, pair programming, reunião) -> NÃO é skill
+- RESPONSABILIDADE DO CARGO (o que a pessoa faz no dia a dia) -> NÃO é skill
+- ANOS DE EXPERIÊNCIA (X anos, 2-5 anos, mínimo X anos) -> vai para exp_years_min/exp_years_max, NÃO é skill
+- SOMENTE se a PESSOA PRECISA SABER/TER -> é skill.
+
+Apenas depois dessa verificação, retorne um JSON array com EXATAMENTE {len(job_texts)} objetos:
+Formato de cada objeto:
+[{{
+  "is_relevant": true|false,
+  "role_level": "Júnior"|"Pleno"|"Sênior"|"Especialista"|null,
+  "exp_years_min": número|null,
+  "exp_years_max": número|null,
+  "requirements": ["Python", "React"],
+  "nice_to_have": ["AWS"],
+  "certifications": ["PMP"],
+  "soft_skills": ["proatividade", "trabalho em equipe"],
+  "salary_min": número|null,
+  "salary_max": número|null,
+  "currency": "BRL"|"USD"|null
+}}]"""
     try:
         response = client.chat.completions.create(
             model=selected_model,
@@ -968,14 +1171,27 @@ Perfil do Usuário:
         content = re.sub(r'｜thinking｜.*?／｜thinking｜', '', content, flags=re.DOTALL).strip()
         # Remove any remaining <thinking>...</thinking>
         content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
-        data = json.loads(content)
+        raw = json.loads(content)
+        data = _parse_batch_response(raw, len(job_texts))
         elapsed = (time.time() - start_time) * 1000
 
         # Log raw response for first batch (debug level)
         if len(job_texts) <= 12:
-            logger.debug(f"[DEBUG] AI response ({len(data) if isinstance(data, list) else 'invalid'} items):")
-            for i, item in enumerate(data[:3] if isinstance(data, list) else []):
-                logger.debug(f"  [{i}] keys={list(item.keys()) if isinstance(item, dict) else type(item)}, is_relevant={item.get('is_relevant') if isinstance(item, dict) else 'N/A'}, reqs={item.get('requirements')}")
+            logger.debug(f"[DEBUG] AI response parsed {len(data)} items, expected {len(job_texts)}. Preview: {content[:500]}...")
+
+        # Se a IA retornou menos jobs que o esperado, tenta completar com heurística
+        if len(data) < len(job_texts):
+            logger.warning(
+                f"[WARN] batch size mismatch: parsed {len(data)} jobs from {len(job_texts)}. "
+                f"Completing missing jobs with heuristics."
+            )
+            data = _pad_missing_jobs(data, len(job_texts), client, selected_model, job_texts, target_stack, seniority, location)
+        elif len(data) > len(job_texts):
+            # IA retornou mais jobs que o esperado — truncar
+            logger.warning(
+                f"[WARN] batch size mismatch: parsed {len(data)} jobs from {len(job_texts)}. Truncating to {len(job_texts)}."
+            )
+            data = data[:len(job_texts)]
 
         # Log AI call
         try:
@@ -987,15 +1203,21 @@ Perfil do Usuário:
                 model=selected_model,
                 api_key_preview="ia_call...",
                 request_body={"batch_size": len(job_texts), "model": selected_model},
-                response_summary=f"Extracted {len(data) if isinstance(data, list) else 0} jobs",
+                response_summary=f"Extracted {len(data)} jobs",
             )
         except Exception:
             pass
 
-        if isinstance(data, list) and len(data) == len(job_texts):
+        if len(data) == len(job_texts):
             return data
-        # Se o tamanho não bater, fazer fallback heurístico vaga por vaga
-        logger.warning(f"[WARN] batch size mismatch: got {len(data) if isinstance(data, list) else 'invalid'}, expected {len(job_texts)}")
+        # Se ainda houver discrepância após padding, fazer fallback heurístico completo
+        global _batch_mismatch_warned
+        if not _batch_mismatch_warned:
+            logger.warning(
+                f"[WARN] batch size mismatch: parsed {len(data)} jobs from {len(job_texts)}. "
+                f"Falling back to per-job extraction."
+            )
+            _batch_mismatch_warned = True
         return _fallback_extract_jobs(client, selected_model, job_texts, target_stack, seniority, location)
     except Exception as e:
         logger.warning(f"[WARN] batch extraction failed: {e}")
@@ -1042,6 +1264,7 @@ def run_market_analysis(
                 "modalities": [],
                 "top_soft_skills": [],
                 "top_certifications": [],
+                "top_languages": [],
             },
             "sample_jobs": [],
         }
@@ -1064,6 +1287,9 @@ def run_market_analysis(
 
         for idx, (job_id, title, company, description, loc, mod, source, source_url, job_text) in enumerate(batch):
             extracted = batch_results[idx] if idx < len(batch_results) else {}
+            extracted = _sanitize_requirements(extracted)
+            # Extract languages from requirements/nice_to_have
+            extracted_languages = _extract_languages(extracted)
             is_rel = extracted.get("is_relevant", False)
 
             # Se a IA marcou como irrelevante mas a heurística diz o contrário, confia na heurística
@@ -1117,6 +1343,7 @@ def run_market_analysis(
                 "exp_years_max": extracted.get("exp_years_max"),
                 "soft_skills": extracted.get("soft_skills", []),
                 "certifications": extracted.get("certifications", []),
+                "languages": extracted_languages,
                 "salary_min": extracted.get("salary_min"),
                 "salary_max": extracted.get("salary_max"),
                 "currency": extracted.get("currency"),
@@ -1136,6 +1363,7 @@ def run_market_analysis(
     cert_counts = {}
     modality_counts = {}
     exp_years_list = []
+    language_level_counts = {}  # {"Inglês": {"B2": 5, "C1": 3}}
 
     for ej in extracted_jobs:
         if not ej["is_relevant"]:
@@ -1154,6 +1382,12 @@ def run_market_analysis(
         modality_counts[mod] = modality_counts.get(mod, 0) + 1
         if ej["exp_years_min"] is not None:
             exp_years_list.append(ej["exp_years_min"])
+        for lang in ej.get("languages", []):
+            lname = lang.get("name", "Desconhecido")
+            llevel = lang.get("level") or "Não especificado"
+            if lname not in language_level_counts:
+                language_level_counts[lname] = {}
+            language_level_counts[lname][llevel] = language_level_counts[lname].get(llevel, 0) + 1
 
     # Ranking Technologies
     req_ranking = [
@@ -1170,6 +1404,16 @@ def run_market_analysis(
         {"name": mod, "count": count, "percentage": round((count / rel_total) * 100, 1)}
         for mod, count in sorted(modality_counts.items(), key=lambda x: x[1], reverse=True)
     ]
+
+    # Idiomas Ranking (nome + nível mais citado)
+    language_ranking = []
+    for lname, levels in sorted(language_level_counts.items(), key=lambda x: sum(x[1].values()), reverse=True):
+        top_level_name, top_level_count = max(levels.items(), key=lambda x: x[1])
+        language_ranking.append({
+            "name": lname,
+            "count": sum(levels.values()),
+            "top_level": top_level_name,
+        })
 
     # Anos de experiência (Mediana + Distribuição)
     exp_years_sorted = sorted(exp_years_list)
@@ -1220,10 +1464,14 @@ def run_market_analysis(
             "exp_years_distribution": exp_dist,
             "modalities": modality_ranking,
             "top_soft_skills": [
-                {"name": k, "count": v} for k, v in sorted(soft_skills_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                {"name": k, "count": v} for k, v in sorted(soft_skills_counts.items(), key=lambda x: x[1], reverse=True)[:15]
             ],
             "top_certifications": [
-                {"name": k, "count": v} for k, v in sorted(cert_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                {"name": k, "count": v} for k, v in sorted(cert_counts.items(), key=lambda x: x[1], reverse=True)[:15]
+            ],
+            "top_languages": [
+                {"name": r["name"], "count": r["count"], "top_level": r["top_level"]}
+                for r in language_ranking[:15]
             ]
         },
         "sample_jobs": extracted_jobs[:100]

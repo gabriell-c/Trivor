@@ -25,6 +25,7 @@ import {
   MapPin as MapPinIcon,
   Link as LinkIcon,
   ExternalLink,
+  Globe,
 } from 'lucide-react'
 import { CustomInput } from '../components/CustomInput'
 import { CustomSelect } from '../components/CustomSelect'
@@ -32,27 +33,8 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
+import { BRAZILIAN_STATES, MAIN_COUNTRIES } from '../lib/locations'
 import type { MarketAnalysisResult, MarketReport, MarketJob } from '../types/analysis'
-
-const BRAZILIAN_STATES = [
-  { value: 'AC', label: 'Acre' }, { value: 'AL', label: 'Alagoas' }, { value: 'AP', label: 'Amapá' },
-  { value: 'AM', label: 'Amazonas' }, { value: 'BA', label: 'Bahia' }, { value: 'CE', label: 'Ceará' },
-  { value: 'DF', label: 'Distrito Federal' }, { value: 'ES', label: 'Espírito Santo' }, { value: 'GO', label: 'Goiás' },
-  { value: 'MA', label: 'Maranhão' }, { value: 'MT', label: 'Mato Grosso' }, { value: 'MS', label: 'Mato Grosso do Sul' },
-  { value: 'MG', label: 'Minas Gerais' }, { value: 'PA', label: 'Pará' }, { value: 'PB', label: 'Paraíba' },
-  { value: 'PR', label: 'Paraná' }, { value: 'PE', label: 'Pernambuco' }, { value: 'PI', label: 'Piauí' },
-  { value: 'RJ', label: 'Rio de Janeiro' }, { value: 'RN', label: 'Rio Grande do Norte' },
-  { value: 'RS', label: 'Rio Grande do Sul' }, { value: 'RO', label: 'Rondônia' }, { value: 'RR', label: 'Roraima' },
-  { value: 'SC', label: 'Santa Catarina' }, { value: 'SP', label: 'São Paulo' }, { value: 'SE', label: 'Sergipe' },
-  { value: 'TO', label: 'Tocantins' },
-]
-
-const MAIN_COUNTRIES = [
-  'Estados Unidos', 'Canadá', 'Reino Unido', 'Alemanha', 'França', 'Irlanda', 'Espanha', 'Portugal',
-  'Holanda', 'Bélgica', 'Suíça', 'Austrália', 'Japão', 'Coreia do Sul', 'Singapura',
-  'Israel', 'Noruega', 'Suécia', 'Dinamarca', 'Finlândia', 'Nova Zelândia',
-  'Argentina', 'Chile', 'Colômbia', 'México', 'Brasil', 'Emirados Árabes',
-]
 
 type LocationMode = 'remoto' | 'estado' | 'pais' | 'outro'
 
@@ -77,6 +59,7 @@ export default function MarketIntelligencePage() {
   const [niceTechPage, setNiceTechPage] = useState(0)
   const [softSkillPage, setSoftSkillPage] = useState(0)
   const [certPage, setCertPage] = useState(0)
+  const [langPage, setLangPage] = useState(0)
   const STAT_PAGE_SIZE = 10
   const JOB_PAGE_SIZE = 15
 
@@ -296,7 +279,14 @@ export default function MarketIntelligencePage() {
           {error && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
               <XCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={runAnalysis}
+                disabled={loading}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className="w-3 h-3" /> Tentar novamente
+              </button>
             </div>
           )}
 
@@ -304,6 +294,30 @@ export default function MarketIntelligencePage() {
             <TrendingUp className="w-4 h-4" />
             {loading ? 'Analisando Mercado...' : 'Analisar Mercado'}
           </CustomButton>
+        </div>
+      )}
+
+      {/* Skeleton loading while analysis runs */}
+      {loading && (
+        <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8 space-y-4">
+          <div className="h-4 bg-slate-700/50 rounded-full w-1/3 animate-pulse" />
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="flex gap-4 items-center">
+                <div className="h-10 bg-slate-700/50 rounded-xl w-16 animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-slate-700/50 rounded-full w-3/4 animate-pulse" />
+                  <div className="h-3 bg-slate-700/50 rounded-full w-1/2 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="h-4 bg-slate-700/50 rounded-full w-1/4 animate-pulse mt-6" />
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-16 bg-slate-700/50 rounded-xl animate-pulse" />
+            ))}
+          </div>
         </div>
       )}
 
@@ -317,15 +331,16 @@ export default function MarketIntelligencePage() {
               <span className="text-xs text-slate-400">Exportar análise</span>
             </div>
             <div className="flex items-center gap-2">
-              <select
+              <CustomSelect
                 value={exportFormat}
-                onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'docx' | 'md')}
-                className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl px-2 py-1.5 outline-none focus:border-purple-500"
-              >
-                <option value="pdf">PDF</option>
-                <option value="docx">DOCX</option>
-                <option value="md">Markdown</option>
-              </select>
+                onChange={v => setExportFormat(v as 'pdf' | 'docx' | 'md')}
+                options={[
+                  { value: 'pdf', label: 'PDF' },
+                  { value: 'docx', label: 'DOCX' },
+                  { value: 'md', label: 'Markdown' },
+                ]}
+                className="w-28"
+              />
               <button
                 onClick={handleExport}
                 disabled={exporting}
@@ -379,7 +394,7 @@ export default function MarketIntelligencePage() {
               {R.statistics.required_technologies.slice(reqTechPage * STAT_PAGE_SIZE, (reqTechPage + 1) * STAT_PAGE_SIZE).map((tech, i) => (
                 <div key={tech.name} className="flex items-center gap-3">
                   <span className="text-xs text-slate-500 w-5 text-center">{reqTechPage * STAT_PAGE_SIZE + i + 1}</span>
-                  <span className="text-xs font-semibold text-slate-200 w-32 truncate">{tech.name}</span>
+                  <span className="text-xs font-semibold text-slate-200 w-32 truncate" title={tech.name}>{tech.name}</span>
                   <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
@@ -411,7 +426,7 @@ export default function MarketIntelligencePage() {
               {R.statistics.desirable_technologies.slice(niceTechPage * STAT_PAGE_SIZE, (niceTechPage + 1) * STAT_PAGE_SIZE).map((tech, i) => (
                 <div key={tech.name} className="flex items-center gap-3">
                   <span className="text-xs text-slate-500 w-5 text-center">{niceTechPage * STAT_PAGE_SIZE + i + 1}</span>
-                  <span className="text-xs font-semibold text-slate-200 w-32 truncate">{tech.name}</span>
+                  <span className="text-xs font-semibold text-slate-200 w-32 truncate" title={tech.name}>{tech.name}</span>
                   <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
@@ -442,7 +457,7 @@ export default function MarketIntelligencePage() {
               <div className="space-y-2">
                 {R.statistics.modalities.map(mod => (
                   <div key={mod.name} className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-slate-300 w-28 truncate">{mod.name}</span>
+                    <span className="text-xs font-semibold text-slate-300 w-28 truncate" title={mod.name}>{mod.name}</span>
                     <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500" style={{ width: `${mod.percentage}%` }} />
                     </div>
@@ -524,6 +539,42 @@ export default function MarketIntelligencePage() {
             </div>
           </div>
 
+          {/* Idiomas */}
+          <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6">
+            <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400" />Idiomas Mais Requisitados</h3>
+            <div className="space-y-2">
+              {R.statistics.top_languages.slice(langPage * STAT_PAGE_SIZE, (langPage + 1) * STAT_PAGE_SIZE).length > 0
+                ? R.statistics.top_languages.slice(langPage * STAT_PAGE_SIZE, (langPage + 1) * STAT_PAGE_SIZE).map(l => (
+                  <div key={l.name} className="flex items-center justify-between p-2 rounded-xl bg-slate-950/60">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-300">{l.name}</span>
+                      {l.top_level && l.top_level !== 'Não especificado' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/20">
+                          {l.top_level}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500">{l.count}x</span>
+                  </div>
+                ))
+                : <p className="text-xs text-slate-500">Nenhum idioma extraído.</p>
+              }
+            </div>
+            {R.statistics.top_languages.length > STAT_PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-slate-800">
+                <button onClick={() => setLangPage(p => Math.max(0, p - 1))} disabled={langPage === 0}
+                  className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 text-slate-400 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                  Anterior
+                </button>
+                <span className="text-xs text-slate-500">{langPage + 1} / {Math.ceil(R.statistics.top_languages.length / STAT_PAGE_SIZE)}</span>
+                <button onClick={() => setLangPage(p => p + 1)} disabled={(langPage + 1) * STAT_PAGE_SIZE >= R.statistics.top_languages.length}
+                  className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 text-slate-400 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                  Próximo
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Confidence */}
           <div className="flex items-start gap-3 p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60">
             <Activity className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
@@ -560,15 +611,19 @@ export default function MarketIntelligencePage() {
                 </button>
               ))}
             </div>
-            <select value={jobSourceFilter} onChange={e => { setJobSourceFilter(e.target.value); setJobPage(0); }}
-              className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-purple-500">
-              <option value="all">Todas as fontes</option>
-              <option value="LinkedIn">LinkedIn</option>
-              <option value="Glassdoor">Glassdoor</option>
-              <option value="Indeed">Indeed</option>
-              <option value="Catho">Catho</option>
-              <option value="Empregos.com">Empregos.com</option>
-            </select>
+            <CustomSelect
+              value={jobSourceFilter}
+              onChange={v => { setJobSourceFilter(v); setJobPage(0) }}
+              options={[
+                { value: 'all', label: 'Todas as fontes' },
+                { value: 'LinkedIn', label: 'LinkedIn' },
+                { value: 'Glassdoor', label: 'Glassdoor' },
+                { value: 'Indeed', label: 'Indeed' },
+                { value: 'Catho', label: 'Catho' },
+                { value: 'Empregos.com', label: 'Empregos.com' },
+              ]}
+              className="w-44"
+            />
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
               <input type="text" placeholder="Buscar por título ou empresa..."
@@ -581,7 +636,7 @@ export default function MarketIntelligencePage() {
 
           {/* Job list */}
           {(() => {
-            const allJobs = R.sample_jobs
+            const allJobs = R.sample_jobs ?? R.vagas
             const sources = [...new Set(allJobs.map(j => j.source).filter(Boolean))]
             const filtered = allJobs.filter(j => {
               if (jobFilter === 'relevant' && !j.is_relevant) return false
@@ -713,7 +768,7 @@ export default function MarketIntelligencePage() {
                                 </div>
 
                                 {/* Soft Skills */}
-                                {job.soft_skills.length > 0 && (
+                                {job.soft_skills?.length && (
                                   <div>
                                     <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Soft Skills</p>
                                     <div className="flex flex-wrap gap-1.5">
@@ -724,8 +779,7 @@ export default function MarketIntelligencePage() {
                                   </div>
                                 )}
 
-                                {/* Certifications */}
-                                {job.certifications.length > 0 && (
+                                {job.certifications?.length && (
                                   <div>
                                     <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Certificações</p>
                                     <div className="flex flex-wrap gap-1.5">

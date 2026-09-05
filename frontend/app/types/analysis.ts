@@ -62,54 +62,151 @@ export interface ChecklistValidacao {
   profile_summary?: { genérico: boolean; problema?: string | null; sugestao?: string }
   tech_stack_por_experiencia?: { por_experiencia: boolean; problema?: string | null }
   projetos_com_link?: { com_links: boolean; problema?: string | null }
-  multiplos_curriculos?: { multiplos: boolean; nomes_encontrados?: string[]; problema?: string | null }
-  cover_letter?: { is_cover_letter: boolean; cover_letter_score?: number; cv_score?: number; problema?: string | null }
-}
 
-export interface AnalysisResult {
-  nota?: number
-  score_ats?: number
-  resumo_executivo?: string
-  foto_detectada?: boolean
-  foto_recomendada?: boolean
-  ordem_secoes?: OrdemSecoes
-  palavras_chave_presentes?: string[]
-  palavras_chave_faltantes?: string[]
-  pontos_fortes?: string[]
-  pontos_fracos?: string[]
-  erros_ortograficos?: Array<{
-    palavra: string
-    contexto: string
-    correcao: string
-    gravidade: 'baixa' | 'medio' | 'alta'
+  // Métricas e resultados
+  metrics?: AnaliseSecao
+  github_metrics?: AnaliseSecao
+  linkedin_metrics?: AnaliseSecao
+
+  // Experiência
+  experiencias?: Array<{
+    presente?: boolean
+    tempo?: string
+    problemas?: Array<{
+      tipo: string
+      descricao: string
+      como_corrigir: string
+    }>
   }>
-  erros_comuns_detectados?: ErroComum[]
-  analise_secoes?: Record<string, AnaliseSecao>
-  analise_ats?: AnaliseATS
-  diagnostico_por_secao?: Record<string, SecaoDiagnostico>
-  sugestoes?: string[]
-  checklist_validacao?: ChecklistValidacao
-  _links?: string[]
-  _extractor_used?: string
-  uso_tokens?: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
-  api_info?: {
-    model: string
-    request_id: string
-    response_time_ms: number
-  }
-  error?: string
+
+  // Formação
+  formacao?: Array<{
+    presente?: boolean
+    tempo?: string
+    problema?: string | null
+    como_corrigir?: string | null
+  }>
+
+  // Links
+  links?: Array<{
+    tipo: string
+    valido: boolean
+    problema?: string | null
+  }>
 }
 
-export interface SecaoDiagnostico {
+export interface SecaoInfo {
+  nome: string
+  Score: number
   status: 'ok' | 'atencao' | 'critico'
-  problema: string
-  como_corrigir: string
+  problema?: string | null
+  como_corrigir?: string | null
 }
 
+export interface Recomendacao {
+  titulo: string
+  descricao: string
+  prioridade: 'alta' | 'media' | 'baixa'
+  categoria: string
+}
+
+export interface ScoreDetalhado {
+  secao: string
+  Score: number
+  max_score: number
+  comentarios?: string[]
+}
+
+export interface AnaliseGeral {
+  score_geral: number
+ score_ats: AnaliseATS
+  ordem_secoes: OrdemSecoes
+  secoes_analisadas: Array<{
+    nome: string
+    status: 'ok' | 'atencao' | 'critico'
+    score: number
+    porcentagem?: number
+  }>
+  recomendacoes: Recomendacao[]
+  resumo_executivo: string
+  erros_comuns: ErroComum[]
+}
+
+export interface DadosPessoais {
+  nome?: string
+  email?: string
+  telefone?: string
+  linkedin?: string
+  github?: string
+  localizacao?: string
+}
+
+export interface Experiencia {
+  empresa: string
+  cargo: string
+  periodo: string
+  responsavel?: string
+  descricao?: string
+  tecnologias?: string[]
+}
+
+export interface Formacao {
+  instituicao: string
+  curso: string
+  periodo: string
+  grau?: string
+}
+
+export interface Projeto {
+  nome: string
+  descricao: string
+  tecnologias?: string[]
+  link?: string
+}
+
+export interface Competencia {
+  nome: string
+  nivel?: string
+}
+
+export interface Certificação {
+  nome: string
+  emissor?: string
+  periodo?: string
+}
+
+export interface Idioma {
+  idioma: string
+  nivel?: string
+}
+
+export interface ResumeData {
+  dados_pessoais?: DadosPessoais
+  perfil_profissional?: string
+  experiencias?: Experiencia[]
+  formacoes?: Formacao[]
+  projetos?: Projeto[]
+  competencias?: Competencia[]
+  certificacoes?: Certificação[]
+  idiomas?: Idioma[]
+  informacoes_adicionais?: string
+}
+
+export interface ResumeAnalysis {
+  score_geral: number
+  score_ats: AnaliseATS
+  secoes_analisadas: Array<{
+    nome: string
+    status: 'ok' | 'atencao' | 'critico'
+    score: number
+    porcentagem?: number
+  }>
+  recomendacoes: Recomendacao[]
+  resumo_executivo: string
+  erros_comuns: ErroComum[]
+}
+
+// Market Intelligence Types
 export interface MarketJob {
   title: string
   company: string
@@ -153,6 +250,7 @@ export interface MarketReportStatistics {
   modalities: { name: string; percentage: number }[]
   top_soft_skills: { name: string; count: number }[]
   top_certifications: { name: string; count: number }[]
+  top_languages: { name: string; count: number; top_level: string }[]
 }
 
 export interface MarketReport {
@@ -175,51 +273,4 @@ export interface MarketAnalysisResult {
     request_id: string
     response_time_ms: number
   }
-  error?: string
-}
-
-export interface LogEntry {
-  id: string
-  timestamp: string
-  endpoint: string
-  method: string
-  status_code: number
-  duration_ms: number
-  model?: string | null
-  extractor?: string | null
-  fallback_used?: boolean | null
-  fallback_level?: string | null
-  error?: string | null
-  request_body?: string | null
-  response_summary?: string | null
-  api_key_preview?: string | null
-  extracted_text?: string | null
-  llm_prompt?: string | null
-}
-
-export interface LogStats {
-  total: number
-  successes: number
-  errors: number
-  avg_duration_ms: number
-}
-
-export interface MarketAnalysis {
-  resultado: boolean
-  vagas: MarketJob[]
-  resumo?: string
-  palavras_chave_mais_usadas?: string[]
-  niveis_mais_comuns?: string[]
-  faixas_salariais?: string[]
-  uso_tokens?: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
-  api_info?: {
-    model: string
-    request_id: string
-    response_time_ms: number
-  }
-  error?: string
 }
