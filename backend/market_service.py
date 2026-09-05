@@ -1054,8 +1054,11 @@ def run_market_analysis(
 ) -> Dict[str, Any]:
     """Executa o pipeline completo de Inteligência de Mercado."""
 
-    # 1. Garante vagas de amostragem no DB
+    # 1. Garante vagas de amostragem no DB (limpa buscas anteriores para evitar dados de outra área)
     init_market_db(db_file)
+    conn = sqlite3.connect(db_file)
+    conn.cursor().execute("DELETE FROM market_raw_jobs")
+    conn.commit()
     generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys)
 
     stack_list = [s.strip() for s in target_stack.split(",") if s.strip()]
