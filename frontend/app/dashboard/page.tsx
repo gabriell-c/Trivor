@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Clock,
@@ -84,8 +84,11 @@ export default function DashboardPage() {
   const [recentLogs, setRecentLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const hasFetched = useRef(false)
 
   useEffect(() => {
+    if (hasFetched.current) return
+    hasFetched.current = true
     Promise.all([
       fetch('/api/logs?limit=1').then((r) => r.json()).catch(() => null),
       fetch('/api/logs?limit=5&sort=desc')
@@ -100,7 +103,7 @@ export default function DashboardPage() {
 
   const successRate =
     stats && stats.total > 0
-      ? Math.round((stats.successes / stats.total) * 100)
+      ? Math.round(((stats.total - (stats.errors ?? 0)) / stats.total) * 100)
       : null
 
   return (
@@ -139,14 +142,14 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Sucessos"
-              value={stats.successes.toLocaleString('pt-BR')}
+              value={(stats.total - (stats.errors ?? 0)).toLocaleString('pt-BR')}
               icon={<CheckCircle className="w-5 h-5" />}
               color="text-green-400"
               subtext={`${successRate ?? 0}% taxa`}
             />
             <StatCard
               label="Erros"
-              value={stats.errors.toLocaleString('pt-BR')}
+              value={(stats.errors ?? 0).toLocaleString('pt-BR')}
               icon={<AlertCircle className="w-5 h-5" />}
               color="text-red-400"
             />

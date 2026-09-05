@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import Sidebar from './Layout'
 import ErrorBoundary from './ErrorBoundary'
-import { getGlobalStatus, loadProviders } from '../hooks/useIaProviders'
+import { getGlobalStatus, useIaProviders } from '../hooks/useIaProviders'
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
 
@@ -19,9 +19,11 @@ export default function AppShell() {
   const [mounted, setMounted] = useState(false)
   const [activeTool, setActiveTool] = useState<Tool>('curriculo')
   const [collapsed, setCollapsed] = useState(false)
-  const providers = loadProviders()
+  const { providers } = useIaProviders()
   const globalStatus = getGlobalStatus(providers)
 
+  // SSR detection: setMounted(true) only fires on client — safe single-shot pattern
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   if (!mounted) {
@@ -51,33 +53,45 @@ export default function AppShell() {
 
         <AnimatePresence mode="wait">
           {activeTool === 'curriculo' && (
-            <motion.div key="curriculo" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 space-y-6">
+            <motion.div key="curriculo" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl space-y-6">
               <CurriculoPage />
+              </div>
             </motion.div>
           )}
           {activeTool === 'mercado' && (
-            <motion.div key="mercado" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10">
+            <motion.div key="mercado" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl">
               <MarketPage />
+              </div>
             </motion.div>
           )}
           {activeTool === 'api-settings' && (
-            <motion.div key="api-settings" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10">
+            <motion.div key="api-settings" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-3xl">
               <ApiSettingsPage />
+              </div>
             </motion.div>
           )}
           {activeTool === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 space-y-6">
+            <motion.div key="dashboard" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl space-y-6">
               <DashboardPage />
+              </div>
             </motion.div>
           )}
           {activeTool === 'logs' && (
-            <motion.div key="logs" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10">
+            <motion.div key="logs" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl">
               <LogsPage />
+              </div>
             </motion.div>
           )}
           {activeTool === 'linkedin' && (
-            <motion.div key="linkedin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="w-full max-w-4xl z-10 space-y-6">
+            <motion.div key="linkedin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl space-y-6">
               <LinkedinPage />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

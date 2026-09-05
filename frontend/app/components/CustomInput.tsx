@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useId } from 'react'
 
 interface CustomInputProps {
   type?: string
@@ -28,7 +28,7 @@ export function CustomInput({
 }: CustomInputProps) {
   const [showPassword, setShowPassword] = useState(false)
   const actualType = (type === 'password' && showPassword) ? 'text' : type
-  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`
+  const inputId = id || useId()
 
   return (
     <div className={`relative ${className}`} id={inputId}>
@@ -41,7 +41,7 @@ export function CustomInput({
         disabled={disabled}
         aria-label={ariaLabel || placeholder}
         aria-describedby={ariaDescribedBy}
-        aria-invalid={disabled ? undefined : undefined}
+        aria-invalid={false}
         className={`w-full bg-slate-950/80 border rounded-2xl py-3 ${
           type === 'password' ? 'pr-12' : 'pr-4'
         } pl-4 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${

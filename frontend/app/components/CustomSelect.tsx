@@ -48,7 +48,7 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Selecion
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full mt-2 w-full bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
+        <div className="absolute z-[9999] top-full mt-2 w-full bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
           <div className="max-h-60 overflow-y-auto py-1">
             {options.map(opt => (
               <button
