@@ -109,156 +109,6 @@ def init_market_db(db_file: Path) -> None:
 
 # ---------------------------------------------------------------------------
 # Geração de vagas mock (todas as áreas)
-# ---------------------------------------------------------------------------
-
-def _generate_sample_jobs(job_title: str) -> List[Dict]:
-    """Gera vagas mock ricas com soft skills, certificações, diferenciais, URLs e senioridade balanceada."""
-    import random
-    import uuid
-    jt = job_title.strip().lower()
-
-    # --- Keywords técnicas do cargo alvo ---
-    tech_keywords = []
-    if 'python' in jt: tech_keywords += ['python', 'fastapi', 'django', 'flask', 'sqlalchemy', 'postgres', 'redis', 'celery']
-    if 'backend' in jt: tech_keywords += ['api rest', 'microserviços', 'docker', 'kubernetes', 'aws', 'azure', 'git', 'jira']
-    if 'frontend' in jt: tech_keywords += ['react', 'typescript', 'next.js', 'vue', 'angular', 'tailwind', 'css', 'html5']
-    if 'fullstack' in jt: tech_keywords += ['python', 'react', 'typescript', 'node.js', 'docker', 'postgres', 'aws', 'git']
-    if 'java' in jt: tech_keywords += ['spring boot', 'java', 'microserviços', 'docker', 'kubernetes', 'aws', 'maven']
-    if 'javascript' in jt: tech_keywords += ['javascript', 'node.js', 'react', 'typescript', 'express', 'mongo']
-    if 'data' in jt or 'cientista' in jt: tech_keywords += ['python', 'sql', 'machine learning', 'pandas', 'aws', 'docker', 'spark']
-    if 'devops' in jt: tech_keywords += ['docker', 'kubernetes', 'jenkins', 'aws', 'terraform', 'ci/cd', 'linux']
-    if 'mobile' in jt: tech_keywords += ['react native', 'flutter', 'kotlin', 'swift', 'ios', 'android']
-    if 'qa' in jt or 'test' in jt: tech_keywords += ['selenium', 'cypress', 'jest', 'pytest', 'automação', 'ci/cd']
-    if 'analista' in jt: tech_keywords += ['sql', 'excel', 'power bi', 'tableau', 'análise de dados']
-    if 'go' in jt or 'golang' in jt: tech_keywords += ['go', 'golang', 'grpc', 'docker', 'kubernetes', 'postgres']
-    if 'ruby' in jt or 'rails' in jt: tech_keywords += ['ruby', 'rails', 'postgres', 'redis', 'docker']
-    if 'dotnet' in jt or '.net' in jt: tech_keywords += ['c#', '.net', 'asp.net', 'sql server', 'azure', 'docker']
-    if 'php' in jt: tech_keywords += ['php', 'laravel', 'symfony', 'mysql', 'docker', 'aws']
-    if 'scrum' in jt: tech_keywords += ['scrum', 'kanban', 'agile', 'jira', 'sprint']
-    if 'estagiário' in jt or 'estagiario' in jt or 'estágio' in jt or 'estagio' in jt: tech_keywords += ['git', 'python', 'sql', 'docker']
-
-    # --- Senioridade balanceada: 40% Júnior, 40% Pleno, 20% Sênior ---
-    seniority_weights = (
-        [("Júnior", "1 a 2 anos", "3-5k", "4-6k")] * 8
-        + [("Pleno", "2 a 5 anos", "6-9k", "8-12k")] * 8
-        + [("Sênior", "5+ anos", "12-18k", "15-22k")] * 4
-    )
-    random.shuffle(seniority_weights)
-
-    # --- Soft skills comuns para enriquecer descrições ---
-    soft_skills_pool = [
-        "comunicação eficaz", "trabalho em equipe", "proatividade", "resolução de problemas",
-        "pensamento crítico", "liderança", "adaptabilidade", "gestão de tempo",
-        "capacidade de análise", "criatividade", "facilidade de aprendizado",
-        "orientação a resultados", "colaboração multidisciplinar", "autonomia",
-    ]
-    # --- Certificações ---
-    certs_pool = [
-        "AWS Cloud Practitioner", "AWS Solutions Architect", "Azure Fundamentals",
-        "Google Cloud Professional", "PMP", "ITIL Foundation",
-        "Certificação Kubernetes (CKA)", "Scrum Master (PSM/CSM)",
-        "Terraform Associate", "MongoDB Developer", "PostgreSQL Professional",
-    ]
-    # --- Diferenciais ---
-    diff_pool = [
-        "inglês avançado", "inglês intermediário", "espanhol",
-        "pós-graduação em TI", "mestrado", "graduação completa em Engenharia",
-        "experiência com startups", "experiência em ambientes ágeis",
-        "conhecimento em LGPD", "certificações na área",
-    ]
-
-    locations = ["São Paulo, SP", "Rio de Janeiro, RJ", "Remoto Nacional", "Belo Horizonte, MG", "Curitiba, PR", "Porto Alegre, RS"]
-    modalities = ["Remoto", "Híbrido", "Presencial", "Remoto Nacional"]
-    sources = ["LinkedIn", "Catho", "InfoJobs", "Gupy", "Glassdoor"]
-    companies = ["TechCorp Brasil", "DataFlow S.A.", "InovaSoft", "NexGen Digital", "CloudBase", "Fintech X", "StartupHub", "Consultoria Tech", "Software House Brasil", "Agile Labs"]
-
-    def _make_desc(level, exp_range, salary_min, salary_max):
-        """Gera uma descrição rica e realista."""
-        n_tech = random.randint(3, min(6, max(1, len(tech_keywords)))) if tech_keywords else 3
-        n_tech = min(n_tech, len(tech_keywords))
-        skills = random.sample(tech_keywords, n_tech)
-        n_soft = random.randint(2, min(8, len(soft_skills_pool)))
-        soft = random.sample(soft_skills_pool, n_soft)
-        n_cert = min(random.randint(0, 2) if level != "Júnior" else 0, len(certs_pool))
-        certs = random.sample(certs_pool, n_cert)
-        n_diff = random.randint(1, min(3, len(diff_pool)))
-        diffs = random.sample(diff_pool, n_diff)
-
-        lines = [
-            f"Estamos contratando {job_title} {level} para integrar nossa equipe de tecnologia.",
-            f"Requisitos mínimos: {exp_range} de experiência profissional na área.",
-            f"Conhecimentos obrigatórios: {', '.join(skills)}.",
-            f"Oferecemos remuneração entre R$ {salary_min} e R$ {salary_max}.",
-        ]
-        if soft:
-            lines.append(f"Buscamos profissional com {', '.join(soft)}.")
-        if certs:
-            lines.append(f"Diferencial: {', '.join(certs)}.")
-        if diffs:
-            lines.append(f"Será considerado diferencial: {', '.join(diffs)}.")
-        lines.append("Ambiente ágil com sprints quinzenais, code review e pair programming.")
-        lines.append("Benefícios: VR/VA, plano de saúde, auxílio educação, home office flexível.")
-        return " ".join(lines)
-
-    jobs = []
-    seen_keys = set()
-
-    for sen in seniority_weights:
-        level, exp_range, salary_min, salary_max = sen
-        for _ in range(8):  # 8 vagas por nível de senioridade
-            mod = random.choice(modalities)
-            loc = random.choice(locations)
-            src = random.choice(sources)
-            company = random.choice(companies)
-            title = f"{job_title.title()} {level}"
-            key = f"{title}|{company}|{loc}|{mod}"
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-
-            desc = _make_desc(level, exp_range, salary_min, salary_max)
-            src_url = ""  # mock jobs não têm link real
-
-            jobs.append({
-                "title": title,
-                "company": company,
-                "description": desc,
-                "location": loc,
-                "modality": mod,
-                "source": src,
-                "source_url": src_url,
-                "seniority": level,
-            })
-
-    # Garante pelo menos 200 vagas
-    while len(jobs) < 200:
-        level = random.choice(["Júnior", "Pleno", "Sênior"])
-        exp_range = {"Júnior": "1 a 2 anos", "Pleno": "2 a 5 anos", "Sênior": "5+ anos"}[level]
-        sal = {"Júnior": ("3-5k", "4-6k"), "Pleno": ("6-9k", "8-12k"), "Sênior": ("12-18k", "15-22k")}[level]
-        mod = random.choice(modalities)
-        loc = random.choice(locations)
-        src = random.choice(sources)
-        company = random.choice(companies)
-        title = f"{job_title.title()} {level}"
-        key = f"{title}|{company}|{loc}|{mod}"
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        desc = _make_desc(level, exp_range, sal[0], sal[1])
-        src_url = ""  # mock jobs não têm link real
-        jobs.append({
-            "title": title,
-            "company": company,
-            "description": desc,
-            "location": loc,
-            "modality": mod,
-            "source": src,
-            "source_url": src_url,
-            "seniority": level,
-        })
-
-    return jobs
-
 
 # ---------------------------------------------------------------------------
 # JSearch API — 获取真实职位（需要 API Key）
@@ -440,23 +290,22 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 if used_key_remaining is not None and valid_keys:
                     _update_jsearch_usage(db_file, valid_keys[0], used_key_remaining)
 
-        # Se JSearch falhou ou não configurado, usa mock
+        # Se JSearch falhou ou não configurado, prossegue com lista vazia (sem dados fabricados)
         if not sample_jobs:
-            if valid_keys:
-                logger.info("[MARKET] JSearch sem resultados, usando dados simulados")
-            sample_jobs = _generate_sample_jobs(job_title)
+            logger.info("[MARKET] JSearch sem resultados ou não configurado — prosseguindo com 0 vagas reais")
 
-        now = datetime.now()
-        for i, j in enumerate(sample_jobs):
-            job_id = str(uuid.uuid4())
-            pub_date = now - timedelta(days=i * 3 + 1)
-            source_url = j.get("source_url", "")
-            cursor.execute('''
-                INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url, published_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (job_id, j["title"], j["company"], j["description"], j["location"], j["modality"], j["source"], source_url, pub_date.isoformat()))
+        if sample_jobs:
+            now = datetime.now()
+            for i, j in enumerate(sample_jobs):
+                job_id = str(uuid.uuid4())
+                pub_date = now - timedelta(days=i * 3 + 1)
+                source_url = j.get("source_url", "")
+                cursor.execute('''
+                    INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (job_id, j["title"], j["company"], j["description"], j["location"], j["modality"], j["source"], source_url, pub_date.isoformat()))
 
-        conn.commit()
+            conn.commit()
     conn.close()
 
 
@@ -618,10 +467,6 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
                 p = p.strip()
                 if len(p) > 3 and len(p) < 100:
                     result["nice_to_have"].append(p)
-
-    # Se nada foi extraído mas o texto é substancial, marcar como relevante com dados mínimos
-    if len(job_text) > 100 and not result["requirements"] and not result["role_level"]:
-        result["is_relevant"] = True
 
     return result
 
@@ -856,9 +701,8 @@ Apenas depois dessa verificação, retorne o JSON abaixo:
         data = json.loads(content)
         return data
     except Exception as e:
-        # Fallback heurístico quando a IA falha completamente
-        logger.warning(f"[WARN] extract_job_with_ai fallback to heuristic: {e}")
-        return heuristic_extract(job_text)
+        logger.warning(f"[WARN] extract_job_with_ai falhou, vaga ignorada: {e}")
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -1031,35 +875,14 @@ def _pad_missing_jobs(
     seniority: str,
     location: str,
 ) -> List[Dict[str, Any]]:
-    """Completa jobs faltantes usando heurística quando a IA não retorna todos."""
-    if len(data) >= expected:
-        return data
-
-    # Limita aos primeiros N jobs que a IA retornou
-    jobs_from_ai = data[:expected]
-
-    # Para os jobs faltantes, usa heurística
-    missing_count = expected - len(jobs_from_ai)
-    for i in range(missing_count):
-        if i < len(job_texts):
-            heuristic_result = heuristic_extract(job_texts[i])
-            jobs_from_ai.append(heuristic_result)
-        else:
-            jobs_from_ai.append({
-                "is_relevant": True,
-                "role_level": None,
-                "exp_years_min": None,
-                "exp_years_max": None,
-                "requirements": [],
-                "nice_to_have": [],
-                "certifications": [],
-                "soft_skills": [],
-                "salary_min": None,
-                "salary_max": None,
-                "currency": None,
-            })
-
-    return jobs_from_ai
+    """Retorna apenas os jobs que a IA retornou — sem fabricar dados."""
+    result = data[:expected]
+    if len(result) < expected:
+        logger.warning(
+            f"[INFO] Batch retornou {len(result)} jobs de {expected} esperados. "
+            f"Somente dados reais serão usados."
+        )
+    return result
 
 
 def _fallback_extract_jobs(
@@ -1070,23 +893,15 @@ def _fallback_extract_jobs(
     seniority: str,
     location: str,
 ) -> List[Dict[str, Any]]:
-    """Fallback: extrai cada vaga individualmente com IA + heurística."""
+    """Fallback: extrai cada vaga individualmente com IA. Sem heurística — só dados reais."""
     results = []
     for job_text in job_texts:
         try:
             result = extract_job_with_ai(client, selected_model, job_text, target_stack)
-            # Se a IA falhou e retornou dados vazios, aplica heurística
-            if not result.get("requirements") and not result.get("role_level"):
-                result = heuristic_extract(job_text)
+            if result and result.get("requirements"):
+                results.append(result)
         except Exception:
-            result = heuristic_extract(job_text)
-
-        # Aplica validação heurística de relevância como backup
-        if not result.get("is_relevant"):
-            result["is_relevant"] = is_relevant_heuristic(
-                job_text, target_stack, seniority, location
-            )
-        results.append(result)
+            pass
     return results
 
 
@@ -1179,11 +994,11 @@ Formato de cada objeto:
         if len(job_texts) <= 12:
             logger.debug(f"[DEBUG] AI response parsed {len(data)} items, expected {len(job_texts)}. Preview: {content[:500]}...")
 
-        # Se a IA retornou menos jobs que o esperado, tenta completar com heurística
+        # Se a IA retornou menos jobs que o esperado, truncar — sem fabricar dados
         if len(data) < len(job_texts):
             logger.warning(
                 f"[WARN] batch size mismatch: parsed {len(data)} jobs from {len(job_texts)}. "
-                f"Completing missing jobs with heuristics."
+                f"Jobs ausentes serão ignorados (sem dados fabricados)."
             )
             data = _pad_missing_jobs(data, len(job_texts), client, selected_model, job_texts, target_stack, seniority, location)
         elif len(data) > len(job_texts):
@@ -1291,12 +1106,6 @@ def run_market_analysis(
             # Extract languages from requirements/nice_to_have
             extracted_languages = _extract_languages(extracted)
             is_rel = extracted.get("is_relevant", False)
-
-            # Se a IA marcou como irrelevante mas a heurística diz o contrário, confia na heurística
-            if not is_rel and extracted.get("requirements"):
-                is_rel = is_relevant_heuristic(job_text, stack_list, seniority, location)
-                if is_rel:
-                    extracted["is_relevant"] = True
 
             reqs_norm = sorted(set(normalize_term(t) for t in extracted.get("requirements", [])))
             nice_norm = sorted(set(normalize_term(t) for t in extracted.get("nice_to_have", [])))
