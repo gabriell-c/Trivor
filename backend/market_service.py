@@ -283,8 +283,8 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
         if jsearch_api_keys:
             valid_keys = [k.strip() for k in jsearch_api_keys if k and k.strip()]
             if valid_keys:
-                search_query = f"{job_title} desenvolvedor python"
-                sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=2, api_keys=valid_keys)
+                search_query = job_title.strip()
+                sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=4, api_keys=valid_keys)
                 logger.info(f"[MARKET] JSearch retornou {len(sample_jobs)} vagas reais")
                 # Atualiza uso no DB
                 if used_key_remaining is not None and valid_keys:
