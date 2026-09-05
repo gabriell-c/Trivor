@@ -1654,6 +1654,7 @@ async def api_save_jsearch_key(
     description: str = Form(""),
 ):
     """Salva uma chave JSearch no DB."""
+    from datetime import datetime
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
