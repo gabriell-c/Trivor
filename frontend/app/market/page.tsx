@@ -33,17 +33,14 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
-import { BRAZILIAN_STATES, MAIN_COUNTRIES } from '../lib/locations'
 import type { MarketAnalysisResult, MarketReport, MarketJob } from '../types/analysis'
-
-type LocationMode = 'remoto' | 'estado' | 'pais' | 'outro'
 
 export default function MarketIntelligencePage() {
   const [jobTitle, setJobTitle] = useState('')
   const [targetStack, setTargetStack] = useState<string[]>([])
   const [negativeKeywords, setNegativeKeywords] = useState<string[]>([])
-  const [seniority, setSeniority] = useState('Pleno')
-  const [timeWindow, setTimeWindow] = useState('90 dias')
+  const [seniority, setSeniority] = useState('Nenhum')
+  const [timeWindow, setTimeWindow] = useState('30 dias')
   const [activeTab, setActiveTab] = useState<'config' | 'results' | 'jobs'>('config')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -63,20 +60,11 @@ export default function MarketIntelligencePage() {
   const STAT_PAGE_SIZE = 10
   const JOB_PAGE_SIZE = 15
 
-  // Location state
-  const [locationMode, setLocationMode] = useState<LocationMode>('remoto')
-  const [locationValue, setLocationValue] = useState('Remoto Nacional')
-  const [customCountry, setCustomCountry] = useState('')
-  const [customState, setCustomState] = useState('')
+  // Location: simples Nacional/Internacional
+  const [isInternational, setIsInternational] = useState(false)
 
   const getLocationValue = (): string => {
-    switch (locationMode) {
-      case 'remoto': return locationValue
-      case 'estado': return customState
-      case 'pais': return customCountry || 'Brasil'
-      case 'outro': return customCountry || 'Brasil'
-      default: return 'Remoto Nacional'
-    }
+    return isInternational ? 'Remoto Internacional' : 'Remoto Nacional'
   }
 
   const runAnalysis = async () => {
@@ -165,20 +153,6 @@ export default function MarketIntelligencePage() {
 
   const R = result?.report
 
-  // Location options based on mode
-  const locationOptions = (() => {
-    switch (locationMode) {
-      case 'remoto': return [
-        { value: 'Remoto Nacional', label: 'Remoto Nacional' },
-        { value: 'Remoto Internacional', label: 'Remoto Internacional' },
-      ]
-      case 'estado': return BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))
-      case 'pais': return MAIN_COUNTRIES.map(c => ({ value: c, label: c }))
-      case 'outro': return [{ value: 'Outro', label: 'Outro (digitar)' }]
-      default: return []
-    }
-  })()
-
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full max-w-4xl mx-auto z-10 space-y-6">
       {/* Header */}
@@ -235,45 +209,37 @@ export default function MarketIntelligencePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Senioridade</label>
-              <CustomSelect value={seniority} onChange={setSeniority} options={['Estagiário', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => ({ value: s, label: s }))} placeholder="Nível..." />
+              <CustomSelect value={seniority} onChange={setSeniority} options={['Nenhum', 'Estagiário', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => ({ value: s, label: s }))} placeholder="Nível..." />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Janela Temporal</label>
-              <CustomSelect value={timeWindow} onChange={setTimeWindow} options={['30 dias', '60 dias', '90 dias'].map(w => ({ value: w, label: w }))} placeholder="Período..." />
+              <CustomSelect value={timeWindow} onChange={setTimeWindow} options={['7 dias', '15 dias', '30 dias', '60 dias', '90 dias'].map(w => ({ value: w, label: w }))} placeholder="Período..." />
             </div>
-          </div>
-
-          {/* Location */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-2">Escopo Geográfico</label>
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {(['remoto', 'estado', 'pais', 'outro'] as const).map(mode => (
-                  <button key={mode} onClick={() => setLocationMode(mode)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                      locationMode === mode ? 'bg-purple-600 text-white' : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700/60'
-                    }`}>
-                    {mode === 'remoto' ? '🌐 Remoto' : mode === 'estado' ? '📍 Estado (BR)' : mode === 'pais' ? '🗺️ País' : '✏️ Outro'}
-                  </button>
-                ))}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-2">Escopo Geográfico</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsInternational(false)}
+                  className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                    !isInternational
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700/60'
+                  }`}>
+                  🇧🇷 Nacional
+                </button>
+                <button
+                  onClick={() => setIsInternational(true)}
+                  className={`flex-1 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                    isInternational
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-slate-800/60 text-slate-400 hover:text-white border border-slate-700/60'
+                  }`}>
+                  🌍 Internacional
+                </button>
               </div>
-              {locationMode === 'remoto' && (
-                <CustomSelect value={locationValue} onChange={setLocationValue}
-                  options={locationOptions.map(o => ({ value: o.value, label: o.label }))} placeholder="Selecione..." className="w-full" />
-              )}
-              {locationMode === 'estado' && (
-                <CustomSelect value={customState} onChange={setCustomState}
-                  options={BRAZILIAN_STATES.map(s => ({ value: s.label, label: s.label }))} placeholder="Selecione o estado..." className="w-full" />
-              )}
-              {locationMode === 'pais' && (
-                <CustomSelect value={customCountry} onChange={setCustomCountry}
-                  options={[...MAIN_COUNTRIES.map(c => ({ value: c, label: c })), { value: 'Outro', label: 'Outro (digitar abaixo)' }]} placeholder="Selecione o país..." className="w-full" />
-              )}
-              {(locationMode === 'outro' || (locationMode === 'pais' && customCountry === 'Outro')) && (
-                <div className="mt-2">
-                  <CustomInput type="text" placeholder="Nome do país..." value={locationMode === 'outro' || customCountry === 'Outro' ? customCountry : ''} onChange={v => setCustomCountry(v)} className="w-full" />
-                </div>
-              )}
+              <p className="text-[10px] text-slate-600 mt-1">
+                {isInternational ? 'Vagas em inglês, dólar/euro, exterior.' : 'Vagas em português, real, Brasil.'}
+              </p>
             </div>
           </div>
 

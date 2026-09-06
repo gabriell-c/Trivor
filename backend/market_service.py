@@ -21,7 +21,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
-_MAX_JOBS_FOR_ANALYSIS = 500
+_MAX_JOBS_FOR_ANALYSIS = 1000
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
@@ -125,13 +125,13 @@ def _fetch_jsearch_jobs(
     query: str,
     country: str = "br",
     language: str = "pt",
-    num_pages: int = 8,
+    num_pages: int = 12,
     api_keys: List[str] = None,
     date_posted: str = "all",
 ) -> List[Dict]:
     """Através JSearch API busca vagas reais, com fallback entre múltiplas chaves."""
     if not api_keys:
-        return []
+        return [], None, None
 
     params = urllib.parse.quote_plus(query)
     url_template = f"{_JSEARCH_API_URL}?query={params}&country={country}&language={language}&num_pages={num_pages}&date_posted={date_posted}"
@@ -165,7 +165,7 @@ def _fetch_jsearch_jobs(
                 continue
             elif e.code == 429:
                 logger.warning(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit), aguardando e tentando próxima...")
-                time.sleep(1)
+                time.sleep(2)
                 continue
             else:
                 logger.error(f"[JSearch] HTTP erro {e.code}: {e.reason}")
@@ -173,6 +173,7 @@ def _fetch_jsearch_jobs(
         except Exception as e:
             logger.error(f"[JSearch] Erro com chave {api_key[:8]}...: {e}")
             continue
+        time.sleep(0.3)  # delay entre requisições para evitar rate limit
 
     logger.warning(f"[JSearch] Nenhuma das {len(keys_tried)} chave(s) retornou resultados")
     return [], None, None
@@ -266,6 +267,7 @@ def _update_jsearch_usage(db_file: Path, key: str, remaining: int):
 def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all"):
     """Gera vagas mock se a base estiver vazia.
     Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro.
+    Usa múltiplas queries para maximizar o volume de vagas.
     """
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
@@ -285,8 +287,30 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
             valid_keys = [k.strip() for k in jsearch_api_keys if k and k.strip()]
             if valid_keys:
                 search_query = job_title.strip()
-                sample_jobs, used_key_remaining, _ = _fetch_jsearch_jobs(search_query, country="br", language="pt", num_pages=8, api_keys=valid_keys, date_posted=date_posted)
-                logger.info(f"[MARKET] JSearch retornou {len(sample_jobs)} vagas reais")
+                # Múltiplas queries para maximizar volume
+                queries = [search_query]
+                # Adicionar variações comuns
+                base_terms = search_query.split()
+                if len(base_terms) >= 2:
+                    queries.append(base_terms[0])  # termo principal
+                elif len(base_terms) == 1:
+                    queries.append(search_query + " vaga")
+                    queries.append(search_query + " emprego")
+
+                all_jobs = {}
+                for q in queries:
+                    jobs, rem, tot = _fetch_jsearch_jobs(q, country="br", language="pt", num_pages=12, api_keys=valid_keys, date_posted=date_posted)
+                    logger.info(f"[MARKET] JSearch query {q!r}: {len(jobs)} vagas")
+                    for j in jobs:
+                        link = j.get("apply_link") or j.get("title", "") + j.get("company", "")
+                        all_jobs[link] = j
+                    if rem is not None and valid_keys:
+                        used_key_remaining = rem
+                    # Pausa curta entre queries para evitar rate limit
+                    time.sleep(0.5)
+
+                sample_jobs = list(all_jobs.values())
+                logger.info(f"[MARKET] JSearch combinou {len(sample_jobs)} vagas únicas de {len(queries)} query(ies)")
                 # Atualiza uso no DB
                 if used_key_remaining is not None and valid_keys:
                     _update_jsearch_usage(db_file, valid_keys[0], used_key_remaining)
@@ -526,32 +550,85 @@ def _detect_job_seniority(job_text_lower: str) -> str:
 def map_time_window_to_date_posted(time_window: str) -> str:
     """Mapeia time_window do frontend para valor da API JSearch."""
     tw = time_window.lower().strip()
+    if '7' in tw:
+        return '3days'
+    if '15' in tw:
+        return 'week'
     if '30' in tw or '60' in tw or '90' in tw:
         return 'month'
     return 'all'
 
 
+def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "") -> str:
+    """Detecta se uma vaga é nacional (BR) ou internacional baseado em idioma e moeda."""
+    text_lower = job_text.lower()
+    salary_lower = salary.lower()
+
+    # Moeda indica internacional
+    if any(c in salary_lower for c in ["$", "usd", "euro", "€", "us dollar", "gbp", "£"]):
+        return "internacional"
+    if "r$" in salary_lower or "real" in salary_lower or "brl" in salary_lower:
+        return "nacional"
+
+    # País indica
+    if job_country and job_country.lower() not in ("br", "brazil", "brasil", ""):
+        return "internacional"
+    if job_country in ("br", "brazil", "brasil"):
+        return "nacional"
+
+    # Idioma do texto
+    english_patterns = ["english", "required", "native", "bilingual", "fluent",
+                        "usd", "dollar", "europe", "remote international",
+                        "remote abroad", "work remotely abroad"]
+    portuguese_patterns = ["português", "portugues", "vaga", "salário", "salario",
+                           "brasileiro", "brasileira", "clt", "pj", "home office",
+                           "remoto", "híbrido", "hibrido", "presencial", "remuneracao",
+                           "requisitos", "atribuições", "benefícios"]
+
+    eng_count = sum(1 for p in english_patterns if p in text_lower)
+    por_count = sum(1 for p in portuguese_patterns if p in text_lower)
+
+    if eng_count >= 2 and eng_count > por_count:
+        return "internacional"
+    if por_count >= 1:
+        return "nacional"
+
+    return "nacional"  # default
+
+
 def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str], seniority: str, location: str) -> int:
     """Retorna score de relevância. Score == 0 = rejeitado no pré-filtro."""
-    # Se não tem stack definido, usa o job_title como fallback
-    keywords = target_stack if target_stack else [job_title.strip()]
-    job_title_kw = [w for w in job_title.strip().split() if len(w) > 3]
+    # SENIORITY "Nenhum" = sem filtro de senioridade
+    if seniority.lower() == "nenhum":
+        sen_matches = []
+    else:
+        sen_matches = _SENIORITY_MATCHES.get(seniority.lower(), [])
 
-    # REGRA OBRIGATÓRIA: pelo menos 1 keyword deve estar no texto
-    stack_hits = sum(1 for kw in keywords if kw.lower() in job_text_lower)
-    title_hits = sum(1 for kw in job_title_kw if kw.lower() in job_text_lower)
-    if stack_hits == 0 and title_hits == 0:
+    # Se não tem stack definido, usa o job_title como fallback
+    if target_stack:
+        keywords = target_stack
+    else:
+        # Stack vazio: usar palavras do job_title com word boundary
+        keywords = [w for w in job_title.strip().split() if len(w) > 2]
+
+    # REGRA OBRIGATÓRIA: pelo menos 1 keyword deve estar no texto (com word boundary para stack, substring para título)
+    if target_stack:
+        stack_hits = sum(1 for kw in keywords if re.search(r'\b' + re.escape(kw.lower()) + r'\b', job_text_lower))
+    else:
+        # Sem stack: pelo menos uma palavra do título deve estar no texto
+        stack_hits = sum(1 for kw in keywords if kw.lower() in job_text_lower)
+
+    if stack_hits == 0:
         return 0  # Nenhuma keyword encontrada → vaga irrelevante
 
     score = 0
 
-    # Stack keywords — bônus se encontrar no texto
+    # Stack keywords — bônus se encontrar no texto (word boundary)
     for kw in keywords:
-        if kw.lower() in job_text_lower:
+        if re.search(r'\b' + re.escape(kw.lower()) + r'\b', job_text_lower):
             score += 3
 
     # SENIORITY — bônus se bater, mas NUNCA rejeita (preferencial, não obrigatório)
-    sen_matches = _SENIORITY_MATCHES.get(seniority.lower(), [])
     for sm in sen_matches:
         if sm in job_text_lower:
             score += 2
@@ -581,43 +658,49 @@ def _pre_filter_jobs(
     """Filtra vagas por keywords e modalidade antes de enviar para IA."""
     filtered = []
 
-    # Mapeamento rígido de modalidade — se usuário selecionou um tipo, só aceita vagas desse tipo
-    # "remoto" ou "remoto nacional" → aceita vagas com "remoto" ou "remoto nacional"
-    # "presencial" → aceita apenas vagas presenciais
-    # "híbrido" → aceita apenas vagas híbridas
-    # outras (cidades) → não restringe modalidade
     selected_loc_lower = location.lower().strip()
+    is_nacional = 'nacional' in selected_loc_lower and 'internacional' not in selected_loc_lower
+    is_internacional = 'internacional' in selected_loc_lower
     modality_restriction = None
-    if 'remoto' in selected_loc_lower and ('nacional' in selected_loc_lower or 'internacional' in selected_loc_lower):
-        modality_restriction = 'remote'  # aceita "remoto", "remoto nacional", "remoto internacional"
-    elif 'remoto' in selected_loc_lower:
+    if is_nacional or is_internacional:
         modality_restriction = 'remote'
     elif 'presencial' in selected_loc_lower:
         modality_restriction = 'onsite'
     elif 'híbrido' in selected_loc_lower or 'hibrido' in selected_loc_lower:
         modality_restriction = 'hybrid'
-    # se for cidade específica, modality_restriction = None (não filtra modalidade)
 
     for j in raw_jobs:
         job_id, title, company, description, loc, mod, source, source_url = j
         job_text_lower = (title + " " + description).lower()
         mod_lower = mod.lower()
 
-        # Remove negative keywords
-        if neg_list and any(nk in job_text_lower for nk in neg_list):
-            continue
+        # Remove negative keywords (word boundary match)
+        if neg_list:
+            skip = False
+            for nk in neg_list:
+                if re.search(r'\b' + re.escape(nk.lower()) + r'\b', job_text_lower):
+                    skip = True
+                    break
+            if skip:
+                continue
 
-        # MODALIDADE — suavizada para aumentar cobertura
-        # Para remoto: não rejeita vagas que não mencionam "remoto" explicitamente
+        # NACIONALIDADE — rejeita vagas que não correspondem ao escopo
+        if is_nacional or is_internacional:
+            job_nationality = detect_job_nationality(description, loc, "")
+            if is_nacional and job_nationality == "internacional":
+                continue
+            if is_internacional and job_nationality == "nacional":
+                continue
+
+        # MODALIDADE
         if modality_restriction == 'remote':
-            pass  # permite todas, score será menor se não mencionar remoto
+            pass
         elif modality_restriction == 'onsite':
             if 'remoto' in job_text_lower or 'home office' in job_text_lower:
                 continue
         elif modality_restriction == 'hybrid':
             if 'remoto' in job_text_lower or 'home office' in job_text_lower:
                 continue
-            # vagas sem menção de modalidade são permitidas (podem ser híbridas)
 
         score = _keyword_score(job_text_lower, title, target_stack, seniority, location)
         if score > 0:
@@ -838,7 +921,7 @@ def _extract_languages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
     return languages
 
 
-_BATCH_SIZE = 6  # vagas por chamada IA — menor para maior confiabilidade
+_BATCH_SIZE = 10  # vagas por chamada IA
 
 # Controla se o warning de batch mismatch já foi logado na execução atual
 _batch_mismatch_warned = False
