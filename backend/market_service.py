@@ -19,22 +19,365 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
+_logger_file = logging.FileHandler(r'C:\Users\xxxsa\OneDrive\Área de Trabalho\python\curriculo\backend\market_log.txt', encoding='utf-8')
+_logger_file.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
+logger.addHandler(_logger_file)
+logger.setLevel(logging.INFO)
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
-_MAX_JOBS_FOR_ANALYSIS = 1000
+_MAX_JOBS_FOR_ANALYSIS = 3000
+
+# Minimum delay between API calls per key (seconds)
+_JSEARCH_MIN_DELAY = 0.5
+
+# Delay between parallel batches (seconds)
+_BATCH_DELAY = 0.8
+
+# Delay when all keys are rate-limited (seconds)
+_RATE_LIMIT_ALL_SLEEP = 15.0
+
+# Max retry attempts for rate-limited queries
+_MAX_RETRY = 2
+_RETRY_BASE_DELAY = 3.0
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
 
 
 # ---------------------------------------------------------------------------
-# Normalização de termos
+# Utilitários
 # ---------------------------------------------------------------------------
+
+def sanitize(text: str) -> str:
+    """Remove emojis e caracteres surrogates Unicode."""
+    return text.encode('utf-8', 'ignore').decode('utf-8')
 
 def normalize_term(term: str) -> str:
     """Normaliza qualquer termo (skill, certificação, idioma, etc) para padronização."""
     t = term.strip()
     return ' '.join(w.capitalize() for w in t.split())
+
+
+# ---------------------------------------------------------------------------
+# Normalização avançada de skills — agrupa variações e remove lixo
+# ---------------------------------------------------------------------------
+
+_GARBAGE_PATTERNS = [
+    # Salários
+    r"r\$\s*\d[\d\s.]*", r"\d{3,}\s*(mil|milhares)",
+    # Horários
+    r"\d{1,2}\s*h\s*(à|a|até|ate)\s*\d{1,2}\s*h",
+    r"\d{1,2}:\d{2}\s*(às?\s*\d{1,2}:\d{2})?",
+    r"\d{1,2}h\s*(às?\s*\d{1,2}h)?",
+    r"(segunda|terça|quarta|quinta|sexta|sábado|saber|domingo)\s*(à|a)\s*(segunda|terça|quarta|quinta|sexta|sábado|saber|domingo)",
+    r"(domingos|feriados|finais?\s+de\s+semana)",
+    r"jornada\s+(combinar|flexível|flexivel|integral|reduzida)",
+    r"carga\s+horária\s+(combinar|flexível|flexivel|integral)",
+    # Localização
+    r"\b(bairro|região|regiao|local|região\s+de|próximo|perto)\s+.+",
+    r"\b(estado|cidade|município|municipio|região\s+metropolitana)\b",
+    # Benefícios e condições
+    r"\b(vale|auxílio|auxilio|benefício|beneficio)\s+(transporte|alimentação|refeição|combustível|saúde|saude|creche|festividade|particpação)",
+    r"\b(plano\s+(de|de\s+saúde|de\s+saude)|convênio|convenio)\s+\w+",
+    # Formatação e lixo
+    r"^—+$", r"^—\s*$", r"^\s*$",
+    r"\b(abrangência|abrangencia|escopo|alcance)\s+.+",
+    r"\b(conforme\s+escala|conforme\s+demand|necessidade\s+do\s+cliente)",
+    r"\b(horário\s+(combinar|flexível|flexivel|de\s+acordo|indisponível))",
+    # Números soltos que não fazem sentido como skill
+    r"^\d{4,}$", r"^\d{2,3}\s*\%?\s*$",
+]
+
+# Mapeamento de normalização de skills para agrupar variações
+# A ordem importa: padrões mais específicos vêm PRIMEIRO
+_SKILL_NORMALIZATION = {
+    # ═══════════════════════════════════════════════════════════
+    # 1. FERRAMENTAS DE ESCRITÓRIO — MERGE TODAS AS VARIAÇÕES
+    # ═══════════════════════════════════════════════════════════
+    r"\b(excel\s+vba|vba\s+excel)\b": "Excel VBA",
+    r"\b(excel\s+para\s+finanças|excel\s+financeiro)\b": "Excel Financeiro",
+    r"\bpacote\s+office\b": "Excel",
+    r"\bpacote\s+office\s+(avançado|avanca?do|intermediário|intermediaria|básico|basico)\b": "Excel",
+    r"\bms?\s*excel\b": "Excel",
+    r"\bmicrosoft\s+excel\b": "Excel",
+    r"\bexcel\s+(avançado|avanca?do|intermediário|intermediaria|básico|basico)\b": "Excel",
+    r"\bexcel\b": "Excel",
+    r"\b(ms\s*word|microsoft\s+word)\b": "Word",
+    r"\bword\b": "Word",
+    r"\bpp\s*(presentation|pont)?\b": "PowerPoint",
+    r"\b(powerpoint|ms\s*powerpoint|microsoft\s+powerpoint)\b": "PowerPoint",
+    r"\boutlook\b": "Outlook",
+    r"\bmicrosoft\s+outlook\b": "Outlook",
+    r"\baccess\b": "Access",
+    r"\b(microsoft\s+)?office\s+(suite|365|professional|completo)\b": "Microsoft Office",
+    r"\boffice\s+(201[0-9]|202[0-2]|365|professional)\b": "Microsoft Office",
+    r"\bgoogle\s+workspace\b": "Google Workspace",
+    r"\bgoogle\s+docs\b": "Google Docs",
+    r"\bgoogle\s+sheets?\b": "Google Sheets",
+    r"\bgoogle\s+slides?\b": "Google Slides",
+    r"\bgoogle\s+drive\b": "Google Drive",
+    r"\bplanilhas\s+eletrônicas\b": "Planilhas Eletrônicas",
+    r"\bplanilha\b": "Planilhas Eletrônicas",
+
+    # ═══════════════════════════════════════════════════════════
+    # 2. PROGRAMAÇÃO
+    # ═══════════════════════════════════════════════════════════
+    r"\bpython\s+(3|\.?\d+|\.?\d+\.\d+)\b": "Python",
+    r"\bpython\b": "Python",
+    r"\bjavascript\b": "JavaScript",
+    r"\bjs\b": "JavaScript",
+    r"\btypescript\b": "TypeScript",
+    r"\bts\b": "TypeScript",
+    r"\bjava\s+(8|11|17|21|ee|se|me)?\b": "Java",
+    r"\bjava\b": "Java",
+    r"\bc\s*\+\+\b": "C++",
+    r"\bc\b": "C",
+    r"\bc\s*sharp\b": "C#",
+    r"\bphp\s*(7|8)?\b": "PHP",
+    r"\bphp\b": "PHP",
+    r"\bruby\b": "Ruby",
+    r"\bgo\s*(lang)?\b": "Go",
+    r"\bswift\b": "Swift",
+    r"\bkotlin\b": "Kotlin",
+    r"\br\b": "R",
+    r"\brust\b": "Rust",
+    r"\bdart\b": "Dart",
+    r"\b\.?net\b": ".NET",
+    r"\basp\.?net\b": "ASP.NET",
+    r"\bnode\.?js\b": "Node.js",
+
+    # ═══════════════════════════════════════════════════════════
+    # 3. FRAMEWORKS
+    # ═══════════════════════════════════════════════════════════
+    r"\breact\b": "React",
+    r"\breact\s*js\b": "React",
+    r"\bnext\.?js\b": "Next.js",
+    r"\bnextjs\b": "Next.js",
+    r"\bangular\b": "Angular",
+    r"\bangularjs\b": "AngularJS",
+    r"\bvue\b": "Vue",
+    r"\bdjango\b": "Django",
+    r"\bflask\b": "Flask",
+    r"\bspring\b": "Spring",
+    r"\bspring\s*boot\b": "Spring Boot",
+    r"\blaravel\b": "Laravel",
+    r"\brails\b": "Rails",
+    r"\bruby\s*on\s*rails\b": "Rails",
+    r"\bexpress\b": "Express",
+    r"\bflutter\b": "Flutter",
+    r"\bionic\b": "Ionic",
+    r"\breact\s*native\b": "React Native",
+    r"\bbootstrap\b": "Bootstrap",
+    r"\btailwind\b": "Tailwind",
+    r"\btailwind\s*css\b": "Tailwind",
+
+    # ═══════════════════════════════════════════════════════════
+    # 4. BANCOS DE DADOS
+    # ═══════════════════════════════════════════════════════════
+    r"\bmysql\b": "MySQL",
+    r"\b(postgresql|postgres)\b": "PostgreSQL",
+    r"\bsql\s*server\b": "SQL Server",
+    r"\bsql\b": "SQL",
+    r"\bmongodb\b": "MongoDB",
+    r"\bsqlite\b": "SQLite",
+    r"\boracle\b": "Oracle",
+    r"\bfirebase\b": "Firebase",
+    r"\bredis\b": "Redis",
+    r"\bdynamodb\b": "DynamoDB",
+    r"\bmariadb\b": "MariaDB",
+    r"\btransact\s*sql\b": "T-SQL",
+
+    # ═══════════════════════════════════════════════════════════
+    # 5. CLOUD & DEVOPS
+    # ═══════════════════════════════════════════════════════════
+    r"\baws\b": "AWS",
+    r"\bamazon\s*web\s*services\b": "AWS",
+    r"\bazure\b": "Azure",
+    r"\bmicrosoft\s*azure\b": "Azure",
+    r"\bgcp\b": "GCP",
+    r"\bgoogle\s*cloud\b": "GCP",
+    r"\bdocker\b": "Docker",
+    r"\bkubernetes\b": "Kubernetes",
+    r"\bk8s\b": "Kubernetes",
+    r"\bjenkins\b": "Jenkins",
+    r"\bgit\b": "Git",
+    r"\bterraform\b": "Terraform",
+    r"\bazure\s*dev\s*ops\b": "Azure DevOps",
+    r"\bgithub\b": "GitHub",
+    r"\bgitlab\b": "GitLab",
+
+    # ═══════════════════════════════════════════════════════════
+    # 6. FERRAMENTAS GERAIS
+    # ═══════════════════════════════════════════════════════════
+    r"\bsap\b": "SAP",
+    r"\bsalesforce\b": "Salesforce",
+    r"\btrello\b": "Trello",
+    r"\bslack\b": "Slack",
+    r"\bteams\b": "Microsoft Teams",
+    r"\bzoom\b": "Zoom",
+    r"\bjira\b": "Jira",
+    r"\basana\b": "Asana",
+    r"\bmonday\b": "Monday",
+    r"\bhubspot\b": "HubSpot",
+    r"\bpower\s*b\s*iq\b": "Power BI",
+    r"\bpower\sbi\b": "Power BI",
+    r"\bbi\b": "Business Intelligence",
+    r"\bseo\b": "SEO",
+    r"\bsem\b": "SEM",
+    r"\bgoogle\s*ads\b": "Google Ads",
+    r"\bgoogle\s*analytics\b": "Google Analytics",
+    r"\berp\b": "ERP",
+    r"\bcmr\b": "CRM",
+    r"\bsharepoint\b": "SharePoint",
+    r"\bone\s*drive\b": "OneDrive",
+    r"\bdropbox\b": "Dropbox",
+    r"\bautocad\b": "AutoCAD",
+    r"\bphotoshop\b": "Photoshop",
+    r"\billustrator\b": "Illustrator",
+    r"\bpremiere\b": "Premiere Pro",
+    r"\bfigma\b": "Figma",
+    r"\bcanva\b": "Canva",
+    r"\bnotion\b": "Notion",
+    r"\bwordpress\b": "WordPress",
+    r"\bshopify\b": "Shopify",
+    r"\btotvs\b": "TOTVS",
+    r"\bms\s*365\b": "Microsoft 365",
+    r"\b365\b": "Microsoft 365",
+
+    # ═══════════════════════════════════════════════════════════
+    # 7. IDIOMAS
+    # ═══════════════════════════════════════════════════════════
+    r"\bportuguês\b": "Português",
+    r"\bportugues\b": "Português",
+    r"\binglês\b": "Inglês",
+    r"\binglish\b": "Inglês",
+    r"\bespanhol\b": "Espanhol",
+    r"\bespanol\b": "Espanhol",
+    r"\bfrancês\b": "Francês",
+    r"\bfrances\b": "Francês",
+    r"\bitaliano\b": "Italiano",
+    r"\balemão\b": "Alemão",
+    r"\balemao\b": "Alemão",
+    r"\bjaponês\b": "Japonês",
+    r"\bjapones\b": "Japonês",
+    r"\bcoreano\b": "Coreano",
+    r"\bchinês\b": "Chinês",
+    r"\bchines\b": "Chinês",
+    r"\barabe\b": "Árabe",
+    r"\bportuguês\s*(brasileiro|br)\b": "Português (BR)",
+
+    # ═══════════════════════════════════════════════════════════
+    # 8. FORMAÇÃO ACADÊMICA
+    # ═══════════════════════════════════════════════════════════
+    r"\b(ensino\s+(médio|médio\s+completo|fundamental|fundamental\s+(completo|incompleto)|superior|superior\s+(completo|em\s+andamento|cursando)))\b": "Ensino Médio",
+    r"\b(superior\s+completo|graduação\s+completa|graduado|bacharel)\b": "Ensino Superior Completo",
+    r"\b(cursando|em\s+andamento)\s+(ensino\s+)?(superior|administração|contabilidade|tecnologia|engenharia|direito|psicologia|pedagogia|economia)\b": "Cursando Superior",
+    r"\b(pós?-graduação|pós\s+graduação|MBA|mba)\b": "Pós-Graduação",
+    r"\b(mestrado|mas?tere)\b": "Mestrado",
+    r"\b(doutorado|ph\.?d)\b": "Doutorado",
+    r"\b(técnico|tecnico)\s*(em\s+(informática|computação|administrativo|contábil|enfermagem|mecânica))?\b": "Técnico",
+    r"\bcurso\s+técnico\b": "Técnico",
+
+    # ═══════════════════════════════════════════════════════════
+    # 9. SOFT SKILLS
+    # ═══════════════════════════════════════════════════════════
+    r"\b(proatividade|pró-atividade|pró activo|pro activo)\b": "Proatividade",
+    r"\b(iniciativa|inicial)\b": "Iniciativa",
+    r"\b(comunicação|comunicação\s+interpessoal)\b": "Comunicação",
+    r"\b(trabalho\s+em\s+(equipe|equipo|grupo|time))\b": "Trabalho em Equipe",
+    r"\b(organização|organizacao|organizado|organizada)\b": "Organização",
+    r"\b(atenção\s+a\s+detalhes|olho\s+ao\s+detalhe)\b": "Atenção a Detalhes",
+    r"\b(responsabilidade|responsável)\b": "Responsabilidade",
+    r"\b(liderança|liderar|líder)\b": "Liderança",
+    r"\b(resolução\s+de\s+problemas|solução\s+de\s+problemas)\b": "Resolução de Problemas",
+    r"\b(pontualidade|pontual|tempestividade)\b": "Pontualidade",
+    r"\b(criatividade|criativo|inovador)\b": "Criatividade",
+    r"\b(adaptabilidade|adaptável|flexibilidade)\b": "Adaptabilidade",
+    r"\b(trabalho\s+sob\s+pressão|sob\s+pressão)\b": "Trabalho sob Pressão",
+    r"\b(autonomia|autônomo|autônoma|independente)\b": "Autonomia",
+    r"\b(análise\s+de\s+dados|analyze\s+de\s+dados)\b": "Análise de Dados",
+    r"\b(análise\s+crítica|pensamento\s+crítico)\b": "Análise Crítica",
+    r"\b(relacionamento\s+interpessoal)\b": "Relacionamento Interpessoal",
+    r"\b(negociação|negociar)\b": "Negociação",
+    r"\b(gestão\s+de\s+tempo|gerenciamento\s+de\s+tempo)\b": "Gestão de Tempo",
+    r"\b(gestão\s+de\s+(equipe|projetos)|gerenciamento\s+de\s+(equipe|projetos))\b": "Gestão de Projetos",
+    r"\b(planejamento|planejar)\b": "Planejamento",
+    r"\b(empathy|empatia)\b": "Empatia",
+    r"\b(paciência|paciente)\b": "Paciência",
+    r"\b(orientação\s+para\s+resultados|orientado\s+a\s+resultados)\b": "Orientação para Resultados",
+
+    # ═══════════════════════════════════════════════════════════
+    # 10. CERTIFICAÇÕES
+    # ═══════════════════════════════════════════════════════════
+    r"\b(oab)\b": "OAB",
+    r"\b(pmp|project\s+management\s+professional)\b": "PMP",
+    r"\b(pmi)\b": "PMI",
+    r"\b(scrum\s+master|psm|psi|scrum)\b": "Scrum Master",
+    r"\b(itil)\b": "ITIL",
+    r"\b(cisa)\b": "CISA",
+    r"\b(cism)\b": "CISM",
+    r"\b(ceh|ethical\s*hacker)\b": "CEH",
+    r"\b(cissp)\b": "CISSP",
+
+    # ═══════════════════════════════════════════════════════════
+    # 11. OUTROS TERMOS COMUNS
+    # ═══════════════════════════════════════════════════════════
+    r"\bcálculo\b": "Cálculo",
+    r"\bcálculos?\b": "Cálculo",
+    r"\bdigitação|digitar\b": "Digitação",
+    r"\bcontabilidade|contábil|contador\b": "Contabilidade",
+    r"\bfinanceiro|finanças?\b": "Financeiro",
+    r"\bcomercial|vendas?\b": "Comercial",
+    r"\badministrativo|administração|administrar\b": "Administrativo",
+    r"\b(rh|recrutamento|seleção|recruta|selecao)\b": "Recrutamento e Seleção",
+    r"\blogística|logistica\b": "Logística",
+    r"\bmarketing\b": "Marketing",
+    r"\bdesign|designer|gráfico|grafico\b": "Design",
+    r"\bredação|redator|escrever|escrita\b": "Redação",
+    r"\batendimento|atender|SAC\b": "Atendimento ao Cliente",
+    r"\bsuporte|suporta|help\s*desk|central\s*de\s*ajuda\b": "Suporte Técnico",
+    r"\btelemarketing|teleatendimento\b": "Telemarketing",
+    r"\bdata\s*entry|entrada\s*de\s*dados|cadastro\b": "Data Entry",
+    r"\barquivamento|organização\s+de\s+arquivos\b": "Organização de Arquivos",
+    r"\bemissão\s+de\s+notas?|emissão\s+de\s+nf-e|emissao\s+de\s+notas?\b": "Emissão de NF-e",
+    r"\brelatórios?|report|relatorio\b": "Relatórios",
+    r"\bformação|formacao|escolaridade|ensino\b": "Formação",
+    r"\bidioma|idiomas\b": "Idioma",
+    r"\bidioma\s+(português|ingles|espanhol|frances|italiano|alemao)\b": "",
+}
+
+
+def _is_garbage_requirement(text: str) -> bool:
+    """Retorna True se o texto for lixo e não deve ser considerado skill."""
+    t = text.strip()
+    if len(t) < 2:
+        return True
+    for pattern in _GARBAGE_PATTERNS:
+        if re.search(pattern, t, re.IGNORECASE):
+            return True
+    # Verifica se é apenas números/pontuação
+    if re.match(r'^[\d\s.,%\-/]+$', t):
+        return True
+    return False
+
+
+def normalize_skill(skill: str) -> str:
+    """Normaliza um skill: remove lixo e agrupa variações no mesmo termo canônico."""
+    # Remove lixo
+    if _is_garbage_requirement(skill):
+        return ""
+    t = skill.strip().lower()
+    # Remove parênteses e conteúdo interno
+    t = re.sub(r'\s*\([^)]*\)\s*', ' ', t).strip()
+    # Remove níveis numéricos (30%, 2 anos, etc.)
+    t = re.sub(r'\b\d{1,3}\s*%?\b', '', t).strip()
+    t = re.sub(r'\b\d+\s*(ano|anos|horas|h)\b', '', t).strip()
+    # Aplica mapeamentos
+    for pattern, replacement in _SKILL_NORMALIZATION.items():
+        if re.search(pattern, t, re.IGNORECASE):
+            return replacement.strip()
+    # Normalização final: capitalização padrão
+    return ' '.join(w.capitalize() for w in t.split()) if t else ""
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +407,7 @@ CREATE TABLE IF NOT EXISTS market_jobs (
     source TEXT,
     source_url TEXT,
     is_relevant INTEGER,
+    rejection_reason TEXT,
     requirements TEXT,
     nice_to_have TEXT,
     role_level TEXT,
@@ -97,10 +441,14 @@ def init_market_db(db_file: Path) -> None:
     """Cria as tabelas do DB de inteligência de mercado."""
     conn = sqlite3.connect(db_file)
     conn.executescript(DB_SCHEMA)
-    # Migração: adicionar source_url se não existir
-    for table in ("market_raw_jobs", "market_jobs"):
+    # Migração: adicionar colunas que podem não existir
+    for table, col in [
+        ("market_raw_jobs", "source_url"),
+        ("market_jobs", "source_url"),
+        ("market_jobs", "rejection_reason"),
+    ]:
         try:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN source_url TEXT")
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         except Exception:
             pass  # coluna já existe
     conn.commit()
@@ -125,21 +473,30 @@ def _fetch_jsearch_jobs(
     query: str,
     country: str = "br",
     language: str = "pt",
-    num_pages: int = 12,
+    num_pages: int = 4,
     api_keys: List[str] = None,
     date_posted: str = "all",
-) -> List[Dict]:
-    """Através JSearch API busca vagas reais, com fallback entre múltiplas chaves."""
+) -> tuple:
+    """Através JSearch API busca vagas reais, agregando resultados de TODAS as chaves."""
     if not api_keys:
         return [], None, None
 
     params = urllib.parse.quote_plus(query)
     url_template = f"{_JSEARCH_API_URL}?query={params}&country={country}&language={language}&num_pages={num_pages}&date_posted={date_posted}"
 
+    all_raw_jobs = []
+    last_remaining = None
+    last_total = None
     keys_tried = []
+    rate_limited_keys = set()  # chaves que já retornaram 429 nesta sessão
+
     for api_key in api_keys:
         api_key = api_key.strip()
         if not api_key:
+            continue
+
+        if api_key in rate_limited_keys:
+            logger.debug(f"[JSearch] Pulando chave {api_key[:8]}... (rate-limited nesta sessão)")
             continue
         keys_tried.append(api_key)
         req = urllib.request.Request(url_template, headers={
@@ -151,21 +508,63 @@ def _fetch_jsearch_jobs(
                 data = json.loads(resp.read().decode("utf-8"))
 
             if data.get("status") == "OK":
+                consecutive_429 = 0  # reset counter on success
                 raw_jobs = data.get("data", {}).get("jobs", [])
-                jobs = _build_jobs_from_raw(raw_jobs, country)
                 remaining = resp.headers.get("x-ratelimit-remaining")
                 total = resp.headers.get("x-ratelimit-limit")
-                logger.info(f"[JSearch] Chave {api_key[:8]}... → {len(jobs)} vagas | rate: {remaining}/{total}")
-                return jobs, int(remaining) if remaining else None, int(total) if total else None
+                logger.info(f"[JSearch] Chave {api_key[:8]}... → {len(raw_jobs)} vagas | rate: {remaining}/{total}")
+                # Filtra vagas pelo país esperado — chaves diferentes podem retornar países errados
+                expected = country.lower()
+                if expected == "br":
+                    # Para Brasil: aceita BR explícito, mas rejeita localizações de territórios não-BR
+                    # (JSearch marca Puerto Rico como BR, mas localização é PR)
+                    # NOTE: não rejeita jobs com job_country vazio — pode ser vaga BR sem país definido
+                    _SKIP_LOC_TERMS = {
+                        "puerto rico", "puerto ", " pr,", " pr ",
+                        "united states", "usa,", "usa ",
+                        "united kingdom", "uk,", "uk ", "inglaterra", "londres",
+                        "netherlands", "holanda", "mexico", "espanha", "españa",
+                        "canadá", "canada", "portugal", "frança", "france",
+                        "trøndelag", "snåsa", "san german", "são tomé",
+                    }
+                    filtered_raw = []
+                    for j in raw_jobs:
+                        jc = (j.get("job_country") or "").lower()
+                        jl = (j.get("job_location") or "").lower()
+                        # Aceita se país for BR explícito
+                        if jc in ("br", "brazil", "brasil"):
+                            filtered_raw.append(j)
+                            continue
+                        # Rejeita se país for explicitamente não-BR
+                        if jc and jc not in ("", "usa", "united states"):
+                            continue
+                        # Rejeita se localização contém termo de território não-BR
+                        if any(t in jl for t in _SKIP_LOC_TERMS):
+                            continue
+                        # Aceita: país vago ou não-BR mas localização compatível
+                        filtered_raw.append(j)
+                else:
+                    # Para internacional: aceita US explícito ou vago (remoto global)
+                    filtered_raw = [
+                        j for j in raw_jobs
+                        if (j.get("job_country") or "").lower() in (expected, "usa", "united states", "")
+                    ]
+                skipped = len(raw_jobs) - len(filtered_raw)
+                if skipped > 0:
+                    logger.warning(f"[JSearch] Chave {api_key[:8]}... filtrou {skipped} vagas de país errado ({expected})")
+                all_raw_jobs.extend(filtered_raw)
+                last_remaining = int(remaining) if remaining else last_remaining
+                last_total = int(total) if total else last_total
             else:
                 logger.warning(f"[JSearch] Chave {api_key[:8]}... retornou erro: {data.get('message', 'unknown')}")
         except urllib.error.HTTPError as e:
             if e.code == 403:
                 logger.warning(f"[JSearch] Chave {api_key[:8]}... 403 (sem créditos ou inválida), tentando próxima...")
+                rate_limited_keys.add(api_key)
                 continue
             elif e.code == 429:
-                logger.warning(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit), aguardando e tentando próxima...")
-                time.sleep(2)
+                logger.warning(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit)")
+                rate_limited_keys.add(api_key)
                 continue
             else:
                 logger.error(f"[JSearch] HTTP erro {e.code}: {e.reason}")
@@ -173,10 +572,17 @@ def _fetch_jsearch_jobs(
         except Exception as e:
             logger.error(f"[JSearch] Erro com chave {api_key[:8]}...: {e}")
             continue
-        time.sleep(0.3)  # delay entre requisições para evitar rate limit
+        # Throttle between key attempts to avoid IP rate limit
+        time.sleep(max(0.5, _JSEARCH_MIN_DELAY))
 
-    logger.warning(f"[JSearch] Nenhuma das {len(keys_tried)} chave(s) retornou resultados")
-    return [], None, None
+    # If ALL keys were rate-limited, wait longer before next query
+    if len(rate_limited_keys) >= len(api_keys) and api_keys:
+        logger.warning(f"[JSearch] Todas as {len(api_keys)} chaves rate-limited. Aguardando {_RATE_LIMIT_ALL_SLEEP}s...")
+        time.sleep(_RATE_LIMIT_ALL_SLEEP)
+
+    jobs = _build_jobs_from_raw(all_raw_jobs, country)
+    logger.info(f"[JSearch] Query {query!r}: {len(jobs)} vagas agregadas de {len(keys_tried)} chave(s)")
+    return jobs, last_remaining, last_total
 
 
 def _build_jobs_from_raw(raw_jobs: List, default_country: str) -> List[Dict]:
@@ -243,6 +649,8 @@ def _build_jobs_from_raw(raw_jobs: List, default_country: str) -> List[Dict]:
             "source": publisher,
             "source_url": apply_link,
             "seniority": "",
+            "job_id": j.get("job_id", ""),
+            "job_country": job_country,
         })
     return jobs
 
@@ -264,7 +672,56 @@ def _update_jsearch_usage(db_file: Path, key: str, remaining: int):
     conn.close()
 
 
-def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all"):
+def _get_jsearch_country_language(location: str) -> tuple:
+    """Retorna (country, language) baseado na seleção de localização do usuário."""
+    loc = location.lower()
+    if "internacional" in loc:
+        return "us", "en"
+    return "br", "pt"
+
+
+def _get_geo_keywords(location: str) -> List[str]:
+    """Retorna palavras-chave geográficas para enriquecer as queries de busca."""
+    loc = location.lower()
+    if "internacional" in loc:
+        return ["Brazil", "Latam", "Latin America", "Brazilian", "remoto Brasil"]
+    return ["Brasil", "Brazil", "remoto Brasil", "vaga Brasil"]
+
+
+_PORT_TRANSLATIONS = {
+    "developer": "desenvolvedor", "engineer": "engenheiro",
+    "analyst": "analista", "designer": "designer", "manager": "gerente",
+    "lead": "líder", "architect": "arquiteto",
+    "data": "dados", "scientist": "cientista",
+    "product": "produto", "marketing": "marketing",
+    "sales": "vendas", "support": "suporte",
+    "fullstack": "fullstack", "frontend": "frontend",
+    "backend": "backend", "devops": "devops",
+    "qa": "qa", "tester": "testador", "writer": "escritor",
+    "coordinator": "coordenador", "specialist": "especialista",
+    "administrator": "administrador", "director": "diretor",
+    "consultant": "consultor", "representative": "representante",
+    "coordinator": "coordenador",
+}
+
+
+def _translate_to_portuguese(english_query: str) -> str:
+    """Tenta traduzir query em inglês para português palavra por palavra."""
+    words = english_query.lower().split()
+    translated = []
+    for w in words:
+        # Remove suffixos comuns
+        clean = w.rstrip("s").rstrip("ed").rstrip("ing")
+        por = _PORT_TRANSLATIONS.get(clean, w)
+        translated.append(por)
+    result = " ".join(translated)
+    # Se nenhuma palavra foi traduzida, retorna None
+    if result == english_query.lower():
+        return None
+    return result
+
+
+def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all", location: str = "Remoto Nacional"):
     """Gera vagas mock se a base estiver vazia.
     Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro.
     Usa múltiplas queries para maximizar o volume de vagas.
@@ -287,30 +744,161 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
             valid_keys = [k.strip() for k in jsearch_api_keys if k and k.strip()]
             if valid_keys:
                 search_query = job_title.strip()
-                # Múltiplas queries para maximizar volume
-                queries = [search_query]
-                # Adicionar variações comuns
-                base_terms = search_query.split()
-                if len(base_terms) >= 2:
-                    queries.append(base_terms[0])  # termo principal
-                elif len(base_terms) == 1:
-                    queries.append(search_query + " vaga")
-                    queries.append(search_query + " emprego")
+                country, language = _get_jsearch_country_language(location)
+                geo_keywords = _get_geo_keywords(location)
 
+                # ATENÇÃO: Queries massivas para maximizar volume → 200+ vagas relevantes
+                # Cada query com num_pages=12 retorna ~144 vagas; 30 queries = ~4320 vagas brutas
+                queries = []
+
+                # Query principal com geo
+                if geo_keywords:
+                    queries.append(f"{search_query} {geo_keywords[0]}")
+                queries.append(search_query)
+
+                # Termos brasileiros essenciais
+                queries.append(f"{search_query} vaga brasil")
+                queries.append(f"{search_query} emprego brasil")
+                queries.append(f"{search_query} remoto brasil")
+                queries.append(f"{search_query} clt")
+                queries.append(f"{search_query} contratação")
+                queries.append(f"{search_query} home office")
+                queries.append(f"{search_query} online")
+
+                # Plataformas (geram vagas diferentes)
+                queries.append(f"{search_query} linkedin")
+                queries.append(f"{search_query} catho")
+                queries.append(f"{search_query} infojobs")
+                queries.append(f"{search_query} glassdoor")
+
+                # Níveis de experiência
+                queries.append(f"{search_query} junior")
+                queries.append(f"{search_query} pleno")
+                queries.append(f"{search_query} estagiario")
+                queries.append(f"{search_query} entry level")
+
+                # Regiões e indústria
+                queries.append(f"{search_query} sao paulo")
+                queries.append(f"{search_query} sudeste brasil")
+                queries.append(f"{search_query} banca")
+
+                # Parallel queries: 执行在 6 个并发的批次中，每个批次独立分配不同的 key 子集
                 all_jobs = {}
-                for q in queries:
-                    jobs, rem, tot = _fetch_jsearch_jobs(q, country="br", language="pt", num_pages=12, api_keys=valid_keys, date_posted=date_posted)
-                    logger.info(f"[MARKET] JSearch query {q!r}: {len(jobs)} vagas")
-                    for j in jobs:
-                        link = j.get("apply_link") or j.get("title", "") + j.get("company", "")
-                        all_jobs[link] = j
-                    if rem is not None and valid_keys:
-                        used_key_remaining = rem
-                    # Pausa curta entre queries para evitar rate limit
-                    time.sleep(0.5)
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                def _fetch_single_query(q, keys_subset=None, date_posted="month"):
+                    """执行单个查询，可选传入 key 子集以分散 IP 压力。"""
+                    keys = keys_subset if keys_subset else valid_keys
+                    return _fetch_jsearch_jobs(q, country=country, language=language,
+                                               num_pages=12, api_keys=keys, date_posted=date_posted)
+
+                # 将有效 key 分成 6 个子集，尽量均匀分配
+                def _split_keys(keys, n):
+                    """将 keys 列表分成 n 个子列表，尽量均匀分布。"""
+                    if not keys:
+                        return [[] for _ in range(n)]
+                    result = [[] for _ in range(n)]
+                    for i, k in enumerate(keys):
+                        result[i % n].append(k)
+                    return result
+
+                key_subsets = _split_keys(valid_keys, 6)
+
+                batch_size = 6
+                max_concurrent = min(batch_size, len(valid_keys)) if valid_keys else 1
+                total_batches = (len(queries) + batch_size - 1) // batch_size
+
+                # 统计每批次成功/失败的 query 数，用于后续 retry
+                failed_queries = []  # 记录返回 0 条结果的 query
+                retry_count = 0
+                max_retries = _MAX_RETRY
+
+                for batch_idx in range(total_batches):
+                    batch_queries = queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+                    # 为每个 query 分配不同的 key 子集（round-robin 移位）
+                    subset_idx = batch_idx % len(key_subsets)
+                    batch_key_subset = key_subsets[subset_idx]
+
+                    with ThreadPoolExecutor(max_workers=min(len(batch_queries), max_concurrent)) as executor:
+                        futures = {}
+                        for i, q in enumerate(batch_queries):
+                            # 每个 query 使用不同的 key 子集偏移，进一步分散压力
+                            inner_offset = (batch_idx + i) % len(key_subsets)
+                            inner_subset = key_subsets[inner_offset]
+                            futures[executor.submit(_fetch_single_query, q, inner_subset)] = q
+
+                        for future in as_completed(futures):
+                            q = futures[future]
+                            try:
+                                jobs, rem, tot = future.result()
+                            except Exception as e:
+                                logger.error(f"[MARKET] Query {q!r} falhou: {e}")
+                                jobs = []
+                                rem = None
+                                tot = None
+                            logger.info(f"[MARKET] JSearch query {q!r}: {len(jobs)} vagas")
+                            dup_before = len(all_jobs)
+                            for j in jobs:
+                                # Dedup: prioriza job_id da API, fallback para hash título+empresa+local
+                                raw_jid = j.get("job_id", "")
+                                if raw_jid:
+                                    dedup_key = f"api:{raw_jid}"
+                                else:
+                                    dedup_key = hashlib.md5(
+                                        f"{j.get('title','')}|{j.get('company','')}|{j.get('location','')}"
+                                        .encode()).hexdigest()
+                                all_jobs[dedup_key] = j
+                            logger.info(f"[MARKET] Query {q!r}: {len(jobs)} novas, {len(all_jobs)-dup_before} únicas")
+                            if rem is not None and valid_keys:
+                                used_key_remaining = rem
+                            # 记录失败（0 条结果）的 query 以便后续 retry
+                            if len(jobs) == 0:
+                                failed_queries.append(q)
+
+                    # 批次间延迟：避免 IP 级 rate limit
+                    time.sleep(_BATCH_DELAY)
+
+                # Retry 逻辑：对返回 0 条结果的 query 进行重试，每次用不同 key 子集
+                for retry_attempt in range(1, max_retries + 1):
+                    if not failed_queries:
+                        break
+                    logger.info(f"[MARKET] Retry attempt {retry_attempt}: {len(failed_queries)} queries failed, waiting {_RETRY_BASE_DELAY * retry_attempt}s")
+                    time.sleep(_RETRY_BASE_DELAY * retry_attempt)
+                    still_failed = []
+                    for q in failed_queries:
+                        subset_offset = (retry_attempt + failed_queries.index(q)) % len(key_subsets)
+                        subset = key_subsets[subset_offset]
+                        try:
+                            jobs, rem, tot = _fetch_jsearch_jobs(q, country=country, language=language,
+                                                                  num_pages=6, api_keys=subset, date_posted=date_posted)
+                        except Exception as e:
+                            logger.error(f"[MARKET] Retry query {q!r} falhou: {e}")
+                            jobs = []
+                            rem = None
+                            tot = None
+                        logger.info(f"[MARKET] Retry {retry_attempt} query {q!r}: {len(jobs)} vagas")
+                        dup_before = len(all_jobs)
+                        for j in jobs:
+                            raw_jid = j.get("job_id", "")
+                            if raw_jid:
+                                dedup_key = f"api:{raw_jid}"
+                            else:
+                                dedup_key = hashlib.md5(
+                                    f"{j.get('title','')}|{j.get('company','')}|{j.get('location','')}"
+                                    .encode()).hexdigest()
+                            all_jobs[dedup_key] = j
+                        logger.info(f"[MARKET] Retry {retry_attempt} query {q!r}: {len(jobs)} novas, {len(all_jobs)-dup_before} únicas")
+                        if rem is not None and valid_keys:
+                            used_key_remaining = rem
+                        if len(jobs) == 0:
+                            still_failed.append(q)
+                    failed_queries = still_failed
+                    if not still_failed:
+                        break
 
                 sample_jobs = list(all_jobs.values())
-                logger.info(f"[MARKET] JSearch combinou {len(sample_jobs)} vagas únicas de {len(queries)} query(ies)")
+                retry_note = f"com {len(failed_queries)} queries ainda falhas" if failed_queries else "sem retry necessário"
+                logger.info(f"[MARKET] JSearch combinou {len(sample_jobs)} vagas únicas de {len(queries)} queries, {retry_note}")
                 # Atualiza uso no DB
                 if used_key_remaining is not None and valid_keys:
                     _update_jsearch_usage(db_file, valid_keys[0], used_key_remaining)
@@ -325,10 +913,17 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 job_id = str(uuid.uuid4())
                 pub_date = now - timedelta(days=i * 3 + 1)
                 source_url = j.get("source_url", "")
+                job_country = j.get("job_country", "")
+                # Anexa país como metadado na descrição para uso posterior no filtro
+                if job_country:
+                    country_meta = f"\n[PAÍS: {job_country.upper()}]"
+                    desc = j["description"] + country_meta
+                else:
+                    desc = j["description"]
                 cursor.execute('''
                     INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url, published_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (job_id, j["title"], j["company"], j["description"], j["location"], j["modality"], j["source"], source_url, pub_date.isoformat()))
+                ''', (job_id, sanitize(j["title"]), sanitize(j["company"]), sanitize(desc), sanitize(j["location"]), sanitize(j["modality"]), sanitize(j["source"]), source_url, pub_date.isoformat()))
 
             conn.commit()
     conn.close()
@@ -492,6 +1087,34 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
                 p = p.strip()
                 if len(p) > 3 and len(p) < 100:
                     result["nice_to_have"].append(p)
+        # Formação escolar
+        elif 'formação' in ll or 'formacao' in ll or 'escolaridade' in ll or 'ensino' in ll:
+            parts = re.split(r'[:,;]', line)
+            for p in parts[1:]:
+                p = p.strip()
+                if len(p) > 3 and len(p) < 100:
+                    result["requirements"].append(p)
+        # Idiomas
+        elif 'idioma' in ll or 'idiomas' in ll:
+            parts = re.split(r'[:,;]', line)
+            for p in parts[1:]:
+                p = p.strip()
+                if len(p) > 3 and len(p) < 100:
+                    result["requirements"].append(p)
+        # Experiência específica
+        elif ('experiência' in ll or 'experiencia' in ll) and ('anos' not in ll):
+            parts = re.split(r'[:,;]', line)
+            for p in parts[1:]:
+                p = p.strip()
+                if len(p) > 5 and len(p) < 100 and 'anos' not in p:
+                    result["requirements"].append(p)
+        # Atribuições/como bônus
+        elif 'atribuição' in ll or 'atribuicao' in ll:
+            parts = re.split(r'[:,;]', line)
+            for p in parts[1:]:
+                p = p.strip()
+                if len(p) > 5 and len(p) < 100:
+                    result["nice_to_have"].append(p)
 
     return result
 
@@ -560,75 +1183,137 @@ def map_time_window_to_date_posted(time_window: str) -> str:
 
 
 def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "") -> str:
-    """Detecta se uma vaga é nacional (BR) ou internacional baseado em idioma e moeda."""
+    """Detecta se uma vaga é nacional (BR) ou internacional.
+    Rigoroso: mesmo com job_country='br', verifica sinais de internacional no texto."""
     text_lower = job_text.lower()
     salary_lower = salary.lower()
 
-    # Moeda indica internacional
-    if any(c in salary_lower for c in ["$", "usd", "euro", "€", "us dollar", "gbp", "£"]):
-        return "internacional"
+    # Sinais fortes de internacional NO TEXTO → rejeita mesmo com country=br
+    # Check each individually
+    for sig in ["usd", "dollar", "us dollar", "remote international",
+                "work remotely abroad", "english required", "bilingual",
+                "native english", "gbp", "€", "euro", "contractor us"]:
+        if sig in text_lower:
+            return "internacional"
+
+    # Moeda indica internacional — verificar R$ PRIMEIRO para não confundir com dólar
     if "r$" in salary_lower or "real" in salary_lower or "brl" in salary_lower:
         return "nacional"
-
-    # País indica
-    if job_country and job_country.lower() not in ("br", "brazil", "brasil", ""):
+    if any(c in salary_lower for c in ["$", "usd", "euro", "€", "us dollar", "gbp", "£"]):
         return "internacional"
-    if job_country in ("br", "brazil", "brasil"):
+
+    # Idioma do texto — verificar idiomas estrangeiros ANTES de português,
+    # pois palavras como "vaga", "remoto", "home office" existem em AMBOS os idiomas.
+    # Só consideramos "nacional" se tivermos sinais fortes de português E NENHUM de espanhol.
+
+    # --- Espanhol (verificar PRIMEIRO) ---
+    # USAR APENAS palavras exclusivas do espanhol, evitar falsos positivos com português
+    spanish_strong = [
+        "español", "espanol", "trabajo", "atención",
+        "representante", "servicio", "ventas", "seguros", "licencia",
+        "otorgada", "llamamos", "sueldo", "contratación",
+        "contratacion", "experiencia", "requerimientos", "responsabilidades",
+        "remoto 100%", "concesiones", "resiliencia",
+        # "jornada" REMOVIDO — bate com "jornadas" (português comum)
+        # "operativa" REMOVIDO — existe em português também
+        # "oportunidad" REMOVIDO — bate com "oportunidade" (PT)
+        # "buscamos" REMOVIDO — existe em português também
+        # "salario" REMOVIDO — ambíguo (PT também usa sem acento)
+        # "auxiliar" REMOVIDO — existe em português também
+    ]
+    if any(s in text_lower for s in spanish_strong):
+        return "internacional"
+
+    # --- Holandês / Norueguês ---
+    nordic_patterns = [
+        "raadgever", "alreial", "miljø", "natur", "vilt", "kulturskolerådet",
+        "innen", "stilling", "søker", "arbeid",
+    ]
+    if any(s in text_lower for s in nordic_patterns):
+        return "internacional"
+
+    # --- Francês ---
+    # Usar delimitadores de espaço para evitar falsos positivos por substring
+    french_patterns = [
+        " français ", " française ", " francais ", " française ",
+        " franco ", " emploi ", " requis ", " salaire ", " poste ",
+        " experience ", "competitif", "candidate",
+    ]
+    if any(s in text_lower for s in french_patterns):
+        return "internacional"
+
+    # --- Inglês ---
+    english_patterns = [
+        "native english", "english required", "bilingual",
+        "fluency", "required", "fluent", "salary in usd",
+    ]
+    if any(s in text_lower for s in english_patterns):
+        return "internacional"
+
+    # --- Geografia/localização — verificar ANTES de idioma, pois lugar vence palavra ---
+    loc_country_signals = [
+        "puerto rico", "puerto", " pr,", " pr ",
+        "united states", "usa,", "usa ",
+        "united kingdom", "uk,", "uk ", "londres", "inglaterra",
+        "netherlands", "holanda", "mexico", "espanha",
+        "canadá", "canada", "portugal", "frança",
+        "trøndelag", "snåsa", "san german", "são tomé",
+    ]
+    for sig in loc_country_signals:
+        if sig in text_lower:
+            return "internacional"
+
+    # --- Português (só agora — depois de descartar espanhol/idiomas estrangeiros e geografia) ---
+    # Agora podemos usar "vaga" e "emprego" com segurança porque espanhol e geografia já foram descartados
+    pt_brazilian_patterns = [
+        "vaga", "emprego", "home office",
+        "salário", "salario", "brasileiro", "brasileira", "clt", "pj",
+        "híbrido", "hibrido", "remuneracao",
+        "requisitos", "atribuições", "benefícios",
+        "vínculo", "cnpj", "fgts", "13º", "13o",
+        "vt", "vr", "vale transporte", "vale refeição",
+        "carteira assinada", "regime clt",
+    ]
+    if any(p in text_lower for p in pt_brazilian_patterns):
         return "nacional"
 
-    # Idioma do texto
-    english_patterns = ["english", "required", "native", "bilingual", "fluent",
-                        "usd", "dollar", "europe", "remote international",
-                        "remote abroad", "work remotely abroad"]
-    portuguese_patterns = ["português", "portugues", "vaga", "salário", "salario",
-                           "brasileiro", "brasileira", "clt", "pj", "home office",
-                           "remoto", "híbrido", "hibrido", "presencial", "remuneracao",
-                           "requisitos", "atribuições", "benefícios"]
+    # Check de país como último recurso (só se não houve sinais de idioma no texto)
+    if job_country:
+        c = job_country.lower().strip()
+        if c in ("br", "brazil", "brasil"):
+            return "nacional"
+        if c not in ("", None):
+            return "internacional"
 
-    eng_count = sum(1 for p in english_patterns if p in text_lower)
-    por_count = sum(1 for p in portuguese_patterns if p in text_lower)
-
-    if eng_count >= 2 and eng_count > por_count:
-        return "internacional"
-    if por_count >= 1:
-        return "nacional"
-
-    return "nacional"  # default
+    # Default: se não tem sinais claros de nenhum lado, assume nacional (mais seguro)
+    return "nacional"
 
 
 def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str], seniority: str, location: str) -> int:
-    """Retorna score de relevância. Score == 0 = rejeitado no pré-filtro."""
-    # SENIORITY "Nenhum" = sem filtro de senioridade
+    """Retorna score de relevância permissivo. Nunca zera por falta de palavra exata."""
     if seniority.lower() == "nenhum":
         sen_matches = []
     else:
         sen_matches = _SENIORITY_MATCHES.get(seniority.lower(), [])
 
-    # Se não tem stack definido, usa o job_title como fallback
     if target_stack:
         keywords = target_stack
     else:
-        # Stack vazio: usar palavras do job_title com word boundary
         keywords = [w for w in job_title.strip().split() if len(w) > 2]
 
-    # REGRA OBRIGATÓRIA: pelo menos 1 keyword deve estar no texto (com word boundary para stack, substring para título)
+    # Base score permissivo (1): Deixa todas as vagas capturadas irem para a IA decidir relevância
+    score = 1
+
     if target_stack:
-        stack_hits = sum(1 for kw in keywords if re.search(r'\b' + re.escape(kw.lower()) + r'\b', job_text_lower))
+        for kw in keywords:
+            if re.search(r'\b' + re.escape(kw.lower()) + r'\b', job_text_lower):
+                score += 3
     else:
-        # Sem stack: pelo menos uma palavra do título deve estar no texto
-        stack_hits = sum(1 for kw in keywords if kw.lower() in job_text_lower)
+        for kw in keywords:
+            if kw.lower() in job_text_lower:
+                score += 2
 
-    if stack_hits == 0:
-        return 0  # Nenhuma keyword encontrada → vaga irrelevante
-
-    score = 0
-
-    # Stack keywords — bônus se encontrar no texto (word boundary)
-    for kw in keywords:
-        if re.search(r'\b' + re.escape(kw.lower()) + r'\b', job_text_lower):
-            score += 3
-
-    # SENIORITY — bônus se bater, mas NUNCA rejeita (preferencial, não obrigatório)
+    # SENIORITY — bônus se bater, mas NUNCA rejeita
     for sm in sen_matches:
         if sm in job_text_lower:
             score += 2
@@ -674,6 +1359,10 @@ def _pre_filter_jobs(
         job_text_lower = (title + " " + description).lower()
         mod_lower = mod.lower()
 
+        # Extrai job_country do metadado anexado na descrição
+        _country_match = re.search(r'\[PAÍS:\s*(\w+)\]', description)
+        job_country_val = _country_match.group(1) if _country_match else ""
+
         # Remove negative keywords (word boundary match)
         if neg_list:
             skip = False
@@ -686,20 +1375,35 @@ def _pre_filter_jobs(
 
         # NACIONALIDADE — rejeita vagas que não correspondem ao escopo
         if is_nacional or is_internacional:
-            job_nationality = detect_job_nationality(description, loc, "")
+            job_nationality = detect_job_nationality(description, job_country_val, "")
             if is_nacional and job_nationality == "internacional":
                 continue
             if is_internacional and job_nationality == "nacional":
                 continue
 
-        # MODALIDADE
+        # LOCALIZAÇÃO — rejeita vagas com localização física fora do Brasil
+        if is_nacional:
+            loc_text = (loc + " " + description).lower()
+            _NON_BR_LOCATIONS = [
+                "puerto rico", "puerto ", " pr,", " pr ",
+                "united states", "usa,", "usa ",
+                "united kingdom", "uk,", "uk ", "londres", "inglaterra",
+                "netherlands", "holanda", "mexico", "espanha",
+                "canadá", "canada", "portugal", "frança",
+                "trøndelag", "snåsa", "san german",
+            ]
+            if any(l in loc_text for l in _NON_BR_LOCATIONS):
+                continue
+
+        # MODALIDADE — ativada para filtrar vagas irrelevantes
         if modality_restriction == 'remote':
-            pass
+            if 'presencial' in job_text_lower or 'no local' in job_text_lower:
+                continue
         elif modality_restriction == 'onsite':
             if 'remoto' in job_text_lower or 'home office' in job_text_lower:
                 continue
         elif modality_restriction == 'hybrid':
-            if 'remoto' in job_text_lower or 'home office' in job_text_lower:
+            if ('exclusivamente remoto' in job_text_lower) or ('exclusivamente presencial' in job_text_lower):
                 continue
 
         score = _keyword_score(job_text_lower, title, target_stack, seniority, location)
@@ -707,7 +1411,33 @@ def _pre_filter_jobs(
             job_text = f"Título: {title}\nEmpresa: {company}\nLocalização: {loc}\nModalidade: {mod}\nDescrição:\n{description}"
             filtered.append((score, job_id, title, company, description, loc, mod, source, source_url, job_text))
 
-    # Ordena por score decrescente e limita
+    # Fallback: Se o pré-filtro descartou tudo (0 vagas) mas existem vagas brutas,
+    # aplica fallback COM filtro de localização (não adiciona vagas de países errados)
+    if not filtered and raw_jobs:
+        logger.warning(f"[MARKET] Pré-filtro descartou todas as {len(raw_jobs)} vagas — aplicando fallback com filtro de localização")
+        for j in raw_jobs[:max_jobs]:
+            job_id, title, company, description, loc, mod, source, source_url = j
+            job_text_lower = (title + " " + description).lower()
+            # Re-aplica filtro básico de localização/idioma no fallback
+            skip = False
+            _FALLBACK_SKIP = [
+                "puerto rico", "puerto ", " pr,", " pr ",
+                "united states", "usa,", "usa ",
+                "united kingdom", "uk,", "uk ", "londres", "inglaterra",
+                "netherlands", "holanda", "mexico", "espanha",
+                "canadá", "canada", "portugal", "frança",
+                "trøndelag", "snåsa", "san german",
+                "español", "espanol", "trabajo", "agendador", "servicio",
+            ]
+            for s in _FALLBACK_SKIP:
+                if s in job_text_lower:
+                    skip = True
+                    break
+            if skip:
+                continue
+            job_text = f"Título: {title}\nEmpresa: {company}\nLocalização: {loc}\nModalidade: {mod}\nDescrição:\n{description}"
+            filtered.append((1, job_id, title, company, description, loc, mod, source, source_url, job_text))
+
     filtered.sort(key=lambda x: -x[0])
     return [(f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9]) for f in filtered[:max_jobs]]
 
@@ -719,20 +1449,31 @@ def _pre_filter_jobs(
 def extract_job_with_ai(client: OpenAI, selected_model: str, job_text: str, target_stack: List[str], seniority: str = "Pleno", location: str = "Remoto Nacional") -> Dict[str, Any]:
     """Usa IA para extrair dados estruturados de uma vaga de forma rigorosa."""
     job_title_context = target_stack[0] if target_stack else "diversas áreas"
-    prompt = f"""Analise esta vaga e extraia dados estruturados.
+    prompt = f"""EXTRAIA TODOS OS DADOS POSSÍVEIS desta vaga.
+Seja O MAIS COMPLETO POSSÍVEL — extraia TUDO que a vaga menciona como requisito, qualificação ou competência.
 
-CLASSIFICAÇÃO — pergunte a si mesma para CADA item:
-1. É um CONHECIMENTO/FERRAMENTA que a pessoa PRECISA TER? -> requirements
-2. É um TRAÇO COMPORTAMENTAL (atitude, forma de agir)? -> soft_skills
-3. É um TÍTULO OFICIAL de certificação? -> certifications
-4. É Desejável mas não Obrigatório? -> nice_to_have
-5. Se NÃO se encaixa em 1-4 -> NÃO é skill. Ignore.
+CATEGORIAS E O QUE INCLUIR (Seja 100% AGNÓSTICO a área):
+- requirements: Exatamente o que a vaga pede como requisito obrigatório ou qualificação.
+  * Se for TI: linguagens de programação, frameworks, bancos de dados, ferramentas (Git, Docker, AWS).
+  * Se for Mecânica: tipos de motores, ferramentas, sistemas (VE, elétrico, hidráulico), certificações (ANECA, cinto vermelho).
+  * Se for outra área: extraia especificamente o que for obrigatório mencionado no texto.
+- soft_skills: traços comportamentais e habilidades interpessoais (comunicação, liderança, teamwork, adaptabilidade).
+- certifications: certificações formais ou títulos profissionais da área específica da vaga.
+- nice_to_have: diferenciais mencionados como desejáveis mas não obrigatórios na descrição.
+- languages: idiomas mencionados com nível de fluência se presente.
 
-CATEGORIAS:
-- requirements: só conhecimento técnico, ferramentas, linguagens, idiomas, formação acadêmica
-- soft_skills: só traços comportamentais (proatividade, liderança, comunicação, etc)
-- certifications: só certificações formais (AWS, PMP, OAB, etc)
-- nice_to_have: diferenciais técnicos não obrigatórios
+O QUE NÃO INCLUIR:
+- Benefícios da empresa: vale transporte, vale alimentação, plano de saúde, Gympass
+- Modalidade: remoto, híbrido, presencial, home office
+- Processos/rotina: code review, standup, reunião, troubleshooting
+- Responsabilidades do cargo: o que a pessoa faz no dia a dia
+
+O QUE NÃO INCLUIR:
+- Benefícios da empresa: vale transporte, vale alimentação, plano de saúde, Gympass
+- Modalidade: remoto, híbrido, presencial, home office
+- Processos/rotina: code review, standup, reunião
+- Responsabilidades do cargo: o que a pessoa faz no dia a dia
+- Anos de experiência: vá para exp_years_min/exp_years_max
 
 RELEVÂNCIA: is_relevant=TRUE se o cargo for compatível com o perfil do usuário.
 
@@ -741,36 +1482,26 @@ Perfil: cargo={job_title_context}, stack={", ".join(target_stack)}, seniority={s
 Descrição da vaga:
 {job_text}
 
-*** VERIFICAÇÃO FINAL (leia ANTES de gerar o JSON) ***
-PARA CADA ITEM nos campos requirements e soft_skills, responda:
-"Isso é conhecimento/traço da PESSOA, ou algo que a EMPRESA oferece/processa?"
-- EMPRESA PAGA (auxílio, vale, plano, bônus, refeição, Gympass) -> NÃO é skill
-- EMPRESA ORGANIZA (remoto, híbrido, home office, flexível) -> NÃO é skill
-- PROCESSO/ROTINA (code review, standup, pair programming, reunião) -> NÃO é skill
-- RESPONSABILIDADE DO CARGO (o que a pessoa faz no dia a dia) -> NÃO é skill
-- ANOS DE EXPERIÊNCIA (X anos, 2-5 anos, mínimo X anos) -> vai para exp_years_min/exp_years_max, NÃO é skill
-- SOMENTE se a PESSOA PRECISA SABER/TER -> é skill.
-
-Apenas depois dessa verificação, retorne o JSON abaixo:
-{
+Retorne o JSON abaixo com TODOS os campos preenchidos:
+{{
   "is_relevant": true|false,
   "role_level": "Júnior"|"Pleno"|"Sênior"|"Especialista"|null,
   "exp_years_min": número|null,
   "exp_years_max": número|null,
-  "requirements": ["Python", "React"],
-  "nice_to_have": ["AWS"],
-  "certifications": ["PMP"],
-  "soft_skills": ["proatividade", "trabalho em equipe"],
+  "requirements": ["Excel intermediário", "Pacote Office", "Inglês básico"],
+  "nice_to_have": ["Conhecimento em SAP"],
+  "certifications": ["OAB"],
+  "soft_skills": ["organização", "proatividade"],
   "salary_min": número|null,
   "salary_max": número|null,
   "currency": "BRL"|"USD"|null
-}"""
+}}"""
     try:
         response = client.chat.completions.create(
             model=selected_model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            timeout=60,
+            timeout=120,
         )
         content = response.choices[0].message.content or "{}"
 
@@ -794,45 +1525,205 @@ Apenas depois dessa verificação, retorne o JSON abaixo:
 def _sanitize_requirements(item: Dict[str, Any]) -> Dict[str, Any]:
     """Safety net: remove obvious non-skills from requirements and soft_skills."""
     import re as _re
-    # Each pattern matches a SUBSTRING of the term — if found, the term is NOT a skill
-    benefit_patterns = [
-        r"auxílio", r"auxilio", r"vale\s+\w+", r"vr[/\-]\s*va", r"va[/\-]\s*vr",
-        r"plano\s+de\s+saúde", r"plano\s+de\s+saude",
-        r"refeição", r"alimentação", r"alimentacao", r"transporte\b", r"bônus", r"bonus",
-        r"profit\s*share", r"stock\s*(options?|option)", r"seguro\s+de\s+vida",
-        r"previdência", r"previdencia", r"participação\s+nos\s+lucros",
-        r"vaga\s+de\s+férias", r"day\s+off", r"psychological\s+support",
-        r"\bgympass\b", r"\bgypass\b", r"\bgoldpass\b",
-        r"carteira\s+(refeição|alimentação|alimentacao)",
-        r"reembolso",
-    ]
-    modality_patterns = [
-        r"\bremoto\b", r"\bhíbrido\b", r"\bhibrido\b", r"\bhome\s+office\b",
-        r"\bflexível\b", r"\bflexivel\b", r"\bpresencial\b",
-        r"modelo\s+(híbrido|hibrido)\b", r"\btrabalho\s+(remoto|hibrido|híbrido)\b",
-        r"\bescritório\s+(híbrido|hibrido)\b",
-    ]
-    process_patterns = [
-        r"\bcode\s+review\b", r"\bpair\s+(programming|program)\b", r"\bstandup\b",
-        r"\bretro\b", r"\breunião?\b", r"\bcerimônia?\b", r"\bcerimonia?\b",
-    ]
-    experience_patterns = [
-        r"[\d]+\s*(?:a\s+[\d]+)?\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
-        r"[\d]+\s*[\+]\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
-        r"experiência\s+(?:de\s+)?[\d]+\s*anos?",
-        r"[\d]+\s*(?:a|até)\s*[\d]+\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
-        r"mínimo\s*de\s*[\d]+\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)",
-    ]
 
-    combined = "|".join(benefit_patterns + modality_patterns + process_patterns + experience_patterns)
-    term_pattern = _re.compile(combined, _re.IGNORECASE)
+    _SKILL_MAX_LEN = 80  # itens muito longos são frases, não skills
 
-    for field in ("requirements", "soft_skills"):
+    # === REGRAS DE FILTRAGEM ===
+
+    def _is_garbage(term: str) -> bool:
+        """Retorna True se o termo for lixo (não skill)."""
+        t = term.strip()
+        if len(t) < 2 or len(t) > _SKILL_MAX_LEN:
+            return True
+
+        t_lower = t.lower()
+
+        # Benefícios da empresa
+        if any(kw in t_lower for kw in [
+            "auxílio educação", "auxilio educacao", "auxilio", "vale ", "vr/va", "va/vr",
+            "plano de saúde", "plano de saude", "plano odontológico", "plano odontologico",
+            "refeição", "alimentação", "alimentacao", "vale transporte", "vale combustível",
+            "vale alimentação", "vale refeição",
+            "bônus", "bonus", "profit share", "stock options", "stock option",
+            "seguro de vida", "previdência", "previdencia",
+            "participação nos lucros", "participacao nos lucros",
+            "gympass", "gypass", "goldpass", "santander student",
+            "carteira refeição", "carteira alimentação",
+            "reembolso", "day off", "psychological support",
+            "ferias", "férias", "13º", "13o", "decimo terceiro",
+            "fgts", "ctps",
+        ]):
+            return True
+
+        # Modalidade / local
+        if any(kw in t_lower for kw in [
+            "remoto", "hibrido", "híbrido", "home office", "presencial",
+            "flexível", "flexivel", "flexibilidade",
+            "modelo híbrido", "modelo hibrido",
+            "trabalho remoto", "trabalho hibrido", "trabalho híbrido",
+            "escritório híbrido", "escritorio hibrido",
+            "local: ", "localidade", "região metropolitana", "regiao metropolitana",
+        ]):
+            return True
+
+        # Processos / rotina
+        if any(kw in t_lower for kw in [
+            "code review", "pair programming", "pair program", "standup", "retro",
+            "reuniões semanais", "reuniões diárias", "reuniões de equipe",
+            "cerimônia", "cerimonia", "sprint",
+            "ambiente ágil", "ambiente agil",
+        ]):
+            return True
+
+        # Anos de experiência (vai para exp_years, não requirements)
+        if _re.search(r'[\d]+\s*(?:a\s+[\d]+)?\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)', t_lower):
+            return True
+        if _re.search(r'[\d]+\s*[\+]\s*anos?\s*(?:de\s*)?(?:experiência|experiencia)', t_lower):
+            return True
+        if _re.search(r'experiência\s+(?:de\s+)?[\d]+\s*anos?', t_lower):
+            return True
+        if _re.search(r'mínimo\s*de\s*[\d]+\s*anos?', t_lower):
+            return True
+
+        # Frases longas / compostas (múltiplos conceitos)
+        # Itens com "." (ponto final) são provavelmente frases
+        if '.' in t and t.count('.') > 1:
+            return True
+        # Itens com "; " ou "- " no meio são listas
+        if '; ' in t or ('- ' in t and len(t) > 30):
+            return True
+        # Itens com "ambiente", "será considerado", "diferencial" no contexto de benefício
+        if any(kw in t_lower for kw in [
+            "ambiente ágil", "ambiente agil", "sprints", "sprint",
+            "será considerado", "considerado diferencial",
+            "conhecimentos obrigatórios", "conhecimentos obrigatorios",
+            "graduação completa", "graduação", "formação completa",
+            "certificações na área", "certificacoes na area",
+            "pós-graduação", "pós graduação", "pós-grad", "pósgrad",
+        ]):
+            return True
+
+        # Benefícios em inglês
+        if any(kw in t_lower for kw in [
+            "health insurance", "dental insurance", "vision insurance",
+            "life insurance", "401k", "retirement",
+            "paid time off", "pto", "paid leave",
+            "wellness", "gym", "fitness",
+            "tuition reimbursement", "education assistance",
+            "stock options", "equity", "rsu",
+        ]):
+            return True
+
+        return False
+
+    for field in ("requirements", "soft_skills", "nice_to_have"):
         if field not in item or not isinstance(item[field], list):
             continue
         original = item[field]
-        cleaned = [term for term in original if not term_pattern.search(term.strip())]
+        cleaned = [term for term in original if not _is_garbage(term)]
         item[field] = cleaned
+    return item
+
+
+# ---------------------------------------------------------------------------
+# Safety net: garante que skills administrativos comuns não sejam perdidos
+# ---------------------------------------------------------------------------
+
+# Palavras-chave que indicam vaga administrativa
+_ADMIN_KEYWORDS = [
+    "administrativo", "administrativa", "assistente", "escritório", "escritorio",
+    "clerical", "secretário", "secretaria", "recepcionista", "analista",
+    "vaga", "emprego", "contratação", "contratacao", "departamento",
+    "cartório", "financeiro", "contábil", "comercial", "operacional",
+    "atendimento", "protokol", "arquiv", "escritur", "bancário", "bancaria",
+]
+
+# Skills administrativos comuns mapeados para termos canônicos
+_ADMIN_COMMON_SKILLS = [
+    (r"\bword\b", "Word"),
+    (r"\bpower\s*point\b", "PowerPoint"),
+    (r"\bpacote\s+office\b", "Excel"),
+    (r"\bexcel\b", "Excel"),
+    (r"\binformática\b", "Informática"),
+    (r"\binformático\b", "Informática"),
+    (r"\bdigitação\b", "Digitação"),
+    (r"\bredação\b", "Redação"),
+    (r"\bportuguês\s+(escrito|escrita|fluente|avançado|avancado)\b", "Português"),
+    (r"\binglês\b", "Inglês"),
+    (r"\benglish\b", "Inglês"),
+    (r"\bensino\s+médio\b", "Ensino Médio"),
+    (r"\bensino\s+superior\b", "Ensino Superior"),
+    (r"\bsuperior\s+completo\b", "Ensino Superior Completo"),
+    (r"\bformação\s+superior\b", "Ensino Superior"),
+    (r"\bgraduação\b", "Ensino Superior"),
+    (r"\bexperiência\s+(?:de\s+)?(?:\d+\s*(?:e|até)\s*)?\d*\s*(?:anos?|años?)?\b", "Experiência na Área"),
+    (r"\bexperiencia\s+(?:na)?\s*area\b", "Experiência na Área"),
+    (r"\batenção\s+a\s+detalhes\b", "Atenção a Detalhes"),
+    (r"\bolho\s+ao\s+detalhe\b", "Atenção a Detalhes"),
+    (r"\banálise\s+de\s+dados\b", "Análise de Dados"),
+    (r"\banalise\s+de\s+dados\b", "Análise de Dados"),
+    (r"\borganiza(?:ção|ao)\b", "Organização"),
+    (r"\bcomunicação\s+(?:efetiva|interpessoal|escrita|oral)\b", "Comunicação"),
+    (r"\bcomunicação\b", "Comunicação"),
+    (r"\bproatividade\b", "Proatividade"),
+    (r"\btrabalho\s+em\s+equipe\b", "Trabalho em Equipe"),
+    (r"\batendimento\s+ao\s+público\b", "Atendimento ao Público"),
+    (r"\batendimento\s+telefrônico\b", "Atendimento Telefônico"),
+    (r"\bprotocolo\b", "Protocolo"),
+    (r"\barquiv\b", "Arquivamento"),
+    (r"\bmicrosoft\s+outlook\b", "Outlook"),
+    (r"\boutlook\b", "Outlook"),
+    (r"\bgoogle\s+docs\b", "Google Docs"),
+    (r"\bgoogle\s+sheets\b", "Google Sheets"),
+    (r"\bgoogle\s+suite\b", "Google Workspace"),
+    (r"\bflexibilidade\b", "Flexibilidade"),
+    (r"\bgestão\s+de\s+tempo\b", "Gestão de Tempo"),
+    (r"\bgestao\s+de\s+tempo\b", "Gestão de Tempo"),
+    (r"\bbilingue\b", "Bilíngue"),
+    (r"\binglês\s+(básico|basico|intermediário|intermediario|avançado|avancado|fluenta|nativo)\b", "Inglês"),
+]
+
+
+def _ensure_common_skills(item: Dict[str, Any], job_text: str) -> Dict[str, Any]:
+    """Garante que skills administrativos comuns sejam extraídos se presentes no texto.
+    Roda após a IA para capturar o que ela perdeu."""
+    if not job_text or not item:
+        return item
+
+    text_lower = job_text.lower()
+    requirements = set(item.get("requirements", []))
+    nice_to_have = set(item.get("nice_to_have", []))
+    all_existing = requirements | nice_to_have
+
+    # Verifica se é vaga administrativa
+    is_admin = any(kw in text_lower for kw in _ADMIN_KEYWORDS)
+
+    for pattern, canonical in _ADMIN_COMMON_SKILLS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            # Normaliza o canônico para comparação
+            canon_lower = canonical.lower()
+            # Verifica se já existe algo similar nos requisitos
+            already_has = False
+            for existing in all_existing:
+                if canon_lower in existing.lower() or existing.lower() in canon_lower:
+                    already_has = True
+                    break
+            if not already_has:
+                # Adiciona ao requirements se for um skill básico, senão nice_to_have
+                req_skills = {"Word", "Excel", "Pacote Office", "PowerPoint", "Informática", "Digitação",
+                              "Ensino Médio", "Ensino Superior", "Ensino Superior Completo",
+                              "Inglês", "Português", "Atenção a Detalhes", "Redação",
+                              "Análise de Dados", "Organização", "Comunicação",
+                              "Trabalho em Equipe", "Proatividade", "Flexibilidade",
+                              "Gestão de Tempo", "Protocolo", "Arquivamento",
+                              "Outlook", "Google Workspace"}
+                if canonical in req_skills:
+                    requirements.add(canonical)
+                else:
+                    nice_to_have.add(canonical)
+
+    item["requirements"] = sorted(requirements)
+    item["nice_to_have"] = sorted(nice_to_have)
     return item
 
 
@@ -921,7 +1812,7 @@ def _extract_languages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
     return languages
 
 
-_BATCH_SIZE = 10  # vagas por chamada IA
+_BATCH_SIZE = 10  # reduzido de 25 para 10 para evitar APITimeoutError da OpenAI com 25 descrições longas
 
 # Controla se o warning de batch mismatch já foi logado na execução atual
 _batch_mismatch_warned = False
@@ -974,15 +1865,27 @@ def _fallback_extract_jobs(
     seniority: str,
     location: str,
 ) -> List[Dict[str, Any]]:
-    """Fallback: extrai cada vaga individualmente com IA. Sem heurística — só dados reais."""
+    """Fallback: tenta IA individual, se falhar usa heurística."""
     results = []
     for job_text in job_texts:
+        result = None
         try:
             result = extract_job_with_ai(client, selected_model, job_text, target_stack)
-            if result and result.get("requirements"):
-                results.append(result)
         except Exception:
             pass
+        # Se IA falhou, usou poucos requisitos, ou é vaga administrativa com poucos skills
+        reqs_count = len(result.get("requirements", [])) if result else 0
+        text_lower = job_text.lower()
+        is_admin_job = any(kw in text_lower for kw in _ADMIN_KEYWORDS)
+        should_fallback = (
+            not result or
+            reqs_count < 2 or
+            (is_admin_job and reqs_count < 5)
+        )
+        if should_fallback:
+            result = heuristic_extract(job_text)
+        if result:
+            results.append(result)
     return results
 
 
@@ -993,6 +1896,7 @@ def extract_jobs_batched(
     target_stack: List[str],
     seniority: str = "Pleno",
     location: str = "Remoto Nacional",
+    neg_list: List[str] = None,
 ) -> List[Dict[str, Any]]:
     """Chama a IA UMA vez com N vagas e devolve uma lista de resultados."""
     if not job_texts:
@@ -1000,6 +1904,7 @@ def extract_jobs_batched(
 
     job_title_context = target_stack[0] if target_stack else "diversas áreas"
     stack_str = ", ".join(target_stack) if target_stack else "diversas áreas"
+    neg_list_str = ", ".join(neg_list) if neg_list else "nenhuma"
 
     jobs_section = "\n\n".join(
         f"--- VAGA {i+1} ---\n{txt}" for i, txt in enumerate(job_texts)
@@ -1007,58 +1912,103 @@ def extract_jobs_batched(
 
     start_time = time.time()
 
-    prompt = f"""Analise CADA vaga abaixo e extraia dados estruturados.
+    prompt = f"""EXTRAIA TODOS OS DADOS POSSÍVEIS de CADA vaga abaixo.
+Seja O MAIS COMPLETO POSSÍVEL — extraia TUDO que a vaga menciona como requisito, qualificação ou competência.
 
-CLASSIFICAÇÃO — pergunte a si mesma para CADA item de CADA vaga:
-1. É um CONHECIMENTO/FERRAMENTA que a pessoa PRECISA TER? -> requirements
-2. É um TRAÇO COMPORTAMENTAL (atitude, forma de agir)? -> soft_skills
-3. É um TÍTULO OFICIAL de certificação? -> certifications
-4. É Desejável mas não Obrigatório? -> nice_to_have
-5. Se NÃO se encaixa em 1-4 -> NÃO é skill. Ignore.
+CATEGORIAS E O QUE INCLUIR:
+- requirements: QUALQUER coisa que a vaga pede como requisito ou qualificação. Inclua:
+  * Ferramentas/software: Excel, Word, PowerPoint, Pacote Office, SAP, Salesforce, Outlook, etc.
+  * Idiomas: Inglês, Espanhol, Francês, etc. (com nível se mencionado: básico, intermediário, avançado)
+  * Formação: Ensino Médio, Ensino Superior completo, Cursando faculdade, Graduação, etc.
+  * Conhecimento técnico: SQL, Python, Power BI, Google Analytics, etc.
+  * Habilidades técnicas: Digitação, Redação, Análise de dados, Contabilidade, Protocolo, etc.
+  * Experiência específica: Gestão de contratos, elaboração de editais, atendimento ao público, etc.
+  * Para vagas administrativas/assistenciais: SEMPRE inclua os skills que a vaga menciona —
+    Word, Excel, PowerPoint, Pacote Office, Digitação, Informática, Organização, Redação,
+    Atendimento, Protocolo, Arquivamento, etc.
+  * Anos de experiência: SE a vaga pedir "X anos de experiência", coloque em exp_years_min/exp_years_max ABAIXO, NÃO em requirements.
+- soft_skills: Traços comportamentais e habilidades interpessoais QUE A VAGA MENZIONIAR.
+  * Exemplos: proatividade, comunicação, trabalho em equipe, liderança, organização,
+    atenção a detalhes, iniciativa, flexibilidade, resolução de problemas, ética.
+  * Se a vaga diz "precisamos de alguém proativo", inclua "Proatividade" nos soft_skills.
+  * NUNCA coloque soft_skills em requirements — soft_skills vão APENAS no campo soft_skills.
+- certifications: Certificações formais e títulos profissionais MENCIONADOS NA VAGA.
+  * Exemplos: OAB, CREFITO, PMP, AWS, Scrum Master, CEH, Excel Expert, etc.
+  * Se a vaga diz "desejável certificação PMP", coloque em certifications.
+- nice_to_have: Diferenciais mencionados como desejáveis mas NÃO obrigatórios.
+  * Palavras-chave que indicam nice_to_have: "desejável", "diferencial", "vantajoso",
+    "não obrigatório", "não será considerado", "será um diferencial", "ter como diferencial".
+  * Exemplos: "desejável conhecimento em SAP", "diferencial ter inglês avançado"
+  * SEMPRE que possível, separe requisitos obrigatórios (requirements) dos desejáveis (nice_to_have).
 
-CATEGORIAS:
-- requirements: só conhecimento técnico, ferramentas, linguagens, idiomas, formação acadêmica
-- soft_skills: só traços comportamentais (proatividade, liderança, comunicação, etc)
-- certifications: só certificações formais (AWS, PMP, OAB, etc)
-- nice_to_have: diferenciais técnicos não obrigatórios
+O QUE NÃO INCLUIR (NUNCA coloque nos campos acima):
+- Benefícios da empresa: vale transporte, vale alimentação, plano de saúde, Gympass, bônus
+- Modalidade: remoto, híbrido, presencial, home office
+- Processos/rotina: code review, standup, reunião, pair programming
+- Responsabilidades do cargo: o que a pessoa faz no dia a dia (atender telefone, organizar arquivos)
+- Anos de experiência: vá para exp_years_min/exp_years_max
+- Salário: vá para salary_min/salary_max
 
-RELEVÂNCIA: is_relevant=TRUE se o cargo for compatível com o perfil do usuário. Vagas remotas são SEMPRE relevantes.
+IMPORTANTE: Quanto mais itens extrair, melhor. Não seja seletivo — se a vaga menciona, extraia.
+
+IMPORTANTE: AGRUPE variações do mesmo skill nos arrays. Exemplos:
+- "Excel avançado", "Excel básico" → inclua apenas "Excel"
+- "Pacote Office", "MS Excel" → inclua apenas "Excel"  
+- "Inglês avançado", "Inglês básico" → inclua apenas "Inglês"
+- "Proatividade", "Pró-atividade" → inclua apenas "Proatividade"
+- "Word", "Microsoft Word" → inclua apenas "Word"
+- "MySQL", "MySQL Server" → inclua apenas "MySQL"
+- "Python 3", "Python 3.10" → inclua apenas "Python"
+NÃO inclua variações duplicadas: use apenas o termo canônico.
+
+RELEVÂNCIA — is_relevant=TRUE para TODAS as vagas que:
+- Correspondem ao cargo buscado (mesma função ou similar)
+- São do Brasil (nacionais)
+- NÃO contêm palavras negativas na descrição
+
+is_relevant=FALSE APENAS se:
+- A vaga for de outro país/idioma
+- O cargo for completamente diferente do buscado
+- Houver termo negativo na descrição
+- A vaga ser claramente spam/fraude
+
+IMPORTANTE: Se o pré-filtro já manteve a vaga, ela É relevante. A IA só deve rejeitar vagas claramente fora do perfil.
 
 Perfil: cargo={job_title_context}, stack={stack_str}, seniority={seniority}, location={location}
+Palavras negativas: {neg_list_str if neg_list else "nenhuma"}
 
 {jobs_section}
 
-*** VERIFICAÇÃO FINAL (leia ANTES de gerar o JSON) ***
-PARA CADA ITEM nos campos requirements e soft_skills de CADA vaga, responda:
-"Isso é conhecimento/traço da PESSOA, ou algo que a EMPRESA oferece/processa?"
-- EMPRESA PAGA (auxílio, vale, plano, bônus, refeição, Gympass) -> NÃO é skill
-- EMPRESA ORGANIZA (remoto, híbrido, home office, flexível) -> NÃO é skill
-- PROCESSO/ROTINA (code review, standup, pair programming, reunião) -> NÃO é skill
-- RESPONSABILIDADE DO CARGO (o que a pessoa faz no dia a dia) -> NÃO é skill
-- ANOS DE EXPERIÊNCIA (X anos, 2-5 anos, mínimo X anos) -> vai para exp_years_min/exp_years_max, NÃO é skill
-- SOMENTE se a PESSOA PRECISA SABER/TER -> é skill.
-
-Apenas depois dessa verificação, retorne um JSON array com EXATAMENTE {len(job_texts)} objetos:
-Formato de cada objeto:
+Retorne EXATAMENTE {len(job_texts)} objetos em um array JSON. Formato de cada objeto:
 [{{
   "is_relevant": true|false,
+  "rejection_reason": "string|null",
   "role_level": "Júnior"|"Pleno"|"Sênior"|"Especialista"|null,
   "exp_years_min": número|null,
   "exp_years_max": número|null,
-  "requirements": ["Python", "React"],
-  "nice_to_have": ["AWS"],
-  "certifications": ["PMP"],
-  "soft_skills": ["proatividade", "trabalho em equipe"],
+  "requirements": ["Extraia a stack técnica real", "Ferramentas específicas", "Conhecimentos obrigatórios"],
+  "nice_to_have": ["Diferenciais reais da vaga"],
+  "certifications": ["Certificações específicas"],
+  "soft_skills": ["Habilidades comportamentais"],
   "salary_min": número|null,
   "salary_max": número|null,
   "currency": "BRL"|"USD"|null
+}}]
+
+REGRAS OBRIGATÓRIAS:
+1. Extraia EXATAMENTE o que está no texto. Se for vaga de TI, extraia linguagens, frameworks e bancos de dados. Se for Mecânico, extraia ferramentas e tipos de motores.
+2. NUNCA invente "Excel" ou "Informática" se não estiver explicitamente no texto.
+3. Identifique se a vaga é REALMENTE relevante para o cargo e stack solicitados.
+4. Se a vaga pedir anos de experiência, extraia os números para exp_years_min/max.
 }}]"""
     try:
+        # Define timeout dinâmico proporcional ao número de vagas no lote (15s por vaga, min 60s, max 300s)
+        calc_timeout = max(60, min(400, len(job_texts) * 15))  # Aumentado timeout máximo
         response = client.chat.completions.create(
             model=selected_model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            timeout=60,
+            timeout=calc_timeout,
         )
         content = response.choices[0].message.content or "[]"
         # Remove <|thinking|> tags (ASCII pipes)
@@ -1139,9 +2089,10 @@ def run_market_analysis(
     init_market_db(db_file)
     conn = sqlite3.connect(db_file)
     conn.cursor().execute("DELETE FROM market_raw_jobs")
+    conn.cursor().execute("DELETE FROM market_jobs")
     conn.commit()
     date_posted = map_time_window_to_date_posted(time_window)
-    generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys, date_posted=date_posted)
+    generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys, date_posted=date_posted, location=location)
 
     stack_list = [s.strip() for s in target_stack.split(",") if s.strip()]
     neg_list = [k.strip().lower() for k in negative_keywords.split(",") if k.strip()]
@@ -1155,7 +2106,13 @@ def run_market_analysis(
     total_jobs = len(raw_jobs)
     if total_jobs == 0:
         return {
-            "summary": {"job_title": job_title, "total_jobs_scanned": 0, "relevant_jobs_analyzed": 0},
+            "summary": {
+                "job_title": job_title,
+                "total_jobs_scanned": 0,
+                "relevant_jobs_analyzed": 0,
+                "jsearch_status": "no_jobs_found",
+                "jsearch_message": "Nenhuma vaga encontrada na busca. Verifique as chaves da JSearch ou amplie os filtros.",
+            },
             "statistics": {
                 "required_technologies": [],
                 "desirable_technologies": [],
@@ -1178,22 +2135,24 @@ def run_market_analysis(
     extracted_jobs = []
     relevant_count = 0
     import uuid
+    analysis_start = time.time()
 
     for batch_start in range(0, len(pending), _BATCH_SIZE):
         batch = pending[batch_start:batch_start + _BATCH_SIZE]
         job_texts = [item[8] for item in batch]
 
-        batch_results = extract_jobs_batched(client, selected_model, job_texts, stack_list, seniority=seniority, location=location)
+        batch_results = extract_jobs_batched(client, selected_model, job_texts, stack_list, seniority=seniority, location=location, neg_list=neg_list)
 
         for idx, (job_id, title, company, description, loc, mod, source, source_url, job_text) in enumerate(batch):
             extracted = batch_results[idx] if idx < len(batch_results) else {}
             extracted = _sanitize_requirements(extracted)
+            # Extração agora é 100% baseada no texto real da vaga pela IA, sem injeção forçada de skills.
             # Extract languages from requirements/nice_to_have
             extracted_languages = _extract_languages(extracted)
             is_rel = extracted.get("is_relevant", False)
 
-            reqs_norm = sorted(set(normalize_term(t) for t in extracted.get("requirements", [])))
-            nice_norm = sorted(set(normalize_term(t) for t in extracted.get("nice_to_have", [])))
+            reqs_norm = sorted(set(normalize_skill(t) for t in extracted.get("requirements", []) if normalize_skill(t)))
+            nice_norm = sorted(set(normalize_skill(t) for t in extracted.get("nice_to_have", []) if normalize_skill(t)))
 
             # Debug: log first batch results
             if batch_start == 0 and idx < 3:
@@ -1206,11 +2165,12 @@ def run_market_analysis(
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url,
-                        is_relevant, requirements, nice_to_have, role_level, exp_years_min, exp_years_max,
+                        is_relevant, rejection_reason, requirements, nice_to_have, role_level, exp_years_min, exp_years_max,
                         soft_skills, certifications, salary_min, salary_max, currency, extracted_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     new_id, job_id, title, company, loc, mod, source, source_url or "", 1,
+                    extracted.get("rejection_reason"),
                     json.dumps(reqs_norm), json.dumps(nice_norm),
                     extracted.get("role_level"),
                     extracted.get("exp_years_min"), extracted.get("exp_years_max"),
@@ -1221,6 +2181,7 @@ def run_market_analysis(
                 ))
                 conn.commit()
 
+            rejection_reason = extracted.get("rejection_reason") if not is_rel else None
             extracted_jobs.append({
                 "id": job_id,
                 "title": title,
@@ -1230,6 +2191,7 @@ def run_market_analysis(
                 "source": source,
                 "source_url": source_url or "",
                 "is_relevant": is_rel,
+                "rejection_reason": rejection_reason,
                 "requirements": reqs_norm,
                 "nice_to_have": nice_norm,
                 "role_level": extracted.get("role_level"),
@@ -1245,6 +2207,9 @@ def run_market_analysis(
             })
 
     conn.close()
+
+    elapsed_analysis = time.time() - analysis_start
+    logger.info(f"[MARKET] AI analysis complete: {len(extracted_jobs)} jobs processed in {elapsed_analysis:.0f}s ({relevant_count} relevant)")
 
     # 4. Agregação de métricas
     conn = sqlite3.connect(db_file)
@@ -1272,7 +2237,7 @@ def run_market_analysis(
         for c in ej["certifications"]:
             c_norm = c.strip()
             cert_counts[c_norm] = cert_counts.get(c_norm, 0) + 1
-        mod = ej["modality"]
+        mod = sanitize(ej["modality"])
         modality_counts[mod] = modality_counts.get(mod, 0) + 1
         if ej["exp_years_min"] is not None:
             exp_years_list.append(ej["exp_years_min"])
@@ -1347,6 +2312,10 @@ def run_market_analysis(
             "pre_filtered_count": len(pending),
             "relevant_jobs_analyzed": relevant_count,
             "discarded_jobs": len(pending) - relevant_count,
+            "rejected_reasons_sample": [
+                {"title": j["title"][:60], "reason": j["rejection_reason"]}
+                for j in extracted_jobs if j.get("rejection_reason")
+            ][:20],
             "confidence_score": confidence,
             "confidence_reason": confidence_reason,
             "generated_at": datetime.now().isoformat(),
@@ -1400,3 +2369,4 @@ def run_market_analysis(
         pass
 
     return report_result
+
