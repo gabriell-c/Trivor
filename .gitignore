@@ -1,11 +1,11 @@
-# Secrets
+# Secrets & Credentials
 .env
 .env.local
 .env.*.local
 *.key
 *.pem
 *.crt
-.env.example
+*.pfx
 
 # Virtual Environment
 venv/
@@ -13,7 +13,7 @@ venv/
 env/
 pyvenv.cfg
 
-# Python
+# Python & Caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,13 +25,32 @@ build/
 dist/
 *.egg-info/
 
-# Data & SQLite
-data/*.pdf
-*.db
-data/*.db
+# Data, SQLite, Logs & Temporary Files
+data/*
 !data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.txt
+*.json
+market_log.txt
+backend/market_log.txt
+backend_log.txt
+backend_err.txt
 
-# Documentation / Internal Docs
+# Trae AI & Debug Artifacts
+.trae/
+debug*.py
+debug*.txt
+debug*.md
+test_*.py
+test_*.txt
+test_*.json
+qa_*/
+qa_*
+
+# Documentation & Sensitive Tests
 docs/
 
 # Node / Next.js
@@ -46,4 +65,6 @@ frontend/yarn-error.log*
 # System & OS
 .DS_Store
 Thumbs.db
-*.log
+desktop.ini
+-w
+.py
