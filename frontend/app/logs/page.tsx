@@ -148,8 +148,8 @@ export default function LogsPage() {
                 <th className="px-4 py-3 font-medium">Endpoint</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Duração</th>
+                <th className="px-4 py-3 font-medium text-center">Detalhes</th>
                 <th className="px-4 py-3 font-medium">Erro</th>
-                <th className="px-4 py-3 font-medium w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
@@ -181,17 +181,17 @@ export default function LogsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{log.duration_ms}ms</td>
-                  <td className="px-4 py-3 text-red-400 max-w-xs truncate text-xs">
-                    {log.error || '—'}
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-center">
                     <button
                       onClick={() => setSelectedLog(log)}
                       className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
                       title="Ver detalhes"
                     >
-                      <Eye className="w-4 h-4" />
+                      <Eye className="w-4 h-4 inline-block" />
                     </button>
+                  </td>
+                  <td className="px-4 py-3 text-red-400 max-w-xs truncate text-xs">
+                    {log.error || '—'}
                   </td>
                 </motion.tr>
               ))}
