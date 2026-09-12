@@ -298,6 +298,18 @@ export default function MarketIntelligencePage() {
       {/* Results Tab */}
       {activeTab === 'results' && R && R.statistics && (
         <div className="space-y-6">
+          {/* Diagnóstico: se 0 vagas coletadas */}
+          {((R.summary as any).jsearch_status === 'no_jobs_found' || (R.summary as any).jsearch_message) && (
+            <div className="flex items-start gap-3 px-4 py-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <p className="font-semibold text-amber-200">Nenhuma vaga encontrada na busca</p>
+                <p className="text-amber-300/80">{(R.summary as any).jsearch_message}</p>
+                <p className="text-amber-400/70 mt-1">Dicas: verifique se as chaves da JSearch estão válidas e com créditos, amplie a janela temporal (ex: 90 dias) ou remova filtros de stack/senioridade.</p>
+              </div>
+            </div>
+          )}
+
           {/* Download bar */}
           <div className="flex items-center justify-between rounded-2xl bg-slate-900/60 border border-slate-800 p-3">
             <div className="flex items-center gap-2">
@@ -359,6 +371,22 @@ export default function MarketIntelligencePage() {
               <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.discarded_jobs}</p>
               <p className="text-[10px] text-slate-600 mt-0.5">pela IA</p>
             </div>
+
+            {/* Rejection reasons */}
+            {R.summary.rejected_reasons_sample && R.summary.rejected_reasons_sample.length > 0 && (
+              <div className="rounded-2xl bg-rose-500/5 border border-rose-500/20 p-4">
+                <p className="text-[10px] text-rose-400 uppercase font-bold tracking-wider mb-2">Motivos de Descarte</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {R.summary.rejected_reasons_sample.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <XCircle className="w-3 h-3 text-rose-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-slate-400 truncate flex-1">{r.title}</span>
+                      <span className="text-rose-400 font-semibold flex-shrink-0">{r.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Required Technologies */}
@@ -647,6 +675,11 @@ export default function MarketIntelligencePage() {
                                 ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                                 : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
                               }
+                              {job.rejection_reason && (
+                                <span className="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 flex-shrink-0" title={job.rejection_reason}>
+                                  {job.rejection_reason}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
                               <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>

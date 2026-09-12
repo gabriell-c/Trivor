@@ -215,6 +215,7 @@ export interface MarketJob {
   source: string
   source_url: string
   is_relevant: boolean
+  rejection_reason?: string | null
   requirements: string[]
   nice_to_have: string[]
   role_level: string | null
@@ -238,6 +239,7 @@ export interface MarketReportSummary {
   pre_filtered_count: number
   total_jobs_scanned: number
   discarded_jobs: number
+  rejected_reasons_sample?: { title: string; reason: string }[]
   confidence_score: string
   confidence_reason: string
 }

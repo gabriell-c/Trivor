@@ -1,0 +1,184 @@
+============================================================
+TOTAL LOG ENTRIES: 5
+============================================================
+
+--- LOG: 2026-09-03T00:42:24.758024 (status=200, id=d3d89ab5) ---
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+  nota: 72
+  TEXT(Primeiras 30 linhas):
+      1: CURRÍCULO
+      2: Maria Silva
+      3: Email: maria.silva@email.com
+      4: Telefone: (11) 99999-9999
+      5: ## EXPERIÊNCIA PROFISSIONAL
+      6: 
+      7: Analista Administrativo - Empresa ABC (2020-2024)
+      8: - Responsável por análise de dados e relatórios
+      9: - Gestão de projetos e coordenação de equipe
+     10: - Utilização de Excel avançado e Power BI
+     11: Estagiária Financeira - Empresa XYZ (2018-2020)
+     12: - Suporte ao departamento financeiro
+     13: - Conciliação bancária e controle de pagamentos
+     14: ## EDUCAÇÃO
+     15: 
+     16: Bacharel em Administração - Universidade Federal (2016-2020)
+     17: ## HABILIDADES
+     18: 
+     19: - Excel avançado
+     20: - Power BI
+     21: - SAP
+     22: - Inglês intermediário
+
+--- LOG: 2026-09-03T00:42:14.564905 (status=200, id=c6896be5) ---
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+  nota: 82
+  TEXT(Primeiras 30 linhas):
+      1: Milena da Silva Cardoso
+      2: ## Dados Pessoais
+      3: 
+      4: Endereço : Sebastião Martins Viana - Recreio Anhanguera, Ribeirão Preto
+      5: Celular: (16) 99247-2832
+      6: E-mail: milena.scardoso09@gmail.com
+      7: ## Objetivo
+      8: 
+      9: Assistente Administrativo
+     10: ## Resumo Profissional
+     11: 
+     12: Profissional com 2 anos e 5 meses de experiência em atendimento e rotinas operacionais, com
+     13: atuação em cadastro de clientes, atualização de sistemas, elaboração de orçamentos, registros
+     14: financeiros e acompanhamento de demandas. Cursando Técnico em Administração pelo
+     15: SENAC, busca oportunidade na área administrativa para contribuir com a organização de
+     16: processos e suporte às atividades da empresa.
+     17: ## Formação acadêmica
+     18: 
+     19: Curso técnico em administração | SENAC (Em andamento)
+     20: Ensino médio completo
+     21: ## Experiência Profissional
+     22: 
+     23: Operadora de telesserviços - Paschoalotto Serviços Financeiros (2 anos e 5 Meses)
+     24: Atendimento ao cliente para esclarecimento de dúvidas, registro de solicitações e
+     25: acompanhamento de demandas.
+     26: Cadastro, atualização e conferência de informações em sistemas internos, garantindo a
+     27: precisão dos dados.
+     28: Elaboração de orçamentos e envio de informações aos clientes.
+     29: Controle de demandas e acompanhamento de prazos conforme procedimentos internos.
+     30: Organização e atualização de registros de clientes e documentos digitais.
+
+--- LOG: 2026-09-03T00:42:02.262398 (status=200, id=a47386fe) ---
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+  nota: 88
+  TEXT(Primeiras 30 linhas):
+      1: Gabriel da Silva Cardoso
+      2: Desenvolvedor Fullstack
+      3: (16) 99297-4306 | gabri3lcardoso07@gmail.com | Recreio Anhanguera, Ribeirão Preto - SP | portfolio--gabriel.vercel.app |
+      4: linkedin.com/in/gabriell-cardoso | github.com/gabriell-c
+      5: ## RESUMO
+      6: 
+      7: Desenvolvedor Full Stack com experiência sólida em Python, Django e React. Especialista em APIs RESTful escaláveis,
+      8: autenticação JWT, integração frontend e backend e automação com IA(NLP, LLMs). Proficiente em MySQL, Git e GitHub,
+      9: com foco em performance, segurança e arquitetura robusta para aplicações web.
+     10: ## HABILIDADES
+     11: 
+     12: Linguagens e Tecnologias: Python, PHP, JavaScript, HTML, CSS, SQL, Typescript
+     13: Frameworks e Bibliotecas: Django, Django REST Framework, Flask, React, NumPy, Pandas, Tailwind CSS, Bootstrap
+     14: Ferramentas & Competências: MySQL, PostgreSQL, Git, GitHub, Windows, API REST
+     15: Certificações: HTML5, CSS3, Javascript, GIT/GitHub, SQL, Bootstrap, Typescript, PHP
+     16: ## EXPERIÊNCIA
+     17: 
+     18: Desenvolvedor Backend Freelancer
+     19: ChatBot com IA
+     20: nov. de 2022 – Presente
+     21: Ribeirão Preto
+     22: - Criei e implementei chatbot com Python e Django, automatizando 80% do atendimento com IA.
+     23: - Usei NLP e LLMs para aumentar a precisão das respostas em 40%.
+     24: - Desenvolvi recomendações de produtos, consumo de APIs e cálculo de frete, melhorando a experiência do usuário
+     25: - Integrei com MySQL, aplicando código limpo e metodologias ágeis, reduzindo erros em 30%.
+     26: Desenvolvedor Fullstack Freelancer
+     27: Sistema financeiro
+     28: nov. de 2022 – Presente
+     29: Ribeirão Preto
+     30: - Desenvolvi um web app de gestão financeira com React e PHP via API RESTful, reduzindo tempo de registro em
+
+--- LOG: 2026-09-03T00:31:50.803730 (status=200, id=9d6355f6) ---
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+  nota: 58
+  ATENCAO-vies-tech: ["Capitalização inconsistente ('Competências', 'Da empresa')"]
+  TEXT(Primeiras 30 linhas):
+      1: ALLANY EVELLYN ALMEIDA SILVA
+      2: ## Dados Pessoais
+      3: 
+      4: Endereço: Rua goiás, 352 - campos elíseos
+      5: E-mail: allanyleticia0@gmail.com
+      6: Celular: (16) 99221-0576
+      7: ## Objetivo
+      8: 
+      9: Busco uma oportunidade para desenvolver e aprimorar minhas
+     10: competências, contribuindo de forma positiva para os resultados
+     11: da empresa e meu crescimento profissional.
+     12: ## Experiência Profissional
+     13: 
+     14: Paschoalotto Serviços Financeiros (2023 - atual)
+     15: Operadora de Telemarketing:
+     16: Atuação em telemarketing de cobrança ativa e receptiva
+     17: Habilidade em negociação, argumentação e persuasão
+     18: Contato com clientes inadimplentes para regularização de débitos
+     19: Registro de informações e acordos em sistema
+     20: Foco em resultados, metas e qualidade no atendimento
+     21: Ensino médio completo
+     22: ## Formação acadêmica
+     23: 
+     24: Desenvolvimento de sistemas - Etec (2023 - 2024)
+     25: curso técnico integrado ao ensino médio
+     26: Curso técnico em farmácia - Senac (2026 - Em andamento)
+
+--- LOG: 2026-09-03T00:29:32.825617 (status=200, id=c76e5653) ---
+
+============================================================
+TESTING PDFs via API...
+============================================================
+
+--- docs/Curriculo Gabriel Cardoso.pdf (status=500) ---
+  ERROR: {'detail': "Erro ao processar o currículo: cannot access local variable 're' where it is not associated with a value"}
+
+--- docs/Currículo Milena Cardoso.pdf (status=200) ---
+  nota: 88
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+
+--- docs/test_curriculo.pdf (status=200) ---
+  nota: 92
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+
+--- docs/test_erro_orho_real.pdf (status=200) ---
+  nota: 94
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+
+--- docs/test_erros_graves.pdf (status=200) ---
+  nota: 70
+  erros_ort: 0
+  erros_comuns: 0
+  faltantes: []
+  ordem: {"correta": true, "problema": null, "como_corrigir": null}
+
+============================================================
+DONE

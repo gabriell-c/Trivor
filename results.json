@@ -1,0 +1,62 @@
+[
+  {
+    "file": "Curriculo Gabriel Cardoso.pdf",
+    "nota": 85,
+    "erros_ort": 0,
+    "erros_comuns": 0,
+    "faltantes": [],
+    "ordem": {
+      "correta": true,
+      "problema": null,
+      "como_corrigir": null
+    },
+    "pontos_fracos": [
+      "Presença de endereço completo (Rua/Bairro), o que é desnecessário e expõe dados pessoais",
+      "Algumas seções de formação possuem descrições longas que poderiam ser mais concisas"
+    ]
+  },
+  {
+    "file": "Currículo Milena Cardoso.pdf",
+    "nota": 88,
+    "erros_ort": 0,
+    "erros_comuns": 0,
+    "faltantes": [],
+    "ordem": {
+      "correta": true,
+      "problema": null,
+      "como_corrigir": null
+    },
+    "pontos_fracos": []
+  },
+  {
+    "file": "test_curriculo.pdf",
+    "nota": 92,
+    "erros_ort": 0,
+    "erros_comuns": 0,
+    "faltantes": [],
+    "ordem": {
+      "correta": true,
+      "problema": null,
+      "como_corrigir": null
+    },
+    "pontos_fracos": [
+      "Ausência de um resumo profissional no início do documento para destacar o perfil."
+    ]
+  },
+  {
+    "file": "test_erros_graves.pdf",
+    "nota": 65,
+    "erros_ort": 0,
+    "erros_comuns": 0,
+    "faltantes": [],
+    "ordem": {
+      "correta": true,
+      "problema": null,
+      "como_corrigir": null
+    },
+    "pontos_fracos": [
+      "Inclusão de dados sensíveis e desnecessários (CPF, RG, endereço completo, estado civil, data de nascimento)",
+      "Uso de barras de progresso/porcentagem para habilidades (ex: 'Excel: 80%'), o que não é bem interpretado por sistemas ATS"
+    ]
+  }
+]

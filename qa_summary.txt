@@ -1,0 +1,6 @@
+{"nota": 88.0, "score_ats": 92, "erros_ortograficos": [], "nome": "test_curriculo.pdf", "status": "OK"}
+{"nota": 82.0, "score_ats": 85, "erros_ortograficos": [], "nome": "test_datas_variadas.pdf", "status": "OK"}
+{"nota": 75.0, "score_ats": 78, "erros_ortograficos": [], "nome": "test_edge_cases.pdf", "status": "OK"}
+{"nota": 90.0, "score_ats": 88, "erros_ortograficos": [{"palavra": "desenvolvedr", "correcao": "desenvolvedor"}], "nome": "test_erro_orho_real.pdf", "status": "OK"}
+{"nota": 88.0, "score_ats": 90, "erros_ortograficos": [{"palavra": "OTIMIZAI", "correcao": "OTIMIZEI"}, {"palavra": "REDUSEI", "correcao": "REDUZI"}], "nome": "test_erros_ortograficos.pdf", "status": "OK"}
+{"nota": 42.0, "score_ats": 40, "erros_ortograficos": [], "nome": "test_erros_graves.pdf", "status": "OK"}

@@ -1,0 +1,112 @@
+{
+  "nota": 88.0,
+  "score_ats": 90,
+  "resumo_executivo": "Currículo de altíssimo nível para Engenheiro de Software Backend/Sistemas Distribuídos. Excelente aplicação de métricas quantificáveis (Fórmula XYZ) e forte alinhamento com termos de mercado. O principal ponto de atenção são pequenos erros de digitação/grafia nos verbos de ação em caixa alta.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "Go",
+    "Kubernetes",
+    "Microsserviços",
+    "Kafka",
+    "Redis",
+    "Node.js",
+    "React",
+    "SQL",
+    "Docker",
+    "AWS",
+    "GCP",
+    "Terraform",
+    "CI/CD",
+    "PostgreSQL",
+    "MongoDB",
+    "GraphQL"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Uso exemplar da Fórmula XYZ do Google, com métricas claras de impacto (ex: 1M+ req/dia, redução de 60%, 99.9% confiabilidade).",
+    "Resumo profissional enxuto, direto e sem clichês, destacando tempo de experiência (6 anos) e principal especialidade.",
+    "Seção de habilidades bem formatada e categorizada por domínios técnicos, sem o uso incorreto de barras de progresso ou porcentagens.",
+    "Seção de formação acadêmica sintética e adequada ao nível de senioridade."
+  ],
+  "pontos_fracos": [
+    "Erro ortográfico grave no verbo 'REDUSEI' (correto: Reduzi).",
+    "Inconsistência na caixa do texto no início dos tópicos (mistura de letras maiúsculas/caixa alta em 'OTIMIZAI' e 'REDUSEI' com minúsculas nos demais)."
+  ],
+  "erros_ortograficos": [
+    {
+      "palavra_errada": "REDUSEI",
+      "correcao_sugerida": "Reduzi",
+      "contexto": "REDUSEI o tempo de carga das páginas em 35%"
+    }
+  ],
+  "erros_comuns_detectados": [],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 90,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "atencao",
+      "score": 82,
+      "problema": "Presença do erro de grafia 'REDUSEI' e inconsistência de caixa alta em alguns verbos.",
+      "como_corrigir": "Corrigir 'REDUSEI' para 'Reduzi' e padronizar o estilo de início dos tópicos (ex: 'Otimizei', 'Reduzi').",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 90,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "Estrutura textual limpa, com boa divisão de seções legíveis por parsing de ATS e excelente densidade de termos técnicos relevantes para a área."
+  },
+  "sugestoes": [
+    "Corrigir imediatamente a grafia do verbo 'REDUSEI' para 'Reduzi'.",
+    "Padronizar a formatação visual dos verbos de ação para primeira pessoa do singular no passado com capitalização padrão ('Otimizei', 'Reduzi', 'Desenvolvi').",
+    "Adicionar a URL completa com protocolo 'https://' para o perfil do LinkedIn no cabeçalho/seção de links."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2304,
+    "completion_tokens": 922,
+    "total_tokens": 3226
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "ce244c23-26cd-4590-ac76-2a0dd6dbb7f8",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/lucasfernandes"
+  ]
+}

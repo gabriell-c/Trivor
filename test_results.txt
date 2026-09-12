@@ -1,0 +1,52 @@
+
+============================================================
+TESTE: Gabriel Cardoso
+============================================================
+NOTA: 88
+EXTRATOR: pymupdf
+ERROS ORTOGRAFICOS: 0
+ERROS COMUNS: 0
+PONTOS FRACOS: 1
+  - O endereço completo (Rua/Bairro) é desnecessário; apenas Cidade/Estado é suficiente para fins de recrutamento.
+RESUMO: O candidato apresenta um currículo bem estruturado, com foco claro em competências técnicas e resultados mensuráveis. A utilização da fórmula XYZ nos bullet points de experiência profissional é um diferencial positivo que demonstra impacto real. O documento está organizado e utiliza terminologia técnica adequada.
+CHAVE FALTANTES: []
+ORDEM: correta=True problema=None
+
+============================================================
+TESTE: test_curriculo
+============================================================
+NOTA: 92
+EXTRATOR: pymupdf
+ERROS ORTOGRAFICOS: 0
+ERROS COMUNS: 0
+PONTOS FRACOS: 0
+RESUMO: O currículo de Maria Silva apresenta uma estrutura clara, organizada e profissional. A trajetória acadêmica e profissional está bem definida, com foco em resultados e competências técnicas relevantes para a área administrativa e financeira.
+CHAVE FALTANTES: []
+ORDEM: correta=True problema=None
+
+============================================================
+TESTE: test_erros_graves
+============================================================
+NOTA: 65
+EXTRATOR: pymupdf
+ERROS ORTOGRAFICOS: 0
+ERROS COMUNS: 0
+PONTOS FRACOS: 2
+  - Exposição de dados sensíveis (CPF, RG, endereço completo, data de nascimento e estado civil).
+  - Seção de dados pessoais redundante ao final do documento.
+RESUMO: O currículo apresenta uma trajetória profissional clara e objetiva na área administrativa. A estrutura é funcional, porém contém dados sensíveis desnecessários que comprometem a segurança da informação e a pontuação do ATS.
+CHAVE FALTANTES: []
+ORDEM: correta=True problema=None
+
+============================================================
+TESTE: Milena Cardoso
+============================================================
+NOTA: 85
+EXTRATOR: pymupdf
+ERROS ORTOGRAFICOS: 0
+ERROS COMUNS: 0
+PONTOS FRACOS: 1
+  - Endereço completo exposto (recomenda-se manter apenas bairro/cidade)
+RESUMO: O currículo de Milena da Silva Cardoso apresenta uma trajetória profissional coerente e focada na área administrativa. O documento é organizado, objetivo e possui uma estrutura clara. A candidata demonstra clareza em suas responsabilidades anteriores, embora possa se beneficiar da inclusão de resultados quantitativos para fortalecer seu perfil.
+CHAVE FALTANTES: []
+ORDEM: correta=True problema=None

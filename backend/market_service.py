@@ -2011,13 +2011,32 @@ REGRAS OBRIGATÓRIAS:
             timeout=calc_timeout,
         )
         content = response.choices[0].message.content or "[]"
+        # Remove markdown codeblocks ```json ... ``` se houver
+        content = re.sub(r'```(?:json)?\s*(.*?)\s*```', r'\1', content, flags=re.DOTALL).strip()
         # Remove <|thinking|> tags (ASCII pipes)
         content = re.sub(r'<\|thinking\|>.*?<\|/thinking\|>', '', content, flags=re.DOTALL).strip()
         # Remove ｜thinking｜ tags (fullwidth pipes, common in some models)
         content = re.sub(r'｜thinking｜.*?／｜thinking｜', '', content, flags=re.DOTALL).strip()
         # Remove any remaining <thinking>...</thinking>
         content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
-        raw = json.loads(content)
+        
+        # Garante que content não seja string vazia ou inválida para o json.loads
+        if not content or content == "[]":
+            raw = []
+        else:
+            try:
+                raw = json.loads(content)
+            except json.JSONDecodeError as err:
+                logger.error(f"[MARKET] Erro ao decodificar JSON da IA: {err}. Conteúdo recebido (primeiros 300 caracteres): {content[:300]!r}")
+                # Tenta localizar uma estrutura JSON [...] ou {...} dentro do texto retornado pela IA
+                match = re.search(r'(\[.*\]|\{.*\})', content, re.DOTALL)
+                if match:
+                    try:
+                        raw = json.loads(match.group(1))
+                    except Exception:
+                        raw = []
+                else:
+                    raw = []
         data = _parse_batch_response(raw, len(job_texts))
         elapsed = (time.time() - start_time) * 1000
 

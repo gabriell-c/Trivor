@@ -1,0 +1,110 @@
+{
+  "nota": 94.0,
+  "score_ats": 92,
+  "resumo_executivo": "Currículo de altíssimo nível para o mercado de tecnologia. Apresenta excelente estrutura, resumo objetivo sem clichês, histórico acadêmico sólido (UFRJ), certificações de peso (AWS e Scrum Master) e forte uso da fórmula XYZ do Google com métricas quantitativas de alto impacto em praticamente todas as experiências.",
+  "foto_detectada": false,
+  "foto_recomendada": false,
+  "ordem_secoes": {
+    "correta": true,
+    "problema": null,
+    "como_corrigir": null
+  },
+  "palavras_chave_presentes": [
+    "React",
+    "Node.js",
+    "TypeScript",
+    "Python",
+    "Docker",
+    "Kubernetes",
+    "AWS",
+    "Jenkins",
+    "CI/CD",
+    "Microsserviços",
+    "Jest",
+    "PostgreSQL",
+    "MongoDB",
+    "Redis",
+    "Scrum",
+    "API REST",
+    "Express",
+    "Django",
+    "Spring Boot"
+  ],
+  "palavras_chave_faltantes": [],
+  "pontos_fortes": [
+    "Uso sistemático e exemplar da Fórmula XYZ do Google em quase todos os tópicos de experiência profissional, demonstrando impacto real através de métricas expressivas (ex: redução de deploy em 55%, 50k usuários, R$ 2M/dia processados, aumento de cobertura de testes de 30% para 85%).",
+    "Resumo profissional extremamente conciso, factual e direto ao ponto, indicando anos de experiência, cargo e stack principal sem a presença de clichês.",
+    "Excelente alinhamento entre formação acadêmica formal (Engenharia da Computação - UFRJ) e certificações de mercado relevantes (AWS Certified Solutions Architect e Scrum Master).",
+    "Inclusão de links clicáveis e funcionais para GitHub e LinkedIn no cabeçalho/seção de links."
+  ],
+  "pontos_fracos": [
+    "Pequeno erro de digitação/espaçamento ou artefato de extração no bullet da BancoTech ('Liderançde equipe' em vez de 'Liderança de equipe').",
+    "O primeiro bullet point da experiência na TechStart é meramente descritivo e poderia ser incrementado com métricas quantitativas de impacto assim como os demais."
+  ],
+  "erros_ortograficos": [],
+  "erros_comuns_detectados": [],
+  "analise_secoes": {
+    "dados_pessoais": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "resumo_profissional": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "experiencia_profissional": {
+      "status": "ok",
+      "score": 93,
+      "problema": "Pequeno detalhe de digitação ('Liderançde') e um bullet descritivo na TechStart.",
+      "como_corrigir": "Corrigir a digitação para 'Liderança de equipe' e adicionar uma métrica ao primeiro bullet da TechStart.",
+      "presente": true
+    },
+    "formacao_academica": {
+      "status": "ok",
+      "score": 95,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    },
+    "habilidades": {
+      "status": "ok",
+      "score": 100,
+      "problema": null,
+      "como_corrigir": null,
+      "presente": true
+    }
+  },
+  "analise_ats": {
+    "score_ats": 92,
+    "palavras_chave_faltantes": [],
+    "gargalos_formatacao": [],
+    "veredito_robos": "aprovado",
+    "explicacao": "O currículo está em formato textual extremamente limpo, com nomenclaturas padronizadas de seções (Experiência Profissional, Formação Acadêmica, Habilidades), bom uso de palavras-chave técnicas e ausência de elementos gráficos problemáticos como tabelas, fotos ou barras de progresso."
+  },
+  "sugestoes": [
+    "Ajuste a palavra 'Liderançde' para 'Liderança de' no primeiro tópico da experiência na BancoTech SA.",
+    "Na experiência como Desenvolvedora Júnior (TechStart), adicione uma métrica ao primeiro bullet point (ex: número de telas desenvolvidas, usuários impactados ou redução de bugs).",
+    "Como você já possui 8 anos de experiência e nível Sênior, o detalhamento do TCC na seção de Formação Acadêmica é opcional, podendo ser mantido apenas se for altamente relevante para a vaga desejada."
+  ],
+  "uso_tokens": {
+    "prompt_tokens": 2491,
+    "completion_tokens": 1074,
+    "total_tokens": 3565
+  },
+  "api_info": {
+    "model": "auto/best-coding",
+    "request_id": "533a608b-2f3d-4160-9688-51a2959a4872",
+    "response_time_ms": 0
+  },
+  "_extractor_used": "pymupdf",
+  "_links": [
+    "https://github.com/marianacosta",
+    "https://linkedin.com/in/marianacosta"
+  ]
+}

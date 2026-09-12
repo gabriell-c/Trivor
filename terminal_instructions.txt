@@ -1,0 +1,16 @@
+Terminal instructions:
+
+1. Open terminal in the backend directory:
+   cd c:\Users\xxxsa\OneDrive\Área de Trabalho\python\curriculo\backend
+
+2. Start backend:
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+3. Open NEW terminal in the front-end directory:
+   cd c:\Users\xxxsa\OneDrive\Área de Trabalho\python\curriculo\frontend
+
+4. Start frontend:
+   npm run dev
+
+Backend will be at: http://localhost:8000
+Frontend will be at: http://localhost:3000
