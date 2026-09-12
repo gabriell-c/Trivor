@@ -1,8 +1,0 @@
-nota: 85
-erros_ort: 0
-erros_comuns: 0
-faltantes: []
-ordem: {"correta": true, "problema": null, "como_corrigir": null}
-pontos_fracos (2):
-  - Presença de endereço completo (Rua/Bairro), que é desnecessário e expõe dados pessoais
-  - Uso de termos genéricos em algumas descrições
