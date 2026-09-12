@@ -17,7 +17,7 @@ const DashboardPage = dynamic(() => import('../dashboard/page').then(m => m.defa
 
 export default function AppShell() {
   const [mounted, setMounted] = useState(false)
-  const [activeTool, setActiveTool] = useState<Tool>('curriculo')
+  const [activeTool, setActiveTool] = useState<Tool>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const { providers } = useIaProviders()
   const globalStatus = getGlobalStatus(providers)
