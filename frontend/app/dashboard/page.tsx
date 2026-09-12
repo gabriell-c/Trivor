@@ -90,8 +90,8 @@ export default function DashboardPage() {
     if (hasFetched.current) return
     hasFetched.current = true
     Promise.all([
-      fetch('/api/logs?limit=1').then((r) => r.json()).catch(() => null),
-      fetch('/api/logs?limit=5&sort=desc')
+      fetch(`${API_BASE_URL}/api/logs?limit=1`).then((r) => r.json()).catch(() => null),
+      fetch(`${API_BASE_URL}/api/logs?limit=5&sort=desc`)
         .then((r) => r.json())
         .catch(() => null),
     ]).then(([statsData, logsData]) => {

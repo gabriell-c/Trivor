@@ -47,7 +47,7 @@ export default function LogsPage() {
       if (debouncedFilter) params.set('endpoint', debouncedFilter)
       if (errorOnly) params.set('error_only', 'true')
 
-      const res = await fetch(`/api/logs?${params}`)
+      const res = await fetch(`${API_BASE_URL}/api/logs?${params}`)
       const data = await res.json()
       setLogs(data.logs || [])
       setStats(data.stats || null)
