@@ -12,6 +12,7 @@ import {
   Server,
 } from 'lucide-react'
 import type { LogEntry, LogStats } from '../types/analysis'
+import { API_BASE_URL } from '../lib/api'
 
 function StatCard({
   label,
