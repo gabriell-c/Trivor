@@ -372,21 +372,7 @@ export default function MarketIntelligencePage() {
               <p className="text-[10px] text-slate-600 mt-0.5">pela IA</p>
             </div>
 
-            {/* Rejection reasons */}
-            {R.summary.rejected_reasons_sample && R.summary.rejected_reasons_sample.length > 0 && (
-              <div className="rounded-2xl bg-rose-500/5 border border-rose-500/20 p-4">
-                <p className="text-[10px] text-rose-400 uppercase font-bold tracking-wider mb-2">Motivos de Descarte</p>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {R.summary.rejected_reasons_sample.map((r, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <XCircle className="w-3 h-3 text-rose-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-slate-400 truncate flex-1">{r.title}</span>
-                      <span className="text-rose-400 font-semibold flex-shrink-0">{r.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Rejection reasons removed from summary tab */}
           </div>
 
           {/* Required Technologies */}
