@@ -34,12 +34,14 @@ const PROVIDER_CONFIG = {
 
 interface JsearchKeyRecord {
   id: number
-  api_key: string
-  description: string
+  key_prefix: string
+  key_hash?: string
+  description: string | null
   rate_limit_total: number | null
   rate_limit_remaining: number | null
   used: number | null
   status: string
+  last_error?: string | null
   last_tested: string | null
 }
 
@@ -134,7 +136,7 @@ export default function ApiSettingsPage() {
   const [newJsearchKey, setNewJsearchKey] = useState('')
   const [showJsearchKey, setShowJsearchKey] = useState(false)
   const [jsearchKeyData, setJsearchKeyData] = useState<Record<string, { ok: boolean; status: string; message: string; rate_limit_total: number; rate_limit_remaining: number | null; rate_limit_used: number }>>({})
-  const [testingJsearchKey, setTestingJsearchKey] = useState<number | null>(null)
+  const [testingJsearchInput, setTestingJsearchInput] = useState(false)
   const [editingJsearchId, setEditingJsearchId] = useState<number | null>(null)
   const [editJsearchValue, setEditJsearchValue] = useState('')
   const [jsearchLoading, setJsearchLoading] = useState(true)
@@ -173,50 +175,55 @@ export default function ApiSettingsPage() {
     }
   }
 
-  const testJsearchKey = async (record: JsearchKeyRecord) => {
-    setTestingJsearchKey(record.id)
+  // Testa a chave colada no input (o backend não guarda mais o texto puro,
+  // então re-testar um registro salvo não é possível — testa-se a nova chave).
+  const testJsearchKeyInput = async () => {
+    const k = newJsearchKey.trim()
+    if (!k) return
+    setTestingJsearchInput(true)
     const form = new FormData()
-    form.set('api_key', record.api_key)
-    const prefix = record.api_key.slice(0, 8) + '…' + record.api_key.slice(-4)
+    form.set('api_key', k)
+    const prefix = k.slice(0, 8) + '…' + k.slice(-4)
     try {
       const res = await fetch(`${API_BASE_URL}/api/jsearch/test`, { method: 'POST', body: form })
-      const data = await res.json()
-      const prefix = record.api_key.slice(0, 8) + '…' + record.api_key.slice(-4)
-      const normalized = data.valid
-        ? { ok: true, status: 'ok', message: '', rate_limit_total: data.data?.rate_limit ?? 200, rate_limit_remaining: data.data?.rate_limit_remaining ?? null, rate_limit_used: (data.data?.rate_limit ?? 200) - (data.data?.rate_limit_remaining ?? 0) }
-        : { ok: false, status: data.status ?? 'error', message: data.message ?? 'Chave inválida', rate_limit_total: 200, rate_limit_remaining: null, rate_limit_used: 0 }
-      setJsearchKeyData(prev => ({ ...prev, [prefix]: normalized }))
+      const data = await res.json().catch(() => null)
+      if (data) {
+        const normalized = data.valid
+          ? { ok: true, status: 'ok', message: '', rate_limit_total: data.data?.rate_limit ?? 200, rate_limit_remaining: data.data?.rate_limit_remaining ?? null, rate_limit_used: (data.data?.rate_limit ?? 200) - (data.data?.rate_limit_remaining ?? 0) }
+          : { ok: false, status: data.status ?? 'error', message: data.message ?? 'Chave inválida', rate_limit_total: 200, rate_limit_remaining: null, rate_limit_used: 0 }
+        setJsearchKeyData(prev => ({ ...prev, [prefix]: normalized }))
+      }
     } catch {
-      setJsearchKeyData(prev => ({ ...prev, [prefix]: { ok: false, status: 'error', message: 'Erro de conexão', rate_limit_total: 200, rate_limit_remaining: null, rate_limit_used: 0 } }))
+      setJsearchKeyData(prev => ({ ...prev, [prefix]: { ok: false, status: 'error', message: 'Erro de conexão com o backend', rate_limit_total: 200, rate_limit_remaining: null, rate_limit_used: 0 } }))
     }
-    setTestingJsearchKey(null)
+    setTestingJsearchInput(false)
   }
 
   const startEditJsearchKey = (record: JsearchKeyRecord) => {
     setEditingJsearchId(record.id)
-    setEditJsearchValue(record.api_key)
+    setEditJsearchValue(record.description ?? '')
   }
   const cancelEditJsearchKey = () => {
     setEditingJsearchId(null)
     setEditJsearchValue('')
   }
   const saveEditJsearchKey = async () => {
-    const trimmed = editJsearchValue.trim()
-    if (!trimmed || !editingJsearchId) return
+    if (editingJsearchId === null) return
+    // Só a descrição é atualizável: trocar a chave em si = salvar a nova no
+    // campo acima (upsert por hash) e remover o registro antigo se precisar.
     const form = new FormData()
     form.set('key_id', String(editingJsearchId))
-    form.set('api_key', trimmed)
-    form.set('description', '')
+    form.set('description', editJsearchValue.trim())
     try {
       const res = await fetch(`${API_BASE_URL}/api/jsearch/update-key`, { method: 'PUT', body: form })
-      const data = await res.json()
-      if (data.success) {
+      const data = await res.json().catch(() => null)
+      if (data?.success) {
         setEditingJsearchId(null)
         setEditJsearchValue('')
         await loadJsearchKeys()
       }
     } catch (err) {
-      console.warn('[Trivor] Falha ao atualizar chave JSearch:', err)
+      console.warn('[Trivor] Falha ao atualizar descrição da chave JSearch:', err)
     }
   }
   const deleteJsearchKey = async (record: JsearchKeyRecord) => {
@@ -224,12 +231,11 @@ export default function ApiSettingsPage() {
     form.set('key_id', String(record.id))
     try {
       const res = await fetch(`${API_BASE_URL}/api/jsearch/delete-key`, { method: 'DELETE', body: form })
-      const data = await res.json()
-      if (data.success) {
+      const data = await res.json().catch(() => null)
+      if (data?.success) {
         setJsearchKeyData(prev => {
           const next = { ...prev }
-          const prefix = record.api_key.slice(0, 8) + '…' + record.api_key.slice(-4)
-          delete next[prefix]
+          delete next[record.key_prefix]
           return next
         })
         await loadJsearchKeys()
@@ -476,7 +482,7 @@ export default function ApiSettingsPage() {
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-bold text-white">Busca de Vagas em Tempo Real</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Adicione chaves JSearch API da OpenWebNinja (grátis: 200 req/chave/mês). Fallback automático entre múltiplas chaves.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Chaves JSearch API da OpenWebNinja (grátis: 200 req/chave/mês). O backend guarda só um resumo de cada chave (prefixo + hash) — a busca usa <code className="px-1 rounded bg-slate-800/80 text-slate-400">JSEARCH_API_KEY</code> do .env do backend e o fallback automático entre chaves.</p>
           </div>
           {jsearchKeys.length > 0 && (
             <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -496,40 +502,30 @@ export default function ApiSettingsPage() {
             {/* Lista de chaves como cards */}
             {jsearchKeys.map((record) => {
               const isEditing = editingJsearchId === record.id
-              const keyPrefix = record.api_key.slice(0, 8) + '…' + record.api_key.slice(-4)
-              const data = jsearchKeyData[keyPrefix]
-              const isTesting = testingJsearchKey === record.id
-              const used = record.used ?? data?.rate_limit_used ?? 0
-              const remaining = record.rate_limit_remaining ?? data?.rate_limit_remaining ?? null
-              const total = record.rate_limit_total ?? data?.rate_limit_total ?? 200
+              const used = record.used ?? 0
+              const remaining = record.rate_limit_remaining
+              const total = record.rate_limit_total ?? 200
               const pct = remaining !== null ? Math.round(((total - remaining) / total) * 100) : 0
               let statusBadge = null
-              if (isTesting) {
+              // Status persistido pelo backend no último teste/fetch
+              if (record.status === 'ok') {
                 statusBadge = (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px]">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Testando...
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]">
+                    <CheckCircle2 className="w-3 h-3" /> OK
                   </span>
                 )
-              } else if (data) {
-                if (data.ok) {
-                  statusBadge = (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]">
-                      <CheckCircle2 className="w-3 h-3" /> OK
-                    </span>
-                  )
-                } else if (data.status === '403') {
-                  statusBadge = (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[11px]">
-                      <XCircle className="w-3 h-3" /> Inválida
-                    </span>
-                  )
-                } else if (data.status === '429') {
-                  statusBadge = (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px]">
-                      <AlertCircle className="w-3 h-3" /> Limite
-                    </span>
-                  )
-                }
+              } else if (record.status === '403') {
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[11px]">
+                    <XCircle className="w-3 h-3" /> Inválida
+                  </span>
+                )
+              } else if (record.status === '429') {
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px]">
+                    <AlertCircle className="w-3 h-3" /> Limite
+                  </span>
+                )
               } else if (record.last_tested) {
                 statusBadge = (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-700/50 border border-slate-600/30 text-slate-400 text-[11px]">
@@ -544,7 +540,7 @@ export default function ApiSettingsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs text-slate-300 truncate">
-                          {record.api_key.slice(0, 8)}…{record.api_key.slice(-4)}
+                          {record.key_prefix}
                         </span>
                         {statusBadge}
                       </div>
@@ -567,26 +563,15 @@ export default function ApiSettingsPage() {
                           </div>
                         </div>
                       )}
-                      {data && !data.ok && (
-                        <p className="text-[11px] text-red-400/70 mt-0.5">{data.message}</p>
-                      )}
-                      {data?.ok && (
-                        <p className="text-[11px] text-emerald-400/70">{data.message}</p>
+                      {record.last_error && (
+                        <p className="text-[11px] text-red-400/70 mt-0.5">{record.last_error}</p>
                       )}
                     </div>
                     {!isEditing && (
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => testJsearchKey(record)}
-                          disabled={isTesting}
-                          title="Testar chave"
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-40"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-                        </button>
-                        <button
                           onClick={() => startEditJsearchKey(record)}
-                          title="Editar chave"
+                          title="Editar descrição"
                           className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
                         >
                           <Pencil className="w-3.5 h-3.5" />
@@ -603,11 +588,12 @@ export default function ApiSettingsPage() {
                     {isEditing && (
                       <div className="mt-3 pt-3 border-t border-slate-800 flex gap-2 items-center">
                         <input
-                          type={showJsearchKey ? 'text' : 'password'}
+                          type="text"
                           value={editJsearchValue}
                           onChange={e => setEditJsearchValue(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') saveEditJsearchKey(); if (e.key === 'Escape') cancelEditJsearchKey() }}
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white font-mono focus:outline-none focus:border-blue-500/50"
+                          placeholder="Descrição (ex.: chave principal)"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white focus:outline-none focus:border-blue-500/50"
                         />
                         <button onClick={() => saveEditJsearchKey()} title="Salvar" className="p-1.5 rounded text-emerald-400 hover:bg-emerald-500/10 transition-colors"><Save className="w-3.5 h-3.5" /></button>
                         <button onClick={cancelEditJsearchKey} title="Cancelar" className="p-1.5 rounded text-slate-500 hover:bg-slate-700/60 transition-colors"><X className="w-3.5 h-3.5" /></button>
@@ -637,6 +623,16 @@ export default function ApiSettingsPage() {
                   {showJsearchKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <button
+                onClick={testJsearchKeyInput}
+                disabled={!newJsearchKey.trim() || testingJsearchInput}
+                title="Testar a chave colada sem salvar"
+                className="px-3 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-blue-400 text-xs font-semibold hover:border-blue-500/40 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                type="button"
+              >
+                {testingJsearchInput ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                <span>Testar</span>
+              </button>
               <CustomButton
                 onClick={addJsearchKey}
                 disabled={!newJsearchKey.trim()}
@@ -644,9 +640,20 @@ export default function ApiSettingsPage() {
                 <Plus className="w-4 h-4" />
               </CustomButton>
             </div>
+            {newJsearchKey.trim() && (() => {
+              const fb = jsearchKeyData[newJsearchKey.trim().slice(0, 8) + '…' + newJsearchKey.trim().slice(-4)]
+              if (!fb) return null
+              const used = (fb.rate_limit_total ?? 0) - (fb.rate_limit_remaining ?? 0)
+              return (
+                <div className={`mt-2 flex items-center gap-1.5 text-[11px] ${fb.ok ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {fb.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                  <span>{fb.ok ? `Chave válida${fb.rate_limit_total ? ` — ${used}/${fb.rate_limit_total} chamadas usadas` : ''}` : (fb.message || 'Falha ao testar a chave')}</span>
+                </div>
+              )
+            })()}
             {jsearchKeys.length > 0 && (
               <p className="mt-3 text-[11px] text-slate-600">
-                As chaves são salvas no servidor. Adicione quantas quiser para ter fallback automático.
+                As chaves ficam registradas no servidor apenas como resumo (prefixo + hash). O backend as reusa na busca automaticamente.
               </p>
             )}
 

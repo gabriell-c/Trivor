@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
@@ -33,7 +33,7 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
-import { friendlyError } from '../lib/errors'
+import { friendlyError, isAbortError } from '../lib/errors'
 import { scoreTone } from '../lib/score'
 import type { MarketAnalysisResult, MarketReport, MarketJob, MarketCvFitResult } from '../types/analysis'
 
@@ -77,6 +77,11 @@ export default function MarketIntelligencePage() {
   const [fitLoading, setFitLoading] = useState(false)
   const [fitError, setFitError] = useState<string | null>(null)
   const [fitResult, setFitResult] = useState<MarketCvFitResult | null>(null)
+
+  // AbortController da análise: unmount/saída da página corta a chamada longa
+  // (LLM + busca JSearch) para não vazar fetches órfãos.
+  const analysisAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { analysisAbortRef.current?.abort() }, [])
 
   const runCvFit = async () => {
     if (!fitFile) { setFitError('Selecione o arquivo do seu CV (.pdf, .docx ou .txt).')
@@ -122,6 +127,12 @@ export default function MarketIntelligencePage() {
     setError(null)
     setResult(null)
 
+    // Aborte a corrida anterior (se o usuário re-rodou rápido) para a
+    // resposta atrasada não sobrescrever a nova.
+    analysisAbortRef.current?.abort()
+    const controller = new AbortController()
+    analysisAbortRef.current = controller
+
     const formData = new FormData()
     formData.set('job_title', jobTitle.trim())
     formData.set('target_stack', targetStack.join(', '))
@@ -138,26 +149,12 @@ export default function MarketIntelligencePage() {
       formData.set('model_name', marketProvider.modelName)
     }
 
-    // Busca chaves JSearch do backend (onde são salvas na página de settings)
-    let jsearchKeysStr = ''
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/jsearch/keys`)
-      if (res.ok) {
-        const data = await res.json().catch(() => null)
-        if (data) {
-          jsearchKeysStr = (data.keys || [])
-            .map((k: { api_key: string }) => k.api_key)
-            .join(',')
-        }
-      }
-    } catch (err) {
-      // Sem chaves JSearch disponíveis (backend offline, etc.) — segue com lista vazia
-      console.warn('[Trivor] Falha ao buscar chaves JSearch:', err)
-    }
-    formData.set('jsearch_api_keys', jsearchKeysStr)
+    // O pool de chaves JSearch fica no backend: variável JSEARCH_API_KEY do
+    // .env + registros (prefixo/hash) na aba Configurações → Busca de Vagas.
+    // O texto puro não é mais persistido, então o frontend não envia chaves.
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/market/analyze`, { method: 'POST', body: formData })
+      const res = await fetch(`${API_BASE_URL}/api/market/analyze`, { method: 'POST', body: formData, signal: controller.signal })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
         const detail = data?.detail
@@ -167,9 +164,14 @@ export default function MarketIntelligencePage() {
       setResult(data)
       setActiveTab('results')
     } catch (err) {
-      setError(friendlyError(err, 'Erro desconhecido na análise de mercado.'))
+      // Abort intencional (novo unmount/re-execução) não é falha: silencioso.
+      if (isAbortError(err)) return
+      // Só pinta erro se esta corrida ainda é a ativa (não uma corrida antiga).
+      if (analysisAbortRef.current === controller) {
+        setError(friendlyError(err, 'Erro desconhecido na análise de mercado.'))
+      }
     } finally {
-      setLoading(false)
+      if (analysisAbortRef.current === controller) setLoading(false)
     }
   }
 
