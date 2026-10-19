@@ -38,9 +38,7 @@ extension/
     ├── background.js        # Service worker (Manifest V3)
     ├── content.js           # Content Script (Injetado na página do LinkedIn)
     ├── popup.html           # Interface do Usuário (Glassmorphism Dark)
-    ├── popup.js             # Lógica da UI, download e cópia de arquivos
-    └── lib/
-        └── extractor.js     # Extrator core multi-idioma
+    └── popup.js             # Lógica da UI, download e cópia de arquivos
 ```
 
 ---
@@ -75,24 +73,29 @@ extension/
 ```json
 {
   "fonte": "trivor_linkedin_exporter",
-  "versao": "1.0.0",
+  "versao": "3.6.0",
   "url": "https://www.linkedin.com/in/usuario",
   "idioma_detectado": "pt",
   "extraido_em": "2026-08-16T17:15:00.000Z",
-  "dados": {
+  "perfil": {
     "nome": "Seu Nome Completo",
     "headline": "Engenheiro de Software | Full Stack | Python | Next.js",
     "localizacao": "São Paulo, SP",
-    "about": "Desenvolvedor com experiência em...",
-    "experience": "Empresa X • Cargo Y...",
-    "experiencias_detalhadas": [
+    "sobre": "Desenvolvedor com experiência em...",
+    "experiencias": [
       {
         "texto_bruto": "Desenvolvedor Senior na Empresa X (2023 - Presente)..."
       }
     ],
-    "education": "Universidade Y • Engenharia de Software...",
-    "certifications": "AWS Certified Developer...",
-    "skills": "Python, React, TypeScript, FastApi..."
+    "educacao": [
+      "Universidade Y • Engenharia de Software..."
+    ],
+    "certificacoes": [
+      "AWS Certified Developer"
+    ],
+    "habilidades": [
+      "Python, React, TypeScript, FastAPI"
+    ]
   }
 }
 ```
