@@ -588,12 +588,12 @@ def _ensure_jsearch_keys_hash_unique(conn: sqlite3.Connection) -> None:
 # Geração de vagas mock (todas as áreas)
 
 # ---------------------------------------------------------------------------
-# JSearch API — 获取真实职位（需要 API Key）
+# JSearch API — Buscar vagas reais (requer API Key)
 # ---------------------------------------------------------------------------
 
 _JSEARCH_API_URL = "https://api.openwebninja.com/jsearch/search-v2"
 _JSEARCH_HEADERS = {
-    "X-API-Key": "",  # 占位，运行时设置
+    "X-API-Key": "",  # Placeholder, definido em runtime
     "Accept": "application/json",
 }
 
@@ -852,9 +852,12 @@ def _get_geo_keywords(location: str) -> List[str]:
 
 
 def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all", location: str = "Remoto Nacional"):
-    """Gera vagas mock se a base estiver vazia.
-    Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro.
+    """Preenche a base de vagas quando está vazia.
+    Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro
+    (com JSEARCH_API_KEY do ambiente como chave sintética extra).
     Usa múltiplas queries para maximizar o volume de vagas.
+    Se JSearch não retornar nada (sem chave/falha), a base fica vazia —
+    nenhum dado é fabricado.
     """
     conn = _connect_market_db(db_file)
     count = conn.execute("SELECT COUNT(*) FROM market_raw_jobs").fetchone()[0]
@@ -912,19 +915,19 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 queries.append(f"{search_query} sudeste brasil")
                 queries.append(f"{search_query} banca")
 
-                # Parallel queries: 执行在 6 个并发的批次中，每个批次独立分配不同的 key 子集
+                # Queries em paralelo: execução em 6 lotes concorrentes, cada um com um subconjunto de chaves distinto
                 all_jobs = {}
                 from concurrent.futures import ThreadPoolExecutor, as_completed
 
                 def _fetch_single_query(q, keys_subset=None, date_posted="month"):
-                    """执行单个查询，可选传入 key 子集以分散 IP 压力。"""
+                    """Executa uma query; aceita um subconjunto de chaves para distribuir a pressão de IP."""
                     keys = keys_subset if keys_subset else valid_keys
                     return _fetch_jsearch_jobs(q, country=country, language=language,
                                                num_pages=12, api_keys=keys, date_posted=date_posted)
 
-                # 将有效 key 分成 6 个子集，尽量均匀分配
+                # Divide as chaves válidas em 6 subconjuntos, o mais uniformemente possível
                 def _split_keys(keys, n):
-                    """将 keys 列表分成 n 个子列表，尽量均匀分布。"""
+                    """Divide a lista de chaves em n sublistas, o mais uniforme possível."""
                     if not keys:
                         return [[] for _ in range(n)]
                     result = [[] for _ in range(n)]
@@ -938,21 +941,21 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 max_concurrent = min(batch_size, len(valid_keys)) if valid_keys else 1
                 total_batches = (len(queries) + batch_size - 1) // batch_size
 
-                # 统计每批次成功/失败的 query 数，用于后续 retry
-                failed_queries = []  # 记录返回 0 条结果的 query
+                # Conta o número de queries bem-sucedidas/falhas por lote, para o retry posterior
+                failed_queries = []  # Registra as queries que retornaram 0 resultados
                 retry_count = 0
                 max_retries = _MAX_RETRY
 
                 for batch_idx in range(total_batches):
                     batch_queries = queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
-                    # 为每个 query 分配不同的 key 子集（round-robin 移位）
+                    # Cada query recebe um subconjunto de chaves distinto (deslocamento round-robin)
                     subset_idx = batch_idx % len(key_subsets)
                     batch_key_subset = key_subsets[subset_idx]
 
                     with ThreadPoolExecutor(max_workers=min(len(batch_queries), max_concurrent)) as executor:
                         futures = {}
                         for i, q in enumerate(batch_queries):
-                            # 每个 query 使用不同的 key 子集偏移，进一步分散压力
+                            # Cada query usa um subconjunto de chaves com deslocamento próprio, para distribuir ainda mais a pressão de IP
                             inner_offset = (batch_idx + i) % len(key_subsets)
                             inner_subset = key_subsets[inner_offset]
                             futures[executor.submit(_fetch_single_query, q, inner_subset)] = q
@@ -981,14 +984,14 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                             logger.info(f"[MARKET] Query {q!r}: {len(jobs)} novas, {len(all_jobs)-dup_before} únicas")
                             if rem is not None and valid_keys:
                                 used_key_remaining = rem
-                            # 记录失败（0 条结果）的 query 以便后续 retry
+                            # Registra a query falha (0 resultados) para o retry posterior
                             if len(jobs) == 0:
                                 failed_queries.append(q)
 
-                    # 批次间延迟：避免 IP 级 rate limit
+                    # Atraso entre lotes: evita rate limit de nível de IP
                     time.sleep(_BATCH_DELAY)
 
-                # Retry 逻辑：对返回 0 条结果的 query 进行重试，每次用不同 key 子集
+                # Lógica de retry: repete as queries que retornaram 0 resultados, cada vez com um subconjunto de chaves diferente
                 for retry_attempt in range(1, max_retries + 1):
                     if not failed_queries:
                         break
