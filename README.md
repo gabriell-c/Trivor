@@ -47,6 +47,22 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 ### 6. 📜 Histórico & Logs de Requisições
 - Tabela detalhada em tempo real com Timestamp, Método HTTP, Endpoint, Status Code, Duração e Modal de erro completo.
 
+### 7. 🎯 Fit Inteligente do CV com a Vaga (determinístico + LLM)
+- **Nota de Fit (0-100) sem IA**: cruzamento determinístico entre requisitos da vaga (extraídos por heurística + dicionário de skills) e o texto do CV, com itens cobertos, faltantes e diferenciais.
+- **Ranking "Meu CV × Mercado"**: sua nota contra as N vagas mais relevantes da base de mercado, com os tópicos onde você mais perde pontos.
+- **Análise Semântica da Vaga (LLM)**: requisitos obrigatórios/diferenciais de verdade, evidência LITERAL do CV para cada item, resumo do gap e sugestões de reescrita priorizadas no formato XYZ (ação + ferramenta + resultado), prontas para copiar.
+- **Simulação de Recrutador**: veredito (aprovado/duvida/reprovado), confiança, por quê, sinais vermelhos e 3 perguntas de entrevista prováveis — agnóstico de área.
+- **Geração de Cover Letter**: formatos curta (2 parágrafos) e completa (5 parágrafos), com fatos auditáveis (cada afirmação precisa existir no seu CV).
+- Anti-alucinação em todas as etapas: citações inventadas pela IA são removidas no pós-processo do backend.
+
+### 8. 🔁 Comparação de Versões de CV (Diff)
+- Envia versão anterior + nova e recebe: o que melhorou, o que piorou e a próxima melhoria recomendada.
+- Sinais objetivos determinísticos (bullets, métricas numéricas, palavras-chave adicionadas/removidas) + narrativa LLM com evidência literal de cada versão.
+
+### 9. ⚙️ Análise de CV em 2 Passes
+- Pass 1: estrutura, ortografia, ordem de seções e ATS.
+- Pass 2: qualidade (XYZ, métricas, narrativa) usando o resumo do pass 1 como contexto — resultados mais estáveis e criticidades ancoradas em trechos citados do próprio CV.
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas
@@ -107,22 +123,26 @@ cd Trivor
 ### 2. Configurar & Executar o Backend
 
 ```bash
-# Navegar para a pasta do backend
-cd backend
-
-# Criar e ativar o ambiente virtual
+# Criar e ativar o ambiente virtual (na RAIZ do projeto)
 python -m venv venv
 
-# No Windows (PowerShell):
-.\venv\Scripts\Activate.ps1
+# Windows (PowerShell):
+venv\Scripts\Activate.ps1
+# Linux/macOS:
+# source venv/bin/activate
 
 # Instalar dependências
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
-# Iniciar o servidor FastAPI
+# (Opcional) Configurar variáveis de ambiente — veja .env.example
+copy .env.example .env   # Windows; Linux/macOS: cp .env.example .env
+
+# Iniciar o servidor FastAPI (a partir da pasta backend)
+cd backend
 python main.py
 ```
 > O backend estará rodando em `http://127.0.0.1:8000`.
+> Chaves de IA: defina no `.env` (`OPENAI_API_KEY` / `TRIVOR_IAS`) ou pela aba de Configurações do app — sem chave, os endpoints de IA respondem com erro 400 claro.
 
 ### 3. Configurar & Executar o Frontend
 
