@@ -25,33 +25,28 @@ build/
 dist/
 *.egg-info/
 
-# Data, SQLite, Logs & Temporary Files
+# Data, SQLite & Temporary Files
 data/*
 !data/.gitkeep
 *.db
 *.sqlite
 *.sqlite3
+
+# Logs & junk files (nomes específicos; *.log cobre os demais)
 *.log
-*.txt
-*.json
 market_log.txt
-backend/market_log.txt
 backend_log.txt
 backend_err.txt
+stdout.log
+stderr.log
 
 # Trae AI & Debug Artifacts
 .trae/
 debug*.py
 debug*.txt
 debug*.md
-test_*.py
-test_*.txt
-test_*.json
-qa_*/
-qa_*
 
-# Documentation & Sensitive Tests
-docs/
+# Sensitive material (NÃO versionado)
 reference/
 
 # Node / Next.js
@@ -67,5 +62,3 @@ frontend/yarn-error.log*
 .DS_Store
 Thumbs.db
 desktop.ini
--w
-.py

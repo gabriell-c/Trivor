@@ -1,13 +1,15 @@
-[tool.ruff]
+# Configuração standalone do ruff (não é pyproject.toml: chaves em top-level)
 target-version = "py311"
 line-length = 100
+
+[lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 ignore = ["E501", "B008", "SIM102"]
 
-[tool.ruff.lint.per-file-ignores]
+[lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["S101", "PLR2004"]
 "**/main.py" = ["PLR0913"]
 
-[tool.ruff.lint.isort]
+[lint.isort]
 known-first-party = ["backend"]
