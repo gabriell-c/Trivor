@@ -41,6 +41,7 @@ LINKEDIN_PROMPT_FILE = KNOWLEDGE_DIR / 'linkedin_prompt.md'
 CV_FIT_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_fit_prompt.md'
 RECRUITER_PROMPT_FILE = KNOWLEDGE_DIR / 'recruiter_prompt.md'
 COVER_LETTER_PROMPT_FILE = KNOWLEDGE_DIR / 'cover_letter_prompt.md'
+CV_DIFF_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_diff_prompt.md'
 
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
@@ -1677,6 +1678,138 @@ def _recruiter_sim_validate(sim: dict) -> dict:
     return sim
 
 
+# ---------------------------------------------------------------------------
+# Comparação de Duas Versões de CV — diff determinístico + narrativa LLM
+# ---------------------------------------------------------------------------
+
+# Métricas numéricas no CV: percentuais ("30%"), moeda ("R$ 120 mil"),
+# ordens de grandeza ("50 mil", "3k"), contadores ("15 pontos", "3 vezes")
+# e verbos de resultado com número ("redução em 30%", "aumento de 12").
+_METRIC_RE = re.compile(
+    r"""\d+(?:[.,]\d+)?\s*%
+      |R\$\s?\d+(?:[.,]\d+)?
+      |\b\d+(?:[.,]\d+)?\s*(?:mil|mi|k)\b
+      |\b\d+(?:[.,]\d+)?\s*(?:pontos|vezes)\b
+      |\b(?:reduz|reduc|reducao|diminui|aument|cresc|economiz|eleva|gera)\w*\s+(?:em|de|para)\s+\d+(?:[.,]\d+)?""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# Cabeçalhos que abrem a seção de experiências e cabeçalhos estruturais que a
+# encerram (em linha própria, como sai dos extratores markdown).
+_EXP_HEADING_RE = re.compile(
+    r'^(experi[êe]ncias?|trabalho|atu[açc][ãa]o|hist[oó]rico profissional|experi[êe]ncia profissional)(\s*:.*)?$'
+)
+_END_HEADING_RE = re.compile(
+    r'^(forma[çc][ãa]o(s)?|educa[çc][ãa]o|cursos|h[áa]bilidades|tecnologias|idiomas|certifica[çc][oõ]es|projetos|links|contatos?|informa[çc][oõ]es)(\s*:.*)?$'
+)
+_BULLET_LINE_RE = re.compile(r'^\s*[-•*▪·]\s+\S')
+
+
+def _count_bullets_experiencia(text: str) -> int:
+    """Nº de bullet points na seção de experiência do CV. A seção vai do
+    cabeçalho "Experiência(s)/Trabalho/Atuação" até o próximo cabeçalho
+    estrutural (Formação, Habilidades, Projetos...) ou fim do texto; sem
+    cabeçalho de experiências, conta bullets no texto inteiro."""
+    linhas = text.splitlines()
+    inicio = None
+    fim = None
+    for i, linha in enumerate(linhas):
+        low = re.sub(r'\s+', ' ', linha.strip().lower())
+        if inicio is None:
+            if _EXP_HEADING_RE.fullmatch(low):
+                inicio = i + 1
+        elif _END_HEADING_RE.fullmatch(low):
+            fim = i
+            break
+    corpo = linhas[inicio:fim] if inicio is not None else linhas
+    return sum(1 for l in corpo if _BULLET_LINE_RE.match(l))
+
+
+def _repeated_terms(text: str) -> dict:
+    """Termos (4+ letras, fora das stopwords) que se repetem no texto —
+    candidatos a skills/palavras-chave do próprio CV, no padrão de
+    _check_tech_stack_by_experience. Retorna {termo: ocorrencias}."""
+    counts = Counter(
+        t.lower() for t in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{4,}", text)
+        if t.lower() not in _STOPWORDS_PT
+    )
+    return {t: c for t, c in counts.items() if c >= 2}
+
+
+def _diff_cv_deterministic(texto_anterior: str, texto_novo: str) -> dict:
+    """Diff determinístico (sem LLM) entre duas versões do CV: bullets da
+    seção de experiência, métricas numéricas e termos-chave repetidos que
+    entraram/saíram entre as versões. Reproducível entre execuções."""
+    bullets_ant = _count_bullets_experiencia(texto_anterior)
+    bullets_nov = _count_bullets_experiencia(texto_novo)
+    metricas_ant = len(_METRIC_RE.findall(texto_anterior))
+    metricas_nov = len(_METRIC_RE.findall(texto_novo))
+
+    termos_ant = _repeated_terms(texto_anterior)
+    termos_nov = _repeated_terms(texto_novo)
+    # Ordem: termos mais frequentes na versão de origem primeiro, teto de 20
+    novos = sorted(set(termos_nov) - set(termos_ant), key=lambda t: -termos_nov[t])[:20]
+    removidos = sorted(set(termos_ant) - set(termos_nov), key=lambda t: -termos_ant[t])[:20]
+
+    return {
+        "bullets_experiencia": {"anterior": bullets_ant, "novo": bullets_nov},
+        "metricas_numericas": {"anterior": metricas_ant, "novo": metricas_nov},
+        "termos_adicionados": novos,
+        "termos_removidos": removidos,
+    }
+
+
+def _diff_cv_validate(narrativa: dict, texto_anterior: str, texto_novo: str) -> dict:
+    """Pós-processo anti-alucinação do diff: normaliza os itens de
+    `melhorias`/`piorou` e zera evidências que não ocorrem no texto da versão
+    correspondente (mesma regra do fit semântico, via
+    _semantic_fit_evidence_valid). Retorna o mesmo dict."""
+    if not isinstance(narrativa, dict):
+        narrativa = {}
+
+    def _item_str(item, *campos):
+        for c in campos:
+            v = item.get(c)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
+    def _normalizar(lista: list, max_itens: int) -> list:
+        if not isinstance(lista, list):
+            return []
+        out = []
+        for item in lista[:max_itens]:
+            if isinstance(item, str):
+                item = {"item": item, "evidencia_antiga": None, "evidencia_nova": None}
+            if not isinstance(item, dict):
+                continue
+            desc = _item_str(item, 'item', 'texto', 'descricao')
+            ev_ant = item.get('evidencia_antiga')
+            ev_nov = item.get('evidencia_nova')
+            # Zera evidência que não existe no texto da versão citada
+            if isinstance(ev_ant, str) and ev_ant.strip() and not _semantic_fit_evidence_valid(ev_ant, texto_anterior):
+                ev_ant = None
+            if isinstance(ev_nov, str) and ev_nov.strip() and not _semantic_fit_evidence_valid(ev_nov, texto_novo):
+                ev_nov = None
+            if not desc:
+                continue
+            out.append({
+                "item": desc,
+                "evidencia_antiga": ev_ant if isinstance(ev_ant, str) else None,
+                "evidencia_nova": ev_nov if isinstance(ev_nov, str) else None,
+            })
+        return out
+
+    narrativa['melhorias'] = _normalizar(narrativa.get('melhorias'), 8)
+    narrativa['piorou'] = _normalizar(narrativa.get('piorou'), 8)
+
+    for campo in ('resumo', 'recomendacao_proxima'):
+        v = narrativa.get(campo)
+        narrativa[campo] = v.strip() if isinstance(v, str) else ""
+
+    return narrativa
+
+
 @app.post('/api/cv/semantic-fit')
 @limiter.limit("10/minute")
 async def cv_semantic_fit(
@@ -2248,6 +2381,202 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao gerar a cover letter. Verifique a chave de API e tente novamente.")
+
+
+@app.post('/api/cv/diff')
+@limiter.limit("10/minute")
+async def cv_diff(
+    request: Request,
+    api_key: str = Form(None),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
+    provider_id: str = Form(None),
+    cv_file_novo: UploadFile = File(None),
+    cv_file_anterior: UploadFile = File(None),
+    area: str = Form(""),
+):
+    """Compara duas versões do currículo: diff determinístico (bullets da
+    seção de experiência, métricas numéricas, termos-chave que entraram ou
+    saíram) + narrativa LLM do que melhorou/piorou. Pós-processo zera
+    evidências que não existem no texto da versão citada."""
+    if cv_file_novo is None or cv_file_anterior is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Envie os dois arquivos: a versão anterior (cv_file_anterior) e a versão nova (cv_file_novo) do currículo.",
+        )
+
+    async def _validar_upload(uf: UploadFile, rotulo: str):
+        content = await uf.read()
+        if not content:
+            raise HTTPException(status_code=400, detail=f"Arquivo {rotulo} vazio.")
+        ext = os.path.splitext(uf.filename or "")[1].lower()
+        if ext not in _ALLOWED_EXTS:
+            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado ({rotulo}). Use .pdf, .docx, .doc ou .txt.")
+        if len(content) > _MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"Arquivo {rotulo} excede 10MB.")
+        return content, ext
+
+    content_novo, ext_novo = await _validar_upload(cv_file_novo, "novo")
+    content_anterior, ext_anterior = await _validar_upload(cv_file_anterior, "anterior")
+
+    def _extrair(content: bytes, ext: str, prefixo: str, rotulo: str) -> tuple:
+        temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix=prefixo)
+        try:
+            with os.fdopen(temp_fd, 'wb') as f:
+                f.write(content)
+            texto, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        if not texto or not texto.strip():
+            raise HTTPException(status_code=400, detail=f"Não foi possível extrair texto do arquivo {rotulo}. Tente outro PDF ou um .docx.")
+        return texto, extractor_used
+
+    texto_novo, extractor_novo = _extrair(content_novo, ext_novo, 'cvdiffnovo_', "novo")
+    texto_anterior, extractor_anterior = _extrair(content_anterior, ext_anterior, 'cvdiffant_', "anterior")
+
+    # Diferença determinística não depende de LLM — calculada antes de tudo
+    deterministico = _diff_cv_deterministic(texto_anterior, texto_novo)
+
+    # Provider por id (mesmo padrão do /api/cv/cover-letter)
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
+    if not key or key.strip() == "":
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
+            key = api_key
+    if not key or key.strip() == "":
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+    t0 = time.time()
+    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
+    if not base_url:
+        base_url = "http://localhost:20128/v1"  # omniroute local
+
+    # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
+    if CV_DIFF_PROMPT_FILE.exists():
+        with open(CV_DIFF_PROMPT_FILE, 'r', encoding='utf-8') as f:
+            sys_prompt = f.read()
+    else:
+        sys_prompt = ("Você compara duas versões do currículo de um candidato, em PT-BR, "
+                      "e devolve JSON exato. NUNCA invente conteúdo: toda citação deve "
+                      "existir literalmente na versão referida; evidências que não existem "
+                      "ficam null.")
+
+    user_content = f"""VERSÃO ANTIGUA DO CURRÍCULO (texto extraído, Markdown):
+---
+{texto_anterior}
+---
+
+VERSÃO NOVA DO CURRÍCULO (texto extraído, Markdown):
+---
+{texto_novo}
+---
+
+ÁREA DO CANDIDATO: {area.strip() if area and area.strip() else 'Não especificada (analise de forma genérica, não assuma tecnologia)'}
+
+Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
+
+    client = OpenAI(api_key=key, base_url=base_url)
+    try:
+        start_time = time.time()
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.2,
+            max_tokens=3000,
+            response_format={"type": "json_object"},
+        )
+        response_time_ms = (time.time() - start_time) * 1000
+
+        raw_content = response.choices[0].message.content or ""
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+            cleaned = cleaned.strip()
+
+        try:
+            narrativa = json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', cleaned)
+            narrativa = json.loads(match.group()) if match else {}
+        if not isinstance(narrativa, dict):
+            narrativa = {}
+
+        # Anti-alucinação: zera evidências que não existem na versão citada
+        narrativa = _diff_cv_validate(narrativa, texto_anterior, texto_novo)
+
+        uso_tokens = None
+        if hasattr(response, 'usage') and response.usage:
+            uso_tokens = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens,
+            }
+
+        log_request(
+            endpoint="/api/cv/diff",
+            method="POST",
+            status_code=200,
+            duration_ms=int(response_time_ms),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            response_summary=json.dumps(
+                {
+                    "melhorias": len(narrativa.get('melhorias', [])),
+                    "piorou": len(narrativa.get('piorou', [])),
+                    "termos_adicionados": len(deterministico['termos_adicionados']),
+                },
+                ensure_ascii=False,
+            ),
+            extracted_text=(texto_novo[:2500] + "\n---VERSÃO ANTIGA---\n" + texto_anterior[:2500]),
+        )
+
+        result: dict = {
+            "narrativa": narrativa,
+            "deterministico": deterministico,
+            "extractor_used": {"novo": extractor_novo, "anterior": extractor_anterior},
+        }
+        if uso_tokens:
+            result["uso_tokens"] = uso_tokens
+        result["api_info"] = {
+            "model": selected_model,
+            "request_id": str(getattr(response, 'id', None) or uuid.uuid4()),
+            "response_time_ms": int(response_time_ms),
+        }
+        return result
+
+    except Exception as e:
+        logger.error(f"[CV-DIFF] Erro na chamada LLM: {e}")
+        log_request(
+            endpoint="/api/cv/diff",
+            method="POST",
+            status_code=500,
+            duration_ms=int((time.time() - t0) * 1000),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Erro ao comparar as versões do currículo. Verifique a chave de API e tente novamente.")
 
 
 @app.post('/api/ia/analyze')

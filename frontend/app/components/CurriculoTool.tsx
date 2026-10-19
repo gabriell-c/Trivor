@@ -1,8 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play } from 'lucide-react'
-import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim, CoverLetter } from '../types/analysis'
+import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play, GitCompare } from 'lucide-react'
+import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim, CoverLetter, CVDiffResult, DiffCV, DiffCVItem, DiffCVDeterministico } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
@@ -874,6 +874,9 @@ export default function CurriculoTool() {
             onDownload={downloadCoverLetter}
           />
 
+          {/* Comparar Versões do CV (diff — /api/cv/diff) */}
+          <CVDiffSection area={area} />
+
           {/* Palavras-chave */}
           {(res.palavras_chave_presentes?.length ?? 0) > 0 || (res.palavras_chave_faltantes?.length ?? 0) > 0 ? (
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
@@ -1672,6 +1675,233 @@ function CoverLetterSection({
               <Download className="w-3.5 h-3.5" /> Baixar .txt
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Comparar Versões do CV (diff — /api/cv/diff): duas versões do currículo,
+// sinais objetivos (métricas/bullets/palavras-chave) + narrativa LLM em duas
+// colunas (Melhorou / Piorou), resumo e próxima recomendação.
+// ---------------------------------------------------------------------------
+
+function SinaisObjetivos({ det }: { det: DiffCVDeterministico }) {
+  const metricaDelta = det.metricas_numericas.novo - det.metricas_numericas.anterior
+  const bulletsDelta = det.bullets_experiencia.novo - det.bullets_experiencia.anterior
+  const deltaCls = (d: number) => (d > 0 ? 'text-emerald-400' : d < 0 ? 'text-rose-400' : 'text-slate-400')
+
+  return (
+    <div className="rounded-2xl bg-slate-950/60 border border-slate-800/80 p-4">
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Sinais objetivos</p>
+      <div className="flex flex-wrap gap-2">
+        <span className="px-2.5 py-1 rounded-full text-xs bg-slate-800/60 text-slate-300 border border-slate-700/60">
+          Métricas numéricas: {det.metricas_numericas.anterior} → <span className={`font-bold ${deltaCls(metricaDelta)}`}>{det.metricas_numericas.novo}</span>
+        </span>
+        <span className="px-2.5 py-1 rounded-full text-xs bg-slate-800/60 text-slate-300 border border-slate-700/60">
+          Bullets na experiência: {det.bullets_experiencia.anterior} → <span className={`font-bold ${deltaCls(bulletsDelta)}`}>{det.bullets_experiencia.novo}</span>
+        </span>
+      </div>
+      {(det.termos_adicionados.length > 0 || det.termos_removidos.length > 0) && (
+        <div className="mt-3 space-y-2">
+          {det.termos_adicionados.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Termos-chave adicionados</p>
+              <div className="flex flex-wrap gap-1.5">
+                {det.termos_adicionados.map((t, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {det.termos_removidos.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1">Termos-chave removidos</p>
+              <div className="flex flex-wrap gap-1.5">
+                {det.termos_removidos.map((t, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded-full text-[11px] bg-rose-500/10 text-rose-300 border border-rose-500/20">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderDiffItems(items: DiffCVItem[], tone: 'melhora' | 'piorou') {
+  const Icon = tone === 'melhora' ? CheckCircle2 : AlertTriangle
+  const iconCls = tone === 'melhora' ? 'text-emerald-400' : 'text-rose-400'
+  if (items.length === 0) {
+    return (
+      <p className="text-xs text-slate-500">
+        {tone === 'melhora' ? 'Nenhuma melhoria detectada entre as versões.' : 'Nenhum problema detectado entre as versões.'}
+      </p>
+    )
+  }
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <Icon className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${iconCls}`} />
+          <div className="min-w-0">
+            <p className="text-sm text-slate-300">{item.item}</p>
+            {item.evidencia_nova && (
+              <p className="text-[11px] text-slate-500 mt-0.5">No CV novo: “{item.evidencia_nova}”</p>
+            )}
+            {item.evidencia_antiga && (
+              <p className="text-[11px] text-slate-500">Na versão antiga: “{item.evidencia_antiga}”</p>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function CVDiffSection({ area }: { area: string }) {
+  const [arquivoAnterior, setArquivoAnterior] = useState<File | null>(null)
+  const [arquivoNovo, setArquivoNovo] = useState<File | null>(null)
+  const [diff, setDiff] = useState<CVDiffResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const narrativa: DiffCV | null = diff ? diff.narrativa : null
+  const canRun = !!arquivoAnterior && !!arquivoNovo && !loading
+
+  const runDiff = async () => {
+    if (!arquivoAnterior || !arquivoNovo) return
+    setLoading(true)
+    setError(null)
+    setDiff(null)
+    const formData = new FormData()
+    formData.append('cv_file_anterior', arquivoAnterior)
+    formData.append('cv_file_novo', arquivoNovo)
+    if (area.trim()) formData.set('area', area.trim())
+    const provider = getBestProvider(['curriculo'])
+    if (provider) {
+      formData.set('api_key', provider.apiKey)
+      formData.set('api_url', provider.apiUrl)
+      formData.set('model_name', provider.modelName)
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/diff`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na comparação de versões.`)
+      }
+      const data: CVDiffResult = await response.json()
+      setDiff(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao comparar as versões do currículo.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-2">
+        <GitCompare className="w-4 h-4 text-indigo-400" /> Comparar Versões
+      </h2>
+      <p className="text-xs text-slate-500 mb-4">
+        Envie duas versões do seu CV e veja o que melhorou, o que piorou e qual a próxima melhoria — com sinais objetivos e evidências literais.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs font-medium text-slate-400 mb-1.5">Versão anterior</p>
+          <Dropzone
+            accept=".pdf,.docx,.doc,.txt"
+            onFileSelect={(f) => setArquivoAnterior(f || null)}
+          />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-slate-400 mb-1.5">Versão nova</p>
+          <Dropzone
+            accept=".pdf,.docx,.doc,.txt"
+            onFileSelect={(f) => setArquivoNovo(f || null)}
+          />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={runDiff}
+        disabled={!canRun}
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Play className="w-3.5 h-3.5" /> Comparar versões
+      </button>
+      {!arquivoAnterior && !arquivoNovo && !loading && (
+        <p className="text-[11px] text-slate-600 mt-2">PDF, DOCX, DOC ou TXT — até 10MB por arquivo.</p>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-slate-400 mt-4">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Comparando as duas versões (IA)...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-4 mt-4">
+          <p className="text-sm text-rose-400">{error}</p>
+          {arquivoAnterior && arquivoNovo && (
+            <button
+              type="button"
+              onClick={runDiff}
+              className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && diff && narrativa && (
+        <div className="space-y-5 mt-4">
+          {narrativa.resumo && (
+            <p className="text-sm text-slate-400">{narrativa.resumo}</p>
+          )}
+
+          <SinaisObjetivos det={diff.deterministico} />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/20 p-4">
+              <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">
+                Melhorou ({narrativa.melhorias.length})
+              </p>
+              {renderDiffItems(narrativa.melhorias, 'melhora')}
+            </div>
+            <div className="rounded-2xl bg-rose-500/5 border border-rose-500/20 p-4">
+              <p className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-3">
+                Piorou ({narrativa.piorou.length})
+              </p>
+              {renderDiffItems(narrativa.piorou, 'piorou')}
+            </div>
+          </div>
+
+          {narrativa.recomendacao_proxima && (
+            <div className="rounded-2xl bg-indigo-500/5 border border-indigo-500/20 p-4">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Próxima melhoria</p>
+              <p className="text-sm text-slate-300">{narrativa.recomendacao_proxima}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={runDiff}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition"
+          >
+            <RotateCcw className="w-3 h-3" /> Rodar novamente
+          </button>
         </div>
       )}
     </div>

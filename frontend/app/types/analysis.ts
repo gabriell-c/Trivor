@@ -113,6 +113,37 @@ export interface CoverLetter {
   fatos_usados?: string[]
 }
 
+// Comparação de duas versões de CV via LLM (/api/cv/diff)
+export interface DiffCVItem {
+  /** Frase curta descrevendo o ponto */
+  item: string
+  /** Trecho LITERAL da versão antiga (null quando não existia naquela versão) */
+  evidencia_antiga?: string | null
+  /** Trecho LITERAL da versão nova (null quando não existia naquela versão) */
+  evidencia_nova?: string | null
+}
+
+export interface DiffCV {
+  resumo: string
+  melhorias: DiffCVItem[]
+  piorou: DiffCVItem[]
+  recomendacao_proxima: string
+}
+
+// Comparação determinística de duas versões de CV (mesmo endpoint, camada sem LLM)
+export interface DiffCVDeterministico {
+  bullets_experiencia: { anterior: number; novo: number }
+  metricas_numericas: { anterior: number; novo: number }
+  termos_adicionados: string[]
+  termos_removidos: string[]
+}
+
+export interface CVDiffResult {
+  narrativa: DiffCV
+  deterministico: DiffCVDeterministico
+  extractor_used?: { novo: string; anterior: string }
+}
+
 export interface MarketCvFitResult {
   total_vagas: number
   vagas: MarketFitVaga[]

@@ -58,6 +58,7 @@ class TestHealth:
         assert "/api/cv/semantic-fit" in paths
         assert "/api/cv/recruiter-sim" in paths
         assert "/api/cv/cover-letter" in paths
+        assert "/api/cv/diff" in paths
 
 
 # ============================================================================
@@ -667,3 +668,162 @@ class TestCoverLetterValidation:
         out = _cover_letter_validate(carta, cv, "completa")
         assert out["formato"] == "curta"
         assert out["fatos_usados"] == ["Python", "PostgreSQL"]
+
+
+# ============================================================================
+# Comparação de Duas Versões de CV (Diff) — /api/cv/diff
+# ============================================================================
+
+# Duas versões do mesmo CV para os testes do diff (antiga sem métricas;
+# nova com bullets, métricas numéricas e termos-chave novos)
+CV_DIFF_ANTIGO = """Experiência
+Empresa A (2021-2023)
+- Responsável por relatórios
+- Suporte a clientes
+- Manutenção de Excel
+- Utilização de Excel
+
+Formação
+- Graduação em Administração
+"""
+
+CV_DIFF_NOVO = """Experiência
+Empresa A (2021-2023)
+- Relatórios automatizados com Power BI e PostgreSQL, redução em 40%
+- Suporte a clientes com Power BI e PostgreSQL, aumentei a satisfação em 15 pontos
+Empresa B (2023-2025)
+- Pipelines com Docker e PostgreSQL, economizei R$ 120 mil
+- Atendimento com Power BI e PostgreSQL, reduzi o retrabalho em 20%
+- Mentoria de estagiários com PostgreSQL, aumentei a retenção em 30%
+
+Formação
+- Graduação em Administração
+"""
+
+
+class TestCVDiffEndpoint:
+    def test_missing_files_returns_400(self, client):
+        # Nenhum arquivo enviado → 400 com mensagem orientando os dois uploads
+        r = client.post("/api/cv/diff", data={"area": "Tecnologia"})
+        assert r.status_code == 400
+        assert "dois arquivos" in r.json().get("detail", "")
+
+    def test_single_file_returns_400(self, client):
+        # Só a versão nova → 400 (falta a anterior)
+        r = client.post(
+            "/api/cv/diff",
+            files={"cv_file_novo": ("cv_novo.txt", b"Experiencia com Python.", "text/plain")},
+        )
+        assert r.status_code == 400
+
+    def test_unsupported_extension_returns_400(self, client):
+        r = client.post(
+            "/api/cv/diff",
+            files={
+                "cv_file_novo": ("cv.exe", b"MZ", "application/octet-stream"),
+                "cv_file_anterior": ("cv.txt", b"Antiga", "text/plain"),
+            },
+        )
+        assert r.status_code == 400
+        assert "Formato" in r.json().get("detail", "")
+
+    def test_missing_api_key_returns_400(self, client):
+        # Dois .txt válidos, sem provider nem OPENAI_API_KEY → 400 no
+        # sub-caminho LLM (o diff determinístico roda antes, mas sem chave
+        # a chamada LLM não pode ser feita).
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
+            patch("main._get_provider_for_tool", return_value=None),
+        ):
+            r = client.post(
+                "/api/cv/diff",
+                files={
+                    "cv_file_novo": ("cv_novo.txt", CV_DIFF_NOVO.encode("utf-8"), "text/plain"),
+                    "cv_file_anterior": ("cv_antigo.txt", CV_DIFF_ANTIGO.encode("utf-8"), "text/plain"),
+                },
+            )
+        assert r.status_code == 400
+        assert "Chave de API" in r.json().get("detail", "")
+
+
+class TestCVDiffDeterministic:
+    """Camada determinística do diff, testável diretamente (sem LLM)."""
+
+    def test_metrics_grow_in_new_version(self):
+        from main import _diff_cv_deterministic
+        diff = _diff_cv_deterministic(CV_DIFF_ANTIGO, CV_DIFF_NOVO)
+        assert diff["metricas_numericas"]["anterior"] == 0
+        assert diff["metricas_numericas"]["novo"] >= 3
+
+    def test_bullets_grow_in_new_version(self):
+        from main import _diff_cv_deterministic
+        diff = _diff_cv_deterministic(CV_DIFF_ANTIGO, CV_DIFF_NOVO)
+        assert diff["bullets_experiencia"]["novo"] > diff["bullets_experiencia"]["anterior"]
+        # A seção de formação (bullets depois de "Formação") não conta
+        assert diff["bullets_experiencia"]["anterior"] == 4
+
+    def test_terms_added_and_removed(self):
+        from main import _diff_cv_deterministic
+        diff = _diff_cv_deterministic(CV_DIFF_ANTIGO, CV_DIFF_NOVO)
+        # "PostgreSQL" só aparece (2+) na nova → adicionado
+        assert "postgresql" in diff["termos_adicionados"]
+        # "Excel" se repetia na antiga e saiu na nova → removido
+        assert "excel" in diff["termos_removidos"]
+
+    def test_identical_texts_yield_no_delta(self):
+        from main import _diff_cv_deterministic
+        diff = _diff_cv_deterministic(CV_DIFF_ANTIGO, CV_DIFF_ANTIGO)
+        assert diff["bullets_experiencia"]["anterior"] == diff["bullets_experiencia"]["novo"]
+        assert diff["metricas_numericas"]["anterior"] == diff["metricas_numericas"]["novo"]
+        assert diff["termos_adicionados"] == []
+        assert diff["termos_removidos"] == []
+
+
+class TestCVDiffValidation:
+    """Pós-processo anti-alucinação do diff (pós-processo), testável
+    diretamente: zera evidências que não existem na versão citada."""
+
+    def test_hallucinated_evidence_is_zeroed(self):
+        from main import _diff_cv_validate
+        antigo = "Experiência: Python e PostgreSQL. Gerenciei pipelines com Docker."
+        novo = "Experiência: Python, PostgreSQL e Kubernetes. Gerenciei pipelines com Docker."
+        narrativa = {
+            "resumo": "Saldo positivo: novas skills e métricas.",
+            "melhorias": [
+                {"item": "Kubernetes adicionado", "evidencia_antiga": None, "evidencia_nova": "Kubernetes"},
+                {"item": "Alucinação", "evidencia_antiga": None, "evidencia_nova": "certificação AWS que não existe no CV"},
+                "item solto sem evidência",
+            ],
+            "piorou": [
+                {"item": "Referência sumiu", "evidencia_antiga": "texto inventado fora do CV", "evidencia_nova": None},
+            ],
+            "recomendacao_proxima": 42,
+        }
+        out = _diff_cv_validate(narrativa, antigo, novo)
+        assert out["melhorias"][0]["evidencia_nova"] == "Kubernetes"
+        # Evidência que não existe no texto da nova versão → zerada
+        assert out["melhorias"][1]["evidencia_nova"] is None
+        # Item string puro é normalizado e fica com evidências null
+        assert out["melhorias"][2] == {"item": "item solto sem evidência", "evidencia_antiga": None, "evidencia_nova": None}
+        # Evidência que não existe no texto da versão antiga → zerada
+        assert out["piorou"][0]["evidencia_antiga"] is None
+        # Campos não-string viram ""
+        assert out["recomendacao_proxima"] == ""
+        assert out["resumo"].startswith("Saldo positivo")
+
+    def test_valid_evidence_is_kept(self):
+        from main import _diff_cv_validate
+        antigo = "Experiência: Python e PostgreSQL."
+        novo = "Experiência: Python, PostgreSQL e Docker."
+        narrativa = {
+            "resumo": "Docker entrou no CV.",
+            "melhorias": [
+                {"item": "Docker adicionado", "evidencia_nova": "Docker", "evidencia_antiga": None},
+            ],
+            "piorou": [],
+            "recomendacao_proxima": "Detalhe o uso de Docker.",
+        }
+        out = _diff_cv_validate(narrativa, antigo, novo)
+        assert out["melhorias"][0]["evidencia_nova"] == "Docker"
+        assert out["piorou"] == []
+        assert out["recomendacao_proxima"] == "Detalhe o uso de Docker."
