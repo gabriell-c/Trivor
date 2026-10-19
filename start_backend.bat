@@ -9,7 +9,7 @@ REM o for nao itera e nada acontece (sem erro).
 set "pid_found="
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":8000"') do (
     set "pid_found=1"
-    echo Stopping old backend (PID %%a)...
+    echo Stopping old backend - PID %%a -
     taskkill /F /PID %%a > nul 2>&1
 )
 if defined pid_found (
