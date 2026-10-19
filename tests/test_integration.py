@@ -55,6 +55,7 @@ class TestHealth:
         assert "/api/linkedin/analyze" in paths
         assert "/api/market/analyze" in paths
         assert "/api/market/cv-fit" in paths
+        assert "/api/cv/semantic-fit" in paths
 
 
 # ============================================================================
@@ -397,3 +398,106 @@ class TestMarketCvFit:
             files={"cv_file": ("cv.exe", b"MZ", "application/octet-stream")},
         )
         assert r.status_code == 400
+
+
+# ============================================================================
+# Fit Semântico CV × Vaga (LLM) — /api/cv/semantic-fit
+# ============================================================================
+
+# Descrição de vaga ≥ 40 caracteres para passar na validação de entrada
+LONG_JOB_DESC = (
+    "Analista de dados pleno. Requisitos: Python, SQL, Power BI, 3 anos de "
+    "experiência, Inglês intermediário. Diferencial: certificação em nuvem, machine learning."
+)
+
+
+class TestSemanticFitEndpoint:
+    def test_short_description_returns_400(self, client):
+        r = client.post(
+            "/api/cv/semantic-fit",
+            files={"cv_file": ("cv.txt", b"curriculo", "text/plain")},
+            data={"job_description": "curto"},
+        )
+        assert r.status_code == 400
+        assert "40 caracteres" in r.json().get("detail", "")
+
+    def test_unsupported_extension(self, client):
+        r = client.post(
+            "/api/cv/semantic-fit",
+            files={"cv_file": ("cv.exe", b"MZ", "application/octet-stream")},
+            data={"job_description": LONG_JOB_DESC},
+        )
+        assert r.status_code == 400
+        assert "Formato" in r.json().get("detail", "")
+
+    def test_missing_api_key_returns_400(self, client):
+        # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
+            patch("main._get_provider_for_tool", return_value=None),
+        ):
+            r = client.post(
+                "/api/cv/semantic-fit",
+                files={"cv_file": ("cv.txt", b"Texto do curriculo", "text/plain")},
+                data={"job_description": LONG_JOB_DESC},
+            )
+        assert r.status_code == 400
+        assert "Chave de API" in r.json().get("detail", "")
+
+
+class TestSemanticFitValidation:
+    """Validação anti-alucinação (pós-processo), testável diretamente."""
+
+    def test_evidence_in_cv_is_kept(self):
+        from main import _semantic_fit_validate
+        cv = "Experiência: Python e PostgreSQL. Gerenciei pipelines com Docker."
+        fit = {
+            "requisitos": [
+                {"termo": "banco relacional", "tipo": "obrigatorio", "presente": True,
+                 "evidencia": "PostgreSQL", "alias_encontrado": "PostgreSQL"},
+                {"termo": "Inglês", "tipo": "diferencial", "presente": False,
+                 "evidencia": None, "alias_encontrado": None},
+            ],
+            "sugestoes_de_reescrita": [
+                {"secao": "Experiência", "texto_atual": "Gerenciei pipelines com Docker",
+                 "sugerido": "s", "motivo": "m"},
+            ],
+        }
+        out = _semantic_fit_validate(fit, cv)
+        assert out["requisitos"][0]["evidencia"] == "PostgreSQL"
+        assert out["requisitos"][0]["presente"] is True
+        assert out["requisitos"][1]["presente"] is False
+        assert out["sugestoes_de_reescrita"][0]["texto_atual"] == "Gerenciei pipelines com Docker"
+
+    def test_hallucinated_evidence_is_zeroed(self):
+        from main import _semantic_fit_validate
+        cv = "Experiência: Python e PostgreSQL."
+        fit = {
+            "requisitos": [
+                {"termo": "Kubernetes", "tipo": "diferencial", "presente": True,
+                 "evidencia": "administrei cluster Kubernetes na empresa X",
+                 "alias_encontrado": "Kubernetes"},
+            ],
+            "sugestoes_de_reescrita": [
+                {"secao": "Experiência",
+                 "texto_atual": "texto inventado que nao esta no curriculo",
+                 "sugerido": "s", "motivo": "m"},
+            ],
+        }
+        out = _semantic_fit_validate(fit, cv)
+        assert out["requisitos"][0]["evidencia"] is None
+        assert out["requisitos"][0]["presente"] is False
+        assert out["requisitos"][0]["alias_encontrado"] is None
+        assert out["sugestoes_de_reescrita"][0]["texto_atual"] is None
+
+    def test_evidence_valid_helper_rules(self):
+        from main import _semantic_fit_evidence_valid
+        cv = "Experiência com Python e bancos PostgreSQL no trabalho."
+        # Substring exato (normalizado) → válido
+        assert _semantic_fit_evidence_valid("PostgreSQL", cv) is True
+        # Mesmas palavras em outra ordem → válido (fallback por palavras)
+        assert _semantic_fit_evidence_valid("bancos postgresql python", cv) is True
+        # Palavras relevantes ausentes no CV → inválido
+        assert _semantic_fit_evidence_valid("banco relacional", cv) is False
+        # Citação curta demais (1 palavra relevante) e sem match exato → inválido
+        assert _semantic_fit_evidence_valid("Docker", cv) is False

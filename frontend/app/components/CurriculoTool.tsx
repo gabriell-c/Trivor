@@ -1,8 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown } from 'lucide-react'
-import type { AnalysisResult, AnaliseSecao, ErroComum } from '../types/analysis'
+import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown } from 'lucide-react'
+import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
@@ -52,6 +52,12 @@ export default function CurriculoTool() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportFormat, setExportFormat] = useState<'json' | 'md' | 'docx' | 'pdf'>('pdf')
 
+  // Fit semântico CV × vaga (LLM — /api/cv/semantic-fit), rodado em paralelo
+  const [semanticFit, setSemanticFit] = useState<FitSemantico | null>(null)
+  const [semanticLoading, setSemanticLoading] = useState(false)
+  const [semanticError, setSemanticError] = useState<string | null>(null)
+  const [copiedSuggestion, setCopiedSuggestion] = useState<number | null>(null)
+
   const handleExport = async () => {
     if (!res) return
     setExporting(exportFormat)
@@ -100,6 +106,8 @@ export default function CurriculoTool() {
     setLoading(true)
     setError(null)
     setRes(null)
+    setSemanticFit(null)
+    setSemanticError(null)
     const formData = new FormData()
     formData.append('cv_file', file)
     if (area) formData.set('area', area)
@@ -110,6 +118,12 @@ export default function CurriculoTool() {
       formData.set('api_key', provider.apiKey)
       formData.set('api_url', provider.apiUrl)
       formData.set('model_name', provider.modelName)
+    }
+
+    // Fit semântico (LLM) roda em PARALELO à análise principal: o resultado
+    // depende só do arquivo + descrição da vaga, sem esperar /api/cv/analyze.
+    if (jobTitle.trim().length >= 40) {
+      runSemanticFit(file)
     }
 
     try {
@@ -130,6 +144,51 @@ export default function CurriculoTool() {
       setError(err instanceof Error ? err.message : 'Erro desconhecido ao conectar ao servidor backend.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Fit semântico CV × vaga (LLM): requisitos reais da vaga, evidência
+  // literal no CV (aceita alias) e reescritas XYZ prontas para colar.
+  const runSemanticFit = async (file: File) => {
+    setSemanticFit(null)
+    setSemanticError(null)
+    setSemanticLoading(true)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    if (area) formData.set('area', area)
+    const provider = getBestProvider(['curriculo'])
+    if (provider) {
+      formData.set('api_key', provider.apiKey)
+      formData.set('api_url', provider.apiUrl)
+      formData.set('model_name', provider.modelName)
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/semantic-fit`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha no fit semântico.`)
+      }
+      const data = await response.json()
+      setSemanticFit(data.analise ?? null)
+    } catch (err) {
+      setSemanticError(err instanceof Error ? err.message : 'Falha na análise semântica da vaga.')
+    } finally {
+      setSemanticLoading(false)
+    }
+  }
+
+  const copySuggestion = async (sugerido: string, idx: number) => {
+    try {
+      await navigator.clipboard.writeText(sugerido)
+      setCopiedSuggestion(idx)
+      setTimeout(() => setCopiedSuggestion((cur) => (cur === idx ? null : cur)), 2000)
+    } catch {
+      setSemanticError('Não foi possível copiar para a área de transferência.')
     }
   }
 
@@ -661,6 +720,19 @@ export default function CurriculoTool() {
             </div>
           )}
 
+          {/* Análise Semântica da Vaga (LLM — fit semântico CV × vaga) */}
+          {(semanticFit || semanticLoading || semanticError) && (
+            <SemanticFitSection
+              fit={semanticFit}
+              loading={semanticLoading}
+              error={semanticError}
+              copiedIdx={copiedSuggestion}
+              canRetry={!!selectedFile}
+              onCopy={copySuggestion}
+              onRetry={() => selectedFile && runSemanticFit(selectedFile)}
+            />
+          )}
+
           {/* Palavras-chave */}
           {(res.palavras_chave_presentes?.length ?? 0) > 0 || (res.palavras_chave_faltantes?.length ?? 0) > 0 ? (
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
@@ -1033,6 +1105,147 @@ export default function CurriculoTool() {
         </motion.div>
       )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+// Seção de resultados do fit semântico CV × vaga (LLM): chips de requisitos
+// (verde=com evidência literal, rosa/âmbar=faltante), resumo do gap e cards
+// de reescrita XYZ com botão de copiar.
+function SemanticFitSection({
+  fit,
+  loading,
+  error,
+  copiedIdx,
+  canRetry,
+  onCopy,
+  onRetry
+}: {
+  fit: FitSemantico | null
+  loading: boolean
+  error: string | null
+  copiedIdx: number | null
+  canRetry: boolean
+  onCopy: (sugerido: string, idx: number) => void
+  onRetry: () => void
+}) {
+  const requisitos = Array.isArray(fit?.requisitos) ? fit!.requisitos : []
+  const comEvidencia = requisitos.filter((r) => r.presente && !!r.evidencia)
+  const sugestoes = Array.isArray(fit?.sugestoes_de_reescrita) ? fit!.sugestoes_de_reescrita : []
+
+  return (
+    <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+        <UserCheck className="w-4 h-4 text-indigo-400" /> Análise Semântica da Vaga
+      </h2>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Comparando seu CV com a vaga (IA)...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-4">
+          <p className="text-sm text-rose-400">{error}</p>
+          {canRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && fit && (
+        <div className="space-y-5">
+          {fit.gap_resumido && (
+            <p className="text-sm text-slate-400">{fit.gap_resumido}</p>
+          )}
+
+          {requisitos.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Requisitos da Vaga ({requisitos.length})
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {requisitos.map((req, i) => {
+                  const ok = req.presente && !!req.evidencia
+                  const chip = ok
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                    : req.tipo === 'diferencial'
+                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                      : 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+                  return (
+                    <span
+                      key={i}
+                      title={req.evidencia ? `No CV: “${req.evidencia}”` : undefined}
+                      className={`px-2.5 py-1 rounded-full text-xs border ${chip}`}
+                    >
+                      {req.termo}
+                      {req.tipo === 'diferencial' && <span className="opacity-60"> · diferencial</span>}
+                    </span>
+                  )
+                })}
+              </div>
+              {comEvidencia.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {comEvidencia.map((req, i) => (
+                    <p key={i} className="text-xs text-slate-500">
+                      <span className="text-emerald-400 font-medium">{req.termo}:</span>{' '}
+                      {req.alias_encontrado && req.alias_encontrado !== req.termo ? (
+                        <>encontrado como “{req.alias_encontrado}” — </>
+                      ) : null}
+                      “{req.evidencia}”
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {sugestoes.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Sugestões de Reescrita ({sugestoes.length})
+              </p>
+              <div className="space-y-3">
+                {sugestoes.map((sug, i) => (
+                  <div key={i} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <p className="text-[11px] font-bold text-indigo-400 uppercase mb-1">{sug.secao}</p>
+                    {sug.texto_atual && (
+                      <p className="text-xs text-slate-500 mb-1">
+                        Hoje: <span className="line-through">“{sug.texto_atual}”</span>
+                      </p>
+                    )}
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm text-slate-300">{sug.sugerido}</p>
+                      <button
+                        type="button"
+                        onClick={() => onCopy(sug.sugerido, i)}
+                        className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition"
+                      >
+                        {copiedIdx === i ? (
+                          <><Check className="w-3.5 h-3.5" /> Copiado</>
+                        ) : (
+                          <><Copy className="w-3.5 h-3.5" /> Copiar</>
+                        )}
+                      </button>
+                    </div>
+                    {sug.motivo && (
+                      <p className="text-xs text-slate-500 mt-1.5">{sug.motivo}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

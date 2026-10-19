@@ -64,6 +64,33 @@ export interface MarketFitVaga {
   desejaveis_faltantes?: string[]
 }
 
+// Fit semântico CV × vaga via LLM (/api/cv/semantic-fit)
+export interface FitSemanticoRequisito {
+  termo: string
+  tipo: 'obrigatorio' | 'diferencial'
+  presente: boolean
+  /** Trecho LITERAL do CV que comprova o requisito (null se ausente) */
+  evidencia?: string | null
+  /** Termo do CV que cobre o requisito, quando diferente de `termo` */
+  alias_encontrado?: string | null
+}
+
+export interface SugestaoReescrita {
+  /** Seção do CV onde o bullet entra (ex.: "Experiência") */
+  secao: string
+  /** Trecho atual do CV a substituir (null se bullet novo) */
+  texto_atual?: string | null
+  /** Bullet pronto para colar, formato XYZ (ação + ferramenta + resultado) */
+  sugerido: string
+  motivo: string
+}
+
+export interface FitSemantico {
+  requisitos: FitSemanticoRequisito[]
+  gap_resumido: string
+  sugestoes_de_reescrita: SugestaoReescrita[]
+}
+
 export interface MarketCvFitResult {
   total_vagas: number
   vagas: MarketFitVaga[]
@@ -100,6 +127,8 @@ export interface AnalysisResult {
   sugestoes?: string[]
   checklist_validacao?: ChecklistValidacao
   fit_com_vaga?: FitComVaga
+  // Fit semântico via LLM (separado do determinístico; próprio endpoint)
+  fit_semantico?: FitSemantico
   uso_tokens?: {
     prompt_tokens?: number
     completion_tokens?: number

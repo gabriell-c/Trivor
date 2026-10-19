@@ -38,6 +38,7 @@ from logging_service import init_logs_db, log_request, get_logs, get_logs_stats,
 BASE_DIR = Path(__file__).resolve().parent.parent
 KNOWLEDGE_DIR = BASE_DIR / 'knowledge'
 LINKEDIN_PROMPT_FILE = KNOWLEDGE_DIR / 'linkedin_prompt.md'
+CV_FIT_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_fit_prompt.md'
 
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
@@ -1578,6 +1579,233 @@ async def market_cv_fit(
         "resumo": resumo,
         "extractor_used": extractor_used,
     }
+
+
+# ---------------------------------------------------------------------------
+# Fit Semântico CV × Vaga (LLM) — requisitos reais da vaga + reescritas XYZ
+# ---------------------------------------------------------------------------
+
+def _semantic_fit_evidence_valid(citation: str, cv_text: str) -> bool:
+    """Validação anti-alucinação: True se a citação (trecho citado como
+    evidência/texto atual do CV) ocorre no texto extraído.
+    Comparação normalizada: minúsculas + sem acentos + espaços colapsados.
+    - Substring direto → válido.
+    - Citação longa com palavra em ordem/outro grafia → válida se TODAS as
+      palavras relevantes (>3 letras) estiverem no CV (mín. 2 palavras).
+    - Citação com menos de 2 palavras relevantes e sem match exato → inválida.
+    """
+    def normalize(s: str) -> str:
+        return _norm_text(re.sub(r'\s+', ' ', s).strip())
+    cit = normalize(citation)
+    cv = normalize(cv_text)
+    if not cit:
+        return False
+    if cit in cv:
+        return True
+    words = [w for w in cit.split() if len(w) > 3]
+    if len(words) < 2:
+        return False
+    return all(w in cv for w in words)
+
+
+def _semantic_fit_validate(fit: dict, cv_text: str) -> dict:
+    """Pós-processo do fit semântico: zera `evidencia` e `texto_atual` que não
+    ocorrem no CV — citação que não bate com o texto extraído é alucinação
+    e vira null (com `presente=false` no requisito). Retorna o mesmo dict."""
+    requisitos = fit.get('requisitos')
+    if isinstance(requisitos, list):
+        for req in requisitos:
+            if not isinstance(req, dict):
+                continue
+            ev = req.get('evidencia')
+            if isinstance(ev, str) and ev.strip() and not _semantic_fit_evidence_valid(ev, cv_text):
+                req['evidencia'] = None
+                req['presente'] = False
+                req['alias_encontrado'] = None
+    sugestoes = fit.get('sugestoes_de_reescrita')
+    if isinstance(sugestoes, list):
+        for sug in sugestoes:
+            if not isinstance(sug, dict):
+                continue
+            atual = sug.get('texto_atual')
+            if isinstance(atual, str) and atual.strip() and not _semantic_fit_evidence_valid(atual, cv_text):
+                sug['texto_atual'] = None
+    return fit
+
+
+@app.post('/api/cv/semantic-fit')
+@limiter.limit("10/minute")
+async def cv_semantic_fit(
+    request: Request,
+    api_key: str = Form(None),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
+    provider_id: str = Form(None),
+    cv_file: UploadFile = File(...),
+    job_description: str = Form(""),
+    area: str = Form(""),
+):
+    """Fit semântico CV × vaga via LLM: extrai os requisitos de verdade da
+    descrição (obrigatórios + diferenciais), cruza com o CV por semântica
+    (aceita alias) com evidência literal e devolve reescritas prontas (XYZ).
+    Pós-processamento zera evidências que não existem no texto extraído."""
+    if len(job_description.strip()) < 40:
+        raise HTTPException(status_code=400, detail="Cole a descrição completa da vaga (mín. 40 caracteres).")
+
+    content = await cv_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    ext = os.path.splitext(cv_file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
+
+    # Provider por id (mesmo padrão do /api/linkedin/analyze)
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
+    if not key or key.strip() == "":
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
+            key = api_key
+    if not key or key.strip() == "":
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+    t0 = time.time()
+    temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cvfitsem_')
+    extractor_used = "none"
+    try:
+        with os.fdopen(temp_fd, 'wb') as f:
+            f.write(content)
+        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        if not cv_text or not cv_text.strip():
+            raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
+    if not base_url:
+        base_url = "http://localhost:20128/v1"  # omniroute local
+
+    # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
+    if CV_FIT_PROMPT_FILE.exists():
+        with open(CV_FIT_PROMPT_FILE, 'r', encoding='utf-8') as f:
+            sys_prompt = f.read()
+    else:
+        sys_prompt = ("Você é um consultor sênior de recrutamento. Compare o currículo com a "
+                      "descrição da vaga e retorne o JSON exato especificado. NUNCA invente "
+                      "requisitos nem evidências: toda citação do currículo deve existir "
+                      "literalmente no texto fornecido.")
+
+    user_content = f"""DESCRIÇÃO COMPLETA DA VAGA:
+---
+{job_description.strip()}
+---
+
+CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
+---
+{cv_text}
+---
+
+ÁREA DO CANDIDATO: {area.strip() if area and area.strip() else 'Não especificada (analise de forma genérica, não assuma tecnologia)'}
+
+Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
+
+    client = OpenAI(api_key=key, base_url=base_url)
+    try:
+        start_time = time.time()
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.2,
+            max_tokens=3000,
+            response_format={"type": "json_object"},
+        )
+        response_time_ms = (time.time() - start_time) * 1000
+
+        raw_content = response.choices[0].message.content or ""
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+            cleaned = cleaned.strip()
+
+        try:
+            fit = json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', cleaned)
+            fit = json.loads(match.group()) if match else {}
+        if not isinstance(fit, dict):
+            fit = {}
+
+        # Anti-alucinação: zera evidências/texto_atual que não existem no CV
+        fit = _semantic_fit_validate(fit, cv_text)
+
+        uso_tokens = None
+        if hasattr(response, 'usage') and response.usage:
+            uso_tokens = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens,
+            }
+
+        reqs_list = fit.get('requisitos') if isinstance(fit.get('requisitos'), list) else []
+        sugg_list = fit.get('sugestoes_de_reescrita') if isinstance(fit.get('sugestoes_de_reescrita'), list) else []
+        log_request(
+            endpoint="/api/cv/semantic-fit",
+            method="POST",
+            status_code=200,
+            duration_ms=int(response_time_ms),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            response_summary=json.dumps(
+                {"requisitos": len(reqs_list), "sugestoes": len(sugg_list)},
+                ensure_ascii=False,
+            ),
+            extracted_text=(cv_text[:5000] if cv_text else ""),
+        )
+
+        result: dict = {"analise": fit, "extractor_used": extractor_used}
+        if uso_tokens:
+            result["uso_tokens"] = uso_tokens
+        result["api_info"] = {
+            "model": selected_model,
+            "request_id": str(getattr(response, 'id', None) or uuid.uuid4()),
+            "response_time_ms": int(response_time_ms),
+        }
+        return result
+
+    except Exception as e:
+        logger.error(f"[SEMANTIC-FIT] Erro na chamada LLM: {e}")
+        log_request(
+            endpoint="/api/cv/semantic-fit",
+            method="POST",
+            status_code=500,
+            duration_ms=int((time.time() - t0) * 1000),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Erro ao gerar o fit semântico. Verifique a chave de API e tente novamente.")
 
 
 @app.post('/api/ia/analyze')
