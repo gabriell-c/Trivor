@@ -26,6 +26,8 @@ import {
   Link as LinkIcon,
   ExternalLink,
   Globe,
+  UserCheck,
+  Upload,
 } from 'lucide-react'
 import { CustomInput } from '../components/CustomInput'
 import { CustomSelect } from '../components/CustomSelect'
@@ -33,7 +35,7 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
-import type { MarketAnalysisResult, MarketReport, MarketJob } from '../types/analysis'
+import type { MarketAnalysisResult, MarketReport, MarketJob, MarketCvFitResult } from '../types/analysis'
 
 export default function MarketIntelligencePage() {
   const [jobTitle, setJobTitle] = useState('')
@@ -41,7 +43,7 @@ export default function MarketIntelligencePage() {
   const [negativeKeywords, setNegativeKeywords] = useState<string[]>([])
   const [seniority, setSeniority] = useState('Nenhum')
   const [timeWindow, setTimeWindow] = useState('30 dias')
-  const [activeTab, setActiveTab] = useState<'config' | 'results' | 'jobs'>('config')
+  const [activeTab, setActiveTab] = useState<'config' | 'results' | 'jobs' | 'fit'>('config')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'md'>('pdf')
@@ -59,6 +61,36 @@ export default function MarketIntelligencePage() {
   const [langPage, setLangPage] = useState(0)
   const STAT_PAGE_SIZE = 10
   const JOB_PAGE_SIZE = 15
+
+  // Fit do CV contra a base de mercado (determinístico, sem LLM)
+  const [fitFile, setFitFile] = useState<File | null>(null)
+  const [fitLoading, setFitLoading] = useState(false)
+  const [fitError, setFitError] = useState<string | null>(null)
+  const [fitResult, setFitResult] = useState<MarketCvFitResult | null>(null)
+
+  const runCvFit = async () => {
+    if (!fitFile) { setFitError('Selecione o arquivo do seu CV (.pdf, .docx ou .txt).')
+      return
+    }
+    setFitLoading(true)
+    setFitError(null)
+    try {
+      const formData = new FormData()
+      formData.append('cv_file', fitFile)
+      formData.append('limit', '15')
+      const res = await fetch(`${API_BASE_URL}/api/market/cv-fit`, { method: 'POST', body: formData })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail = (data as any)?.detail
+        throw new Error(typeof detail === 'string' ? detail : `Falha ao calcular fit (HTTP ${res.status})`)
+      }
+      setFitResult(data as MarketCvFitResult)
+    } catch (err: any) {
+      setFitError(err.message || 'Erro ao calcular fit do CV com o mercado.')
+    } finally {
+      setFitLoading(false)
+    }
+  }
 
   // Location: simples Nacional/Internacional
   const [isInternational, setIsInternational] = useState(false)
@@ -174,6 +206,7 @@ export default function MarketIntelligencePage() {
           { id: 'config' as const, label: 'Configurar', icon: <Filter className="w-3.5 h-3.5" /> },
           { id: 'results' as const, label: 'Resultados', icon: <TrendingUp className="w-3.5 h-3.5" /> },
           { id: 'jobs' as const, label: 'Vagas Analisadas', icon: <Briefcase className="w-3.5 h-3.5" /> },
+          { id: 'fit' as const, label: 'Meu CV × Mercado', icon: <UserCheck className="w-3.5 h-3.5" /> },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
@@ -854,6 +887,145 @@ export default function MarketIntelligencePage() {
             <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
             <p className="text-slate-500 text-xs mt-1">Execute uma análise primeiro para ver as vagas.</p>
           </div>
+        </div>
+      )}
+
+      {/* Fit do CV × Mercado */}
+      {activeTab === 'fit' && (
+        <div className="space-y-6">
+          <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8 space-y-4">
+            <div className="flex items-center gap-3">
+              <UserCheck className="w-5 h-5 text-purple-400" />
+              <div>
+                <h2 className="text-sm font-bold text-white">Fit do seu CV × Vagas do Mercado</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Envie seu currículo e compare com os requisitos das vagas da sua última análise de mercado. Cálculo 100% determinístico — sem IA, instantâneo.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <label className="flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-950/60 border border-slate-800 cursor-pointer hover:border-purple-500/40 transition-colors">
+                <Upload className="w-4 h-4 text-slate-500 shrink-0" />
+                <span className="text-xs text-slate-400 truncate">
+                  {fitFile ? fitFile.name : 'Escolher arquivo do CV (.pdf, .docx, .txt)'}
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt"
+                  className="hidden"
+                  onChange={e => setFitFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+              <CustomButton onClick={runCvFit} loading={fitLoading} disabled={fitLoading || !fitFile}
+                className="px-5 py-3 rounded-2xl text-xs font-bold">
+                <Zap className="w-4 h-4" />
+                {fitLoading ? 'Comparando...' : 'Comparar'}
+              </CustomButton>
+            </div>
+
+            {fitError && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                <XCircle className="w-4 h-4 flex-shrink-0" />
+                {fitError}
+              </div>
+            )}
+          </div>
+
+          {fitResult && (
+            <>
+              <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8 space-y-4">
+                <p className="text-xs text-slate-400 leading-relaxed">{fitResult.resumo}</p>
+                {fitResult.faltantes_topicos.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-2">
+                      Onde você perde pontos mais
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {fitResult.faltantes_topicos.slice(0, 8).map((t, i) => (
+                        <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                          {t.termo} <span className="text-rose-400/60">({t.em_quantas_vagas})</span>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-600 mt-1.5">Número entre parênteses: quantas vagas do top exigem esse item.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {fitResult.vagas.map((job, i) => (
+                  <div key={job.id} className="rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-5 space-y-3">
+                    <div className="flex items-start gap-4">
+                      <div className="flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-slate-950/60 border border-slate-800/80 shrink-0">
+                        <span className="text-lg font-black" style={{ color: job.score >= 70 ? '#34d399' : job.score >= 40 ? '#fbbf24' : '#fb7185' }}>
+                          {Math.round(job.score)}
+                        </span>
+                        <span className="text-[9px] text-slate-500 uppercase">fit</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-slate-500">#{i + 1}</span>
+                          <p className="text-sm font-bold text-white truncate">{job.titulo}</p>
+                          {job.url && (
+                            <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-purple-400 transition-colors">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
+                          {job.empresa && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.empresa}</span>}
+                          {job.localizacao && <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.localizacao}</span>}
+                          {job.modalidade && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modalidade}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {job.faltantes.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1.5">Faltando no seu CV</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {job.faltantes.slice(0, 10).map((term, ti) => (
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-rose-500/10 text-rose-300 border border-rose-500/20">{term}</span>
+                          ))}
+                          {job.faltantes.length > 10 && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] text-slate-500 border border-slate-700/60">
+                              +{job.faltantes.length - 10}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {(job.desejaveis_faltantes?.length ?? 0) > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-1.5">Diferenciais que faltam</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {job.desejaveis_faltantes!.slice(0, 6).map((term, ti) => (
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-amber-500/10 text-amber-300 border border-amber-500/20">{term}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {job.cobertos.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1.5">Você já tem</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {job.cobertos.slice(0, 8).map((term, ti) => (
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{term}</span>
+                          ))}
+                          {job.cobertos.length > 8 && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] text-slate-500 border border-slate-700/60">
+                              +{job.cobertos.length - 8}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </motion.div>

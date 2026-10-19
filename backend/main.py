@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import tempfile
 from pathlib import Path
+from collections import Counter
 from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -520,24 +521,165 @@ def _check_profile_summary(text: str) -> dict:
     return {"genérico": False, "problema": None}
 
 
-def _check_tech_stack_by_experience(text: str) -> dict:
-    """Verifica se tecnologias são mencionadas em cada experiência."""
-    # Procurar por experiências
-    exp_patterns = [
-        r'(?i)(desenvolvedor|analista|gerente|coordenador|assistente|vendedor|atendente|operador)[^\n]*\n([^\n]*\n){0,10}',
-    ]
+# ---------------------------------------------------------------------------
+# Fit CV × vaga — camada determinística (sem LLM)
+# ---------------------------------------------------------------------------
 
-    # Extrair palavras-chave de tecnologia/área
-    tech_keywords = [
-        'python', 'java', 'javascript', 'typescript', 'c#', 'c++', 'php',
-        'react', 'angular', 'vue', 'node', 'django', 'flask', 'spring',
-        'sql', 'nosql', 'mongodb', 'postgresql', 'mysql',
-        'aws', 'azure', 'gcp', 'docker', 'kubernetes',
-        'git', 'github', 'gitlab',
-        'excel', 'power bi', 'tableau', 'sap',
-        'crm', 'erp', 'vendas', 'marketing', 'financeiro',
-        'atendimento', 'suporte', 'gestão', 'projeto',
-    ]
+def _norm_text(text: str) -> str:
+    """Normaliza texto para matching: minúsculas + sem acentos."""
+    import unicodedata
+    return unicodedata.normalize('NFD', text.lower()).encode('ascii', 'ignore').decode('ascii')
+
+
+# Stopwords de PT-BR + termos genéricos de CV que não valem como "skill de referência"
+_STOPWORDS_PT = {
+    'a', 'o', 'e', 'de', 'da', 'do', 'das', 'dos', 'para', 'pra', 'com', 'em',
+    'no', 'na', 'nos', 'nas', 'ao', 'aos', 'um', 'uma', 'uns', 'umas', 'se',
+    'ou', 'foi', 'ser', 'ter', 'pelo', 'pela', 'entre', 'sobre', 'quando',
+    'mais', 'menos', 'muito', 'pouco', 'tambem', 'como', 'qual', 'cada',
+    'esse', 'essa', 'este', 'esta', 'isso', 'isto', 'aquilo', 'pode', 'deve',
+    'dever', 'saber', 'fazer', 'conhecimento', 'conhecimentos', 'vivencia',
+    'experiencia', 'experiencias', 'experiência', 'experiências', 'habilidade',
+    'habilidades', 'atuar', 'atuacao', 'atuação', 'trabalho', 'trabalhos',
+    'empresa', 'empresas', 'equipe', 'equipes', 'projeto', 'projetos',
+    'sistema', 'sistemas', 'responsavel', 'responsável', 'gerencia', 'gerência',
+    'pessoas', 'cliente', 'clientes', 'resultados', 'resultado',
+}
+
+
+def _term_in_text(term: str, cv_norm: str) -> bool:
+    """Retorna True se o termo (ou todas as palavras relevantes dele) aparece no CV normalizado."""
+    norm = _norm_text(term)
+    if not norm:
+        return False
+    if norm in cv_norm:
+        return True
+    # Termo composto: cobre se TODAS as palavras relevantes (>3 letras) aparecerem no CV
+    words = [w for w in norm.split() if len(w) > 3]
+    return bool(words) and all(w in cv_norm for w in words)
+
+
+def _dedupe_keep_order(items: list) -> list:
+    seen = set()
+    out = []
+    for item in items:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+def _compute_job_fit(cv_text: str, job_description: str) -> dict:
+    """Fit determinístico CV × vaga única: extrai requisitos da descrição da vaga
+    (heurística do módulo de mercado + dicionário de skills canônicas) e mede a
+    cobertura no texto do CV. Sem LLM — reproducible entre execuções."""
+    from market_service import heuristic_extract, extract_mentioned_skills
+    extraction = heuristic_extract(job_description)
+    requirements = [r for r in extraction.get('requirements', []) if isinstance(r, str) and len(r.strip()) > 2]
+    nice_to_have = [n for n in extraction.get('nice_to_have', []) if isinstance(n, str) and len(n.strip()) > 2]
+
+    # Complementa com skills canônicas mencionadas em qualquer parte da descrição
+    requirements.extend(extract_mentioned_skills(job_description))
+
+    requirements = _dedupe_keep_order(requirements)
+    nice_to_have = _dedupe_keep_order(nice_to_have)
+    # Evita dupla contagem: se um termo aparece nos dois, vale como desejável
+    nice_set = {n.lower() for n in nice_to_have}
+    requirements = [r for r in requirements if r.lower() not in nice_set]
+
+    cv_norm = _norm_text(cv_text)
+    cobertos = [t for t in requirements if _term_in_text(t, cv_norm)]
+    faltantes = [t for t in requirements if not _term_in_text(t, cv_norm)]
+    nice_cobertas = [t for t in nice_to_have if _term_in_text(t, cv_norm)]
+    nice_faltantes = [t for t in nice_to_have if not _term_in_text(t, cv_norm)]
+
+    total_units = len(requirements) + 0.5 * len(nice_to_have)
+    if total_units <= 0:
+        return {
+            "calculado": False,
+            "nota": None,
+            "requisitos_cobertos": [],
+            "requisitos_faltantes": [],
+            "desejaveis_cobertas": [],
+            "desejaveis_faltantes": [],
+            "resumo": "Não foi possível extrair requisitos da descrição fornecida. Cole a descrição completa da vaga (com a seção de requisitos).",
+        }
+
+    nota = round(100 * (len(cobertos) + 0.5 * len(nice_cobertas)) / total_units, 1)
+    resumo = (
+        f"{len(cobertos)} de {len(requirements)} requisito(s) identificado(s) na vaga aparecem no currículo."
+        + (f" Adicione {len(faltantes)} item(ns) em falta para elevar a aderência." if faltantes else " Todos os requisitos identificados estão cobertos.")
+    )
+    return {
+        "calculado": True,
+        "nota": nota,
+        "requisitos_cobertos": cobertos,
+        "requisitos_faltantes": faltantes,
+        "desejaveis_cobertas": nice_cobertas,
+        "desejaveis_faltantes": nice_faltantes,
+        "resumo": resumo,
+    }
+
+
+def _extract_cv_text(temp_path: str, ext: str) -> tuple:
+    """Cadeia de extração de texto do CV SEM LLM:
+    PDF (pymupdf → pypdfium2 → docling_parse → pdfplumber); docx/txt (docling).
+    Retorna (texto, extrator_usado, fallback_usado). Texto vazio = falha total."""
+    markdown_text = ""
+    extractor_used = "none"
+    fallback_used = False
+
+    if ext == '.pdf':
+        markdown_text = _extract_pdf_text_pymupdf(temp_path)
+        extractor_used = "pymupdf"
+        logger.info(f"[CV] PyMuPDF: {len(markdown_text)} chars")
+        if not markdown_text or not markdown_text.strip():
+            markdown_text = _extract_pdf_text_pypdfium(temp_path)
+            extractor_used = "pypdfium2"
+            fallback_used = True
+            logger.info(f"[CV] pypdfium2: {len(markdown_text)} chars")
+        if not markdown_text or not markdown_text.strip():
+            md_fd, md_path = tempfile.mkstemp(suffix='.pdf', prefix='md_')
+            os.close(md_fd)
+            try:
+                import shutil
+                shutil.copy2(temp_path, md_path)
+                markdown_text = _extract_pdf_text_docling_parse(md_path)
+                extractor_used = "docling_parse"
+                fallback_used = True
+                logger.info(f"[CV] docling_parse: {len(markdown_text)} chars")
+            finally:
+                if os.path.exists(md_path):
+                    os.remove(md_path)
+        if not markdown_text or not markdown_text.strip():
+            markdown_text = _extract_pdf_text_pdfplumber(temp_path)
+            extractor_used = "pdfplumber"
+            fallback_used = True
+            logger.info(f"[CV] pdfplumber: {len(markdown_text)} chars")
+    else:
+        converter = DocumentConverter()
+        conversion_result = converter.convert(temp_path)
+        markdown_text = conversion_result.document.export_to_markdown()
+        extractor_used = "docling"
+
+    if not markdown_text or not markdown_text.strip():
+        logger.warning("[CV] Todos os extratores falharam!")
+        return "", "none", True
+    return markdown_text, extractor_used, fallback_used
+
+
+def _check_tech_stack_by_experience(text: str) -> dict:
+    """Verifica se cada experiência menciona ao menos uma skill/ferramenta da área.
+    Agnóstico de área: os termos de referência são derivados do próprio CV
+    (tokens que se repetem), não de uma lista fechada de tecnologias dev."""
+    # Candidatos: tokens com 4+ letras que se repetem no CV (skills/ferramentas
+    # costumam reaparecer); remove stopwords genéricas.
+    token_counts = Counter(t.lower() for t in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{4,}", text) if t.lower() not in _STOPWORDS_PT)
+    candidates = {t for t, c in token_counts.items() if c >= 2}
+    if len(candidates) < 5:
+        # Base insuficiente para avaliar (CV curto ou sem termos repetidos)
+        return {"por_experiencia": True, "problema": None}
 
     # Dividir por experiências (presumindo que há seções de experiência)
     exp_sections = re.split(r'(?i)experiência|experiencia|trabalho|atuação|atuacao', text)
@@ -546,19 +688,19 @@ def _check_tech_stack_by_experience(text: str) -> dict:
     for i, section in enumerate(exp_sections[1:]):  # Pular a primeira parte (antes da primeira experiência)
         if len(section.strip()) < 50:
             continue
-        # Verificar se há palavras-chave relevantes
-        section_lower = section.lower()
-        has_tech = any(kw in section_lower for kw in tech_keywords)
-        if not has_tech:
+        # Cobre se QUALQUER termo de referência (repetido no CV) aparece na seção
+        section_norm = _norm_text(section)
+        hits = sum(1 for c in candidates if _norm_text(c) in section_norm)
+        if hits == 0:
             issues.append({
                 "experiencia": i + 1,
-                "problema": "Tecnologia/ferramenta não mencionada na descrição"
+                "problema": "Skill/ferramenta não mencionada na descrição"
             })
 
     if issues:
         return {
             "por_experiencia": False,
-            "problema": f"{len(issues)} experiência(s) sem especificar tecnologias/ferramentas"
+            "problema": f"{len(issues)} experiência(s) sem especificar skills/ferramentas"
         }
     return {"por_experiencia": True, "problema": None}
 
@@ -815,53 +957,10 @@ async def analyze_cv(
             with os.fdopen(temp_fd, 'wb') as f:
                 f.write(content)
 
-            # Extrair texto com fallback chain
-            markdown_text = ""
-            extractor_used = "none"
-            fallback_used = False
-
-            if ext == '.pdf':
-                # 1. PyMuPDF primeiro
-                markdown_text = _extract_pdf_text_pymupdf(temp_path)
-                extractor_used = "pymupdf"
-                logger.info(f"[CV] PyMuPDF: {len(markdown_text)} chars")
-                if not markdown_text or not markdown_text.strip():
-                    # 2. pypdfium2
-                    markdown_text = _extract_pdf_text_pypdfium(temp_path)
-                    extractor_used = "pypdfium2"
-                    fallback_used = True
-                    logger.info(f"[CV] pypdfium2: {len(markdown_text)} chars")
-                if not markdown_text or not markdown_text.strip():
-                    # 3. docling_parse
-                    md_fd, md_path = tempfile.mkstemp(suffix='.pdf', prefix='md_')
-                    os.close(md_fd)
-                    try:
-                        import shutil
-                        shutil.copy2(temp_path, md_path)
-                        markdown_text = _extract_pdf_text_docling_parse(md_path)
-                        extractor_used = "docling_parse"
-                        fallback_used = True
-                        logger.info(f"[CV] docling_parse: {len(markdown_text)} chars")
-                    finally:
-                        if os.path.exists(md_path):
-                            os.remove(md_path)
-                if not markdown_text or not markdown_text.strip():
-                    # 4. pdfplumber
-                    markdown_text = _extract_pdf_text_pdfplumber(temp_path)
-                    extractor_used = "pdfplumber"
-                    fallback_used = True
-                    logger.info(f"[CV] pdfplumber: {len(markdown_text)} chars")
-            else:
-                # Para docx/txt, usar docling
-                converter = DocumentConverter()
-                conversion_result = converter.convert(temp_path)
-                markdown_text = conversion_result.document.export_to_markdown()
-                extractor_used = "docling"
-
-            if not markdown_text or not markdown_text.strip():
+            # Extrair texto com fallback chain (helper reutilizado pelo /api/market/cv-fit)
+            markdown_text, extractor_used, fallback_used = _extract_cv_text(temp_path, ext)
+            if not markdown_text:
                 markdown_text = "Erro ao extrair texto do documento."
-                extractor_used = "none"
-                logger.warning("[CV] Todos os extratores falharam!")
 
             # Cache de markdown — chaveada pelo CONTEÚDO do texto:
             # o nome do mkstemp é único por request, então chave por path nunca acertaria.
@@ -1330,6 +1429,12 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
             }
             # Adicionar checklist de validação do guia
             analysis['checklist_validacao'] = checklist_validacao
+
+            # Fit determinístico CV × vaga (sem LLM) — só com descrição real da vaga
+            jd_clean = (job_description or "").strip()
+            if len(jd_clean) >= 40 and markdown_text and not markdown_text.startswith("Erro ao extrair"):
+                analysis['fit_com_vaga'] = _compute_job_fit(markdown_text, jd_clean)
+
             analysis['_extractor_used'] = extractor_used
             analysis['_links'] = [l['url'] for l in links_info]
 
@@ -1361,6 +1466,118 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
     except Exception as e:
         logger.error(f"[CV] Erro: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar o currículo: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Fit CV × Vagas do Mercado — ranking determinístico (sem LLM, sem chave)
+# ---------------------------------------------------------------------------
+
+@app.post('/api/market/cv-fit')
+@limiter.limit("10/minute")
+async def market_cv_fit(
+    request: Request,
+    cv_file: UploadFile = File(...),
+    limit: int = Form(20),
+):
+    """Ranking: quais vagas da base do market têm melhor fit com o CV enviado.
+    100% determinístico — lê a base local (market_jobs), faz matching de
+    requisitos normalizado por acento e devolve top-N + faltantes agregados."""
+    content = await cv_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    ext = os.path.splitext(cv_file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
+
+    limit = max(1, min(limit, 50))
+
+    t0 = time.time()
+    temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cvfit_')
+    extractor_used = "none"
+    try:
+        with os.fdopen(temp_fd, 'wb') as f:
+            f.write(content)
+        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        if not cv_text or not cv_text.strip():
+            raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        rows = conn.execute(
+            "SELECT id, title, company, location, modality, source_url, requirements, nice_to_have "
+            "FROM market_jobs WHERE is_relevant = 1"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="Base de mercado vazia. Rode uma análise de mercado primeiro (página /market).")
+
+    cv_norm = _norm_text(cv_text)
+    results = []
+    missing_counter: Counter = Counter()
+    for (job_id, title, company, location, modality, source_url, reqs_json, nice_json) in rows:
+        try:
+            reqs = json.loads(reqs_json) if reqs_json else []
+            nice = json.loads(nice_json) if nice_json else []
+        except json.JSONDecodeError:
+            reqs, nice = [], []
+        reqs = [r for r in reqs if isinstance(r, str) and r.strip()]
+        nice = [n for n in nice if isinstance(n, str) and n.strip()]
+        total_units = len(reqs) + 0.5 * len(nice)
+        if total_units <= 0:
+            continue
+        cobertos = [t for t in reqs if _term_in_text(t, cv_norm)]
+        faltantes = [t for t in reqs if not _term_in_text(t, cv_norm)]
+        nice_cobertas = [t for t in nice if _term_in_text(t, cv_norm)]
+        nice_faltantes = [t for t in nice if not _term_in_text(t, cv_norm)]
+        nota = round(100 * (len(cobertos) + 0.5 * len(nice_cobertas)) / total_units, 1)
+        results.append({
+            "id": job_id,
+            "titulo": title,
+            "empresa": company,
+            "localizacao": location,
+            "modalidade": modality,
+            "url": source_url or None,
+            "score": nota,
+            "cobertos": cobertos,
+            "faltantes": faltantes,
+            "desejaveis_faltantes": nice_faltantes,
+        })
+        for term in faltantes:
+            missing_counter[term] += 1
+
+    if not results:
+        raise HTTPException(status_code=400, detail="Nenhuma vaga relevante com requisitos extraíveis na base do mercado.")
+
+    results.sort(key=lambda r: r["score"], reverse=True)
+    top = results[:limit]
+    score_medio = round(sum(r["score"] for r in results) / len(results), 1)
+    faltantes_topicos = [
+        {"termo": term, "em_quantas_vagas": count}
+        for term, count in missing_counter.most_common(10)
+    ]
+    resumo = (
+        f"{len(results)} vaga(s) da base do mercado comparadas. Fit médio: {score_medio}%. "
+        + (f"Mais faltas do seu CV: {', '.join(t['termo'] for t in faltantes_topicos[:5])}." if faltantes_topicos else "Seu CV cobre a maior parte do que o mercado exige.")
+    )
+    log_request(
+        "/api/market/cv-fit", "POST", 200, round((time.time() - t0) * 1000, 1), None, None,
+        request_body={"limit": limit, "total_vagas": len(results)},
+        response_summary=f"Fit médio {score_medio}% sobre {len(results)} vagas; top: {top[0]['titulo'][:60]}",
+    )
+    return {
+        "total_vagas": len(results),
+        "vagas": top,
+        "faltantes_topicos": faltantes_topicos,
+        "resumo": resumo,
+        "extractor_used": extractor_used,
+    }
 
 
 @app.post('/api/ia/analyze')

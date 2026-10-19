@@ -5,6 +5,7 @@ Executar: pytest tests/test_integration.py -v
 import sys
 import json
 import os
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,6 +54,7 @@ class TestHealth:
         assert "/api/cv/analyze" in paths
         assert "/api/linkedin/analyze" in paths
         assert "/api/market/analyze" in paths
+        assert "/api/market/cv-fit" in paths
 
 
 # ============================================================================
@@ -300,3 +302,98 @@ class TestProviders:
         finally:
             if old_val is not None:
                 os.environ["TRIVOR_IAS"] = old_val
+
+
+# ============================================================================
+# Fit CV × Vaga — camada determinística (sem LLM)
+# ============================================================================
+
+class TestJobFitUnit:
+    def test_compute_job_fit_covers_present_terms(self):
+        from main import _compute_job_fit
+        cv = "Experiência: Python, Django, PostgreSQL. Liderei equipe com 5 pessoas. Excel avançado."
+        job = "Requisitos: Python, Django\nDiferencial: Kubernetes"
+        fit = _compute_job_fit(cv, job)
+        assert fit["calculado"] is True
+        assert "Python" in fit["requisitos_cobertos"]
+        assert "Kubernetes" in fit["desejaveis_faltantes"]
+        # 2 requisitos cobertos, nenhum dos 2 + 1 desejável coberto → 80.0
+        assert fit["nota"] >= 75
+
+    def test_compute_job_fit_no_requirements(self):
+        from main import _compute_job_fit
+        fit = _compute_job_fit("Sou analista administrativo.", "Vaga para pessoa motivada, comunicativa e organizada.")
+        assert fit["calculado"] is False
+        assert fit["nota"] is None
+
+    def test_compute_job_fit_acento_agnostic(self):
+        from main import _compute_job_fit
+        cv = "Experiência com CRM, Excel e vendas B2B. Negociacao de contratos."
+        job = "Requisitos: CRM, Excel\nDiferencial: Inglês"
+        fit = _compute_job_fit(cv, job)
+        assert "CRM" in fit["requisitos_cobertos"]
+        assert "Excel" in fit["requisitos_cobertos"]
+        assert "Inglês" in fit["desejaveis_faltantes"]
+
+
+class TestMarketCvFit:
+    @pytest.fixture
+    def market_db(self, tmp_path, monkeypatch):
+        """Base de market_jobs isolada (tmp) com duas vagas relevantes."""
+        import market_service
+        db = tmp_path / "market_fit.db"
+        market_service.init_market_db(db)
+        monkeypatch.setattr("main.DB_FILE", db)
+        conn = sqlite3.connect(db)
+        conn.execute("""
+            INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url, is_relevant, requirements, nice_to_have)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """, (
+            "fit-job-1", "raw-1", "Dev Backend", "ACME", "São Paulo", "Remoto", "test", "",
+            json.dumps(["Python", "FastAPI"]), json.dumps(["Docker"]),
+        ))
+        conn.execute("""
+            INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url, is_relevant, requirements, nice_to_have)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        """, (
+            "fit-job-2", "raw-2", "Analista Administrativo", "Globex", "Remoto", "Híbrido", "test", "",
+            json.dumps(["Excel", "Power BI"]), json.dumps([]),
+        ))
+        conn.commit()
+        conn.close()
+        return db
+
+    def test_empty_db_returns_400(self, client, tmp_path, monkeypatch):
+        import market_service
+        db = tmp_path / "market_fit_empty.db"
+        market_service.init_market_db(db)
+        monkeypatch.setattr("main.DB_FILE", db)
+        r = client.post(
+            "/api/market/cv-fit",
+            files={"cv_file": ("cv.txt", b"Texto do curriuclo", "text/plain")},
+        )
+        assert r.status_code == 400
+        assert "Base de mercado vazia" in r.json().get("detail", "")
+
+    def test_ranks_jobs_by_score(self, client, market_db):
+        r = client.post(
+            "/api/market/cv-fit",
+            files={"cv_file": ("cv.txt", b"Experiencia com Python e FastAPI. Excel basico.", "text/plain")},
+            data={"limit": "5"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total_vagas"] == 2
+        scores = [v["score"] for v in data["vagas"]]
+        assert scores == sorted(scores, reverse=True)
+        # Vaga 1 cobre Python+FastAPI (80); vaga 2 cobre só Excel (50)
+        assert data["vagas"][0]["id"] == "fit-job-1"
+        assert data["vagas"][0]["score"] >= data["vagas"][1]["score"]
+        assert "Docker" in data["vagas"][0]["desejaveis_faltantes"]
+
+    def test_unsupported_extension(self, client):
+        r = client.post(
+            "/api/market/cv-fit",
+            files={"cv_file": ("cv.exe", b"MZ", "application/octet-stream")},
+        )
+        assert r.status_code == 400

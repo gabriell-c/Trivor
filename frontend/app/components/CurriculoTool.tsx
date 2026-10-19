@@ -349,7 +349,7 @@ export default function CurriculoTool() {
                   <textarea
                     value={jobTitle}
                     onChange={(e) => setJobTitle(e.target.value)}
-                    placeholder="Cole aqui a descrição da vaga alvo para análise de compatibilidade..."
+                    placeholder="Cole a descrição completa da vaga (com a seção de requisitos) — com isso calculamos o Fit do seu CV com a vaga."
                     className="w-full mt-2 h-24 px-4 py-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-indigo-500/60 resize-none"
                   />
                 )}
@@ -589,6 +589,75 @@ export default function CurriculoTool() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Fit com a Vaga (determinístico) */}
+          {res.fit_com_vaga && (
+            <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+              <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <UserCheck className="w-4 h-4 text-indigo-400" /> Fit com a Vaga
+              </h2>
+              {res.fit_com_vaga.calculado && res.fit_com_vaga.nota !== null ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-center justify-center w-20 h-20 rounded-2xl bg-slate-950/60 border border-slate-800/80 shrink-0">
+                      <span className="text-2xl font-black" style={{ color: getScoreColor(res.fit_com_vaga.nota).stroke }}>
+                        {Math.round(res.fit_com_vaga.nota)}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium uppercase">de 100</span>
+                    </div>
+                    <p className="text-sm text-slate-400">{res.fit_com_vaga.resumo}</p>
+                  </div>
+                  {(res.fit_com_vaga.requisitos_faltantes?.length ?? 0) > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-2">
+                        Faltantes ({res.fit_com_vaga.requisitos_faltantes!.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {res.fit_com_vaga.requisitos_faltantes!.map((kw, i) => (
+                          <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(res.fit_com_vaga.desejaveis_faltantes?.length ?? 0) > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">
+                        Diferenciais que faltam ({res.fit_com_vaga.desejaveis_faltantes!.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {res.fit_com_vaga.desejaveis_faltantes!.map((kw, i) => (
+                          <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(res.fit_com_vaga.requisitos_cobertos?.length ?? 0) > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">
+                        Cobertos ({res.fit_com_vaga.requisitos_cobertos!.length})
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {res.fit_com_vaga.requisitos_cobertos!.map((kw, i) => (
+                          <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-xs text-amber-400 font-medium mb-1">Fit não calculado</p>
+                  <p className="text-sm text-slate-400">{res.fit_com_vaga.resumo}</p>
+                </div>
+              )}
             </div>
           )}
 

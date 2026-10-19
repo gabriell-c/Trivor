@@ -39,6 +39,38 @@ export interface ErroOrtografico {
   gravidade?: string
 }
 
+// Fit determinístico do CV com uma vaga específica (sem LLM)
+export interface FitComVaga {
+  calculado: boolean
+  nota: number | null
+  requisitos_cobertos?: string[]
+  requisitos_faltantes?: string[]
+  desejaveis_cobertas?: string[]
+  desejaveis_faltantes?: string[]
+  resumo?: string
+}
+
+// Ranking CV × vagas da base de mercado (/api/market/cv-fit)
+export interface MarketFitVaga {
+  id: string
+  titulo: string
+  empresa: string
+  localizacao: string
+  modalidade: string
+  url: string | null
+  score: number
+  cobertos: string[]
+  faltantes: string[]
+  desejaveis_faltantes?: string[]
+}
+
+export interface MarketCvFitResult {
+  total_vagas: number
+  vagas: MarketFitVaga[]
+  faltantes_topicos: Array<{ termo: string; em_quantas_vagas: number }>
+  resumo: string
+}
+
 // Seção do diagnóstico estruturado (chave livre → seção)
 export interface SecaoDiagnostico {
   status?: string
@@ -67,6 +99,7 @@ export interface AnalysisResult {
   analise_ats?: AnaliseATS
   sugestoes?: string[]
   checklist_validacao?: ChecklistValidacao
+  fit_com_vaga?: FitComVaga
   uso_tokens?: {
     prompt_tokens?: number
     completion_tokens?: number
