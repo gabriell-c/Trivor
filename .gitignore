@@ -31,6 +31,11 @@ data/*
 *.db
 *.sqlite
 *.sqlite3
+# Sidecars do modo WAL do SQLite (criados ao lado do *.db)
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
 
 # Logs & junk files (nomes específicos; *.log cobre os demais)
 *.log

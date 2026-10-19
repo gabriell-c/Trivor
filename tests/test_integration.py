@@ -666,6 +666,69 @@ class TestSemanticFitValidation:
 
 
 # ============================================================================
+# Market: medianas e published_at (regressões do audit)
+# ============================================================================
+
+class TestMarketAnalysisZeroJobs:
+    def test_zero_jobs_report_shape(self, tmp_path, monkeypatch):
+        """0 vagas: summary com jsearch_status específico + mediana None
+        (não fabrica mais exp_median=3)."""
+        import market_service
+        db = tmp_path / "market_zero.db"
+        market_service.init_market_db(db)
+        monkeypatch.delenv("JSEARCH_API_KEY", raising=False)
+        monkeypatch.setattr(market_service, "generate_mock_jobs_if_empty",
+                            lambda *a, **kw: None)
+
+        mock_client = MagicMock()
+        result = market_service.run_market_analysis(
+            db_file=db, client=mock_client, selected_model="gpt-4o",
+            job_title="X", target_stack="Y", seniority="Pleno",
+            location="São Paulo", time_window="30 dias", jsearch_api_keys=[],
+        )
+        s = result["summary"]
+        assert s["total_jobs_scanned"] == 0
+        assert s["jsearch_status"] == "no_jobs_found"
+        assert s["jsearch_message"]
+        assert result["statistics"]["exp_years_median"] is None
+
+
+
+class TestMarketMedian:
+    def test_odd_list_picks_middle(self):
+        import market_service
+        assert market_service._median([1.0, 3.0, 2.0]) == 2.0
+
+    def test_even_list_averages_two_central(self):
+        import market_service
+        assert market_service._median([1.0, 2.0, 3.0, 4.0]) == 2.5
+
+    def test_empty_list_returns_none(self):
+        import market_service
+        assert market_service._median([]) is None
+
+
+
+class TestJSearchPublishedAt:
+    def test_build_jobs_captures_job_date_posted(self):
+        import market_service
+        raw = [{
+            "job_id": "j-1", "job_title": "Dev", "employer_name": "ACME",
+            "job_description": "desc", "job_country": "br",
+            "job_date_posted": "2026-10-01T10:00:00Z",
+        }]
+        jobs = market_service._build_jobs_from_raw(raw, "br")
+        assert jobs[0]["published_at"] == "2026-10-01T10:00:00Z"
+
+    def test_parse_posted_at_formats_and_fallbacks(self):
+        import market_service
+        assert market_service._parse_jsearch_posted_at("2026-10-01T10:00:00Z") == "2026-10-01T10:00:00+00:00"
+        assert market_service._parse_jsearch_posted_at("2026-10-01") == "2026-10-01T00:00:00"
+        assert market_service._parse_jsearch_posted_at(None) is None
+        assert market_service._parse_jsearch_posted_at("data-invalida") is None
+
+
+# ============================================================================
 # Simulador de Recrutador CV × Vaga (LLM) — /api/cv/recruiter-sim
 # ============================================================================
 
@@ -1101,6 +1164,49 @@ class TestMarketAnalysisPersistence:
         persisted = conn.execute("SELECT COUNT(*) FROM market_jobs").fetchone()[0]
         conn.close()
         assert persisted == 1
+
+    def test_summary_always_has_jsearch_fields(self, tmp_path, monkeypatch):
+        """Audit item 7: jsearch_status/jsearch_message presentes no caminho
+        principal também (não só no caminho 0-vagas)."""
+        import market_service
+        db = tmp_path / "market_persist2.db"
+        market_service.init_market_db(db)
+        monkeypatch.delenv("JSEARCH_API_KEY", raising=False)
+
+        def _fake_generate(db_file, *args, **kwargs):
+            conn = sqlite3.connect(db_file)
+            conn.execute(
+                "INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("raw-js-1", "Python Developer Pleno", "ACME",
+                 "Buscamos dev Python com Django.", "São Paulo", "Remoto", "test", ""),
+            )
+            conn.commit()
+            conn.close()
+
+        monkeypatch.setattr(market_service, "generate_mock_jobs_if_empty", _fake_generate)
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response([{
+            "is_relevant": True,
+            "rejection_reason": None,
+            "role_level": "Pleno",
+            "exp_years_min": 2, "exp_years_max": 4,
+            "requirements": ["Python"], "nice_to_have": [],
+            "soft_skills": [], "certifications": [],
+            "salary_min": None, "salary_max": None, "currency": None,
+        }])
+
+        result = market_service.run_market_analysis(
+            db_file=db, client=mock_client, selected_model="gpt-4o",
+            job_title="Python Dev", target_stack="Python, Django", seniority="Pleno",
+            location="São Paulo", time_window="30 dias", jsearch_api_keys=[],
+        )
+        s = result["summary"]
+        assert s["jsearch_status"] == "ok"
+        assert "JSearch não utilizada" in s["jsearch_message"]
+
+
 
 class TestSalaryHeuristic:
     """Audit item 2 — os 3 corrompidos no audit + casos novos:

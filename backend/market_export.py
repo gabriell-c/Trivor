@@ -5,6 +5,12 @@ import json
 from datetime import datetime
 
 
+def _median_display(stats: dict) -> str:
+    """Mediana para exibição: None (sem dados) vira 'N/A' — nunca a string 'None'."""
+    m = stats.get("exp_years_median")
+    return "N/A" if m is None else str(m)
+
+
 def generate_market_markdown_export(report: dict, job_title: str, seniority: str, location: str, model_name: str) -> str:
     """Generate a well-structured Markdown export of the market analysis report."""
     s = report.get("summary", {})
@@ -30,7 +36,7 @@ def generate_market_markdown_export(report: dict, job_title: str, seniority: str
     lines.append(f"| Analisadas com IA | {s.get('relevant_jobs_analyzed', 0)} |")
     lines.append(f"| Descartadas | {s.get('discarded_jobs', 0)} |")
     lines.append(f"| Confiança | {s.get('confidence_score', 'N/A')} — {s.get('confidence_reason', '')} |")
-    lines.append(f"| Anos de experiência (mediana) | {stats.get('exp_years_median', 'N/A')} |")
+    lines.append(f"| Anos de experiência (mediana) | {_median_display(stats)} |")
     lines.append(f"")
 
     # Technologies
@@ -194,7 +200,7 @@ def generate_market_docx_export(report: dict, job_title: str, seniority: str, lo
         ("Analisadas com IA", str(s.get("relevant_jobs_analyzed", 0))),
         ("Descartadas", str(s.get("discarded_jobs", 0))),
         ("Confiança", f"{s.get('confidence_score', 'N/A')} — {s.get('confidence_reason', '')}"),
-        ("Exp. média (mediana)", str(stats.get("exp_years_median", "N/A"))),
+        ("Exp. média (mediana)", _median_display(stats)),
     ]
     t = doc.add_table(rows=len(summary_data), cols=2)
     t.style = "Table Grid"
@@ -583,7 +589,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         ["Analisadas com IA", str(s.get("relevant_jobs_analyzed", 0))],
         ["Descartadas", str(s.get("discarded_jobs", 0))],
         ["Confiança", f"{s.get('confidence_score', 'N/A')} — {s.get('confidence_reason', '')}"],
-        ["Exp. média (mediana)", str(stats.get("exp_years_median", "N/A"))],
+        ["Exp. média (mediana)", _median_display(stats)],
     ]
     t = Table(summary_rows, colWidths=[4.5*cm, 12*cm])
     t.setStyle(header_style("1E293B"))

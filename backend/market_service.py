@@ -13,6 +13,7 @@ import logging
 import urllib.request
 import urllib.error
 import hashlib
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 from datetime import datetime, timedelta
@@ -481,9 +482,20 @@ CREATE TABLE IF NOT EXISTS jsearch_keys (
 """
 
 
+def _connect_market_db(db_file) -> sqlite3.Connection:
+    """Conexão padrão do serviço de mercado: WAL + busy_timeout p/ uso concorrente.
+    WAL é persistido no arquivo (aplicar uma vez basta p/ todo o DB);
+    busy_timeout é por conexão — prazo de 30s p/ escrita evita crash por lock
+    com análises paralelas + endpoints jsearch escrevendo no mesmo arquivo."""
+    conn = sqlite3.connect(db_file)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    return conn
+
+
 def init_market_db(db_file: Path) -> None:
     """Cria as tabelas do DB de inteligência de mercado."""
-    conn = sqlite3.connect(db_file)
+    conn = _connect_market_db(db_file)
     conn.executescript(DB_SCHEMA)
     # Migração: adicionar colunas que podem não existir
     for table, col in [
@@ -513,6 +525,30 @@ _JSEARCH_HEADERS = {
 }
 
 
+def _mask_jsearch_key(key: str) -> str:
+    """Log: apenas o sufixo da chave (últimos 4 chars) — mesmo padrão de _mask_key_preview do main.
+    O prefixo não vai para os logs."""
+    if not key or len(key) <= 4:
+        return "***"
+    return f"…{key[-4:]}"
+
+
+def _parse_jsearch_posted_at(raw) -> str:
+    """Converte job_date_posted (API JSearch) para ISO. Ausente/inválido → None (caller usa fallback)."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    for cand in (s, s.replace("Z", "+00:00"), s.replace("/", "-")):
+        try:
+            return datetime.fromisoformat(cand).isoformat()
+        except ValueError:
+            continue
+    logger.debug(f"[JSearch] job_date_posted em formato não suportado: {raw!r} — usando data atual")
+    return None
+
+
 def _fetch_jsearch_jobs(
     query: str,
     country: str = "br",
@@ -540,7 +576,7 @@ def _fetch_jsearch_jobs(
             continue
 
         if api_key in rate_limited_keys:
-            logger.debug(f"[JSearch] Pulando chave {api_key[:8]}... (rate-limited nesta sessão)")
+            logger.debug(f"[JSearch] Pulando chave {_mask_jsearch_key(api_key)} (rate-limited nesta sessão)")
             continue
         keys_tried.append(api_key)
         req = urllib.request.Request(url_template, headers={
@@ -556,7 +592,7 @@ def _fetch_jsearch_jobs(
                 raw_jobs = data.get("data", {}).get("jobs", [])
                 remaining = resp.headers.get("x-ratelimit-remaining")
                 total = resp.headers.get("x-ratelimit-limit")
-                logger.info(f"[JSearch] Chave {api_key[:8]}... → {len(raw_jobs)} vagas | rate: {remaining}/{total}")
+                logger.info(f"[JSearch] Chave {_mask_jsearch_key(api_key)} → {len(raw_jobs)} vagas | rate: {remaining}/{total}")
                 # Filtra vagas pelo país esperado — chaves diferentes podem retornar países errados
                 expected = country.lower()
                 if expected == "br":
@@ -595,26 +631,26 @@ def _fetch_jsearch_jobs(
                     ]
                 skipped = len(raw_jobs) - len(filtered_raw)
                 if skipped > 0:
-                    logger.warning(f"[JSearch] Chave {api_key[:8]}... filtrou {skipped} vagas de país errado ({expected})")
+                    logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} filtrou {skipped} vagas de país errado ({expected})")
                 all_raw_jobs.extend(filtered_raw)
                 last_remaining = int(remaining) if remaining else last_remaining
                 last_total = int(total) if total else last_total
             else:
-                logger.warning(f"[JSearch] Chave {api_key[:8]}... retornou erro: {data.get('message', 'unknown')}")
+                logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} retornou erro: {data.get('message', 'unknown')}")
         except urllib.error.HTTPError as e:
             if e.code == 403:
-                logger.warning(f"[JSearch] Chave {api_key[:8]}... 403 (sem créditos ou inválida), tentando próxima...")
+                logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} 403 (sem créditos ou inválida), tentando próxima...")
                 rate_limited_keys.add(api_key)
                 continue
             elif e.code == 429:
-                logger.warning(f"[JSearch] Chave {api_key[:8]}... 429 (rate limit)")
+                logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} 429 (rate limit)")
                 rate_limited_keys.add(api_key)
                 continue
             else:
                 logger.error(f"[JSearch] HTTP erro {e.code}: {e.reason}")
                 continue
         except Exception as e:
-            logger.error(f"[JSearch] Erro com chave {api_key[:8]}...: {e}")
+            logger.error(f"[JSearch] Erro com chave {_mask_jsearch_key(api_key)}: {e}")
             continue
         # Throttle between key attempts to avoid IP rate limit
         time.sleep(max(0.5, _JSEARCH_MIN_DELAY))
@@ -695,6 +731,7 @@ def _build_jobs_from_raw(raw_jobs: List, default_country: str) -> List[Dict]:
             "seniority": "",
             "job_id": j.get("job_id", ""),
             "job_country": job_country,
+            "published_at": j.get("job_date_posted", ""),
         })
     return jobs
 
@@ -744,22 +781,22 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
     Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro.
     Usa múltiplas queries para maximizar o volume de vagas.
     """
-    conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM market_raw_jobs")
-    count = cursor.fetchone()[0]
+    conn = _connect_market_db(db_file)
+    count = conn.execute("SELECT COUNT(*) FROM market_raw_jobs").fetchone()[0]
+    # Não segura a conexão aberta durante a fase HTTP (minutos) — WAL + busy_timeout
+    # cuidam da concorrência; a conexão só reabre para os INSERTs
+    conn.close()
 
     if count == 0:
-        import uuid
-        from datetime import datetime, timedelta
+        env_key = os.getenv("JSEARCH_API_KEY", "").strip()
 
         # Primeiro tenta JSearch com as chaves fornecidas (fallback automático)
         sample_jobs = []
         used_key_remaining = None
-        valid_keys = []
-        if jsearch_api_keys:
-            valid_keys = [k.strip() for k in jsearch_api_keys if k and k.strip()]
+        valid_keys = [k.strip() for k in (jsearch_api_keys or []) if k and k.strip()]
+        if env_key and env_key not in valid_keys:
+            valid_keys.append(env_key)  # chave sintética do ambiente (id="env")
+        if jsearch_api_keys or env_key:
             if valid_keys:
                 search_query = job_title.strip()
                 country, language = _get_jsearch_country_language(location)
@@ -926,25 +963,30 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
             logger.info("[MARKET] JSearch sem resultados ou não configurado — prosseguindo com 0 vagas reais")
 
         if sample_jobs:
-            now = datetime.now()
-            for i, j in enumerate(sample_jobs):
-                job_id = str(uuid.uuid4())
-                pub_date = now - timedelta(days=i * 3 + 1)
-                source_url = j.get("source_url", "")
-                job_country = j.get("job_country", "")
-                # Anexa país como metadado na descrição para uso posterior no filtro
-                if job_country:
-                    country_meta = f"\n[PAÍS: {job_country.upper()}]"
-                    desc = j["description"] + country_meta
-                else:
-                    desc = j["description"]
-                cursor.execute('''
-                    INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (job_id, sanitize(j["title"]), sanitize(j["company"]), sanitize(desc), sanitize(j["location"]), sanitize(j["modality"]), sanitize(j["source"]), source_url, pub_date.isoformat()))
-
-            conn.commit()
-    conn.close()
+            conn = _connect_market_db(db_file)  # reabre APENAS p/ os INSERTs
+            try:
+                cursor = conn.cursor()
+                now = datetime.now()
+                for j in sample_jobs:
+                    job_id = str(uuid.uuid4())
+                    # published_at real da API (job_date_posted); fallback: agora —
+                    # sem a progressão artificial de 3 dias por posição
+                    pub_date = _parse_jsearch_posted_at(j.get("published_at")) or now.isoformat()
+                    source_url = j.get("source_url", "")
+                    job_country = j.get("job_country", "")
+                    # Anexa país como metadado na descrição para uso posterior no filtro
+                    if job_country:
+                        country_meta = f"\n[PAÍS: {job_country.upper()}]"
+                        desc = j["description"] + country_meta
+                    else:
+                        desc = j["description"]
+                    cursor.execute('''
+                        INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url, published_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (job_id, sanitize(j["title"]), sanitize(j["company"]), sanitize(desc), sanitize(j["location"]), sanitize(j["modality"]), sanitize(j["source"]), source_url, pub_date))
+                conn.commit()
+            finally:
+                conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1944,8 +1986,8 @@ def _fallback_extract_jobs(
         result = None
         try:
             result = extract_job_with_ai(client, selected_model, job_text, target_stack)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"[MARKET] IA individual falhou p/ esta vaga (fallback heurístico): {exc}")
         # Se IA falhou, usou poucos requisitos, ou é vaga administrativa com poucos skills
         reqs_count = len(result.get("requirements", [])) if result else 0
         text_lower = job_text.lower()
@@ -2075,8 +2117,9 @@ REGRAS OBRIGATÓRIAS:
 4. Se a vaga pedir anos de experiência, extraia os números para exp_years_min/max.
 }}]"""
     try:
-        # Define timeout dinâmico proporcional ao número de vagas no lote (15s por vaga, min 60s, max 300s)
-        calc_timeout = max(60, min(400, len(job_texts) * 15))  # Aumentado timeout máximo
+        # Timeout dinâmico proporcional ao nº de vagas do lote (15s por vaga, mín 60s, teto 400s;
+        # com _BATCH_SIZE=10 o valor prático é ~150s)
+        calc_timeout = max(60, min(400, len(job_texts) * 15))
         response = client.chat.completions.create(
             model=selected_model,
             messages=[{"role": "user", "content": prompt}],
@@ -2106,7 +2149,8 @@ REGRAS OBRIGATÓRIAS:
                 if match:
                     try:
                         raw = json.loads(match.group(1))
-                    except Exception:
+                    except Exception as exc:
+                        logger.warning(f"[MARKET] JSON 'rescue' (recorte do texto) falhou, seguindo p/ fallback heurístico: {exc}")
                         raw = []
                 else:
                     raw = []
@@ -2143,8 +2187,8 @@ REGRAS OBRIGATÓRIAS:
                 request_body={"batch_size": len(job_texts), "model": selected_model},
                 response_summary=f"Extracted {len(data)} jobs",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"[MARKET] log da chamada IA falhou (ignorado p/ não derrubar o batch): {exc}")
 
         if len(data) == len(job_texts):
             return data
@@ -2163,6 +2207,17 @@ REGRAS OBRIGATÓRIAS:
         return _fallback_extract_jobs(client, selected_model, job_texts, target_stack, seniority, location)
 
 
+def _median(values: List[float]):
+    """Mediana clássica: média dos 2 centrais em lista par. Lista vazia → None."""
+    if not values:
+        return None
+    s = sorted(values)
+    mid = len(s) // 2
+    if len(s) % 2:
+        return s[mid]
+    return (s[mid - 1] + s[mid]) / 2
+
+
 def run_market_analysis(
     db_file: Path,
     client: OpenAI,
@@ -2179,9 +2234,9 @@ def run_market_analysis(
 
     # 1. Garante vagas de amostragem no DB (limpa buscas anteriores para evitar dados de outra área)
     init_market_db(db_file)
-    conn = sqlite3.connect(db_file)
-    conn.cursor().execute("DELETE FROM market_raw_jobs")
-    conn.cursor().execute("DELETE FROM market_jobs")
+    conn = _connect_market_db(db_file)
+    conn.execute("DELETE FROM market_raw_jobs")
+    conn.execute("DELETE FROM market_jobs")
     conn.commit()
     conn.close()
     date_posted = map_time_window_to_date_posted(time_window)
@@ -2191,7 +2246,7 @@ def run_market_analysis(
     neg_list = [k.strip().lower() for k in negative_keywords.split(",") if k.strip()]
 
     # 2. Coleta todas as vagas
-    conn = sqlite3.connect(db_file)
+    conn = _connect_market_db(db_file)
     cursor = conn.cursor()
     cursor.execute("SELECT id, title, company, description, location, modality, source, source_url FROM market_raw_jobs")
     raw_jobs = cursor.fetchall()
@@ -2210,7 +2265,7 @@ def run_market_analysis(
             "statistics": {
                 "required_technologies": [],
                 "desirable_technologies": [],
-                "exp_years_median": 0,
+                "exp_years_median": None,
                 "exp_years_distribution": {},
                 "modalities": [],
                 "top_soft_skills": [],
@@ -2228,7 +2283,6 @@ def run_market_analysis(
     # Processa em lotes
     extracted_jobs = []
     relevant_count = 0
-    import uuid
     analysis_start = time.time()
 
     for batch_start in range(0, len(pending), _BATCH_SIZE):
@@ -2237,6 +2291,7 @@ def run_market_analysis(
 
         batch_results = extract_jobs_batched(client, selected_model, job_texts, stack_list, seniority=seniority, location=location, neg_list=neg_list)
 
+        batch_rows = []
         for idx, (job_id, title, company, description, loc, mod, source, source_url, job_text) in enumerate(batch):
             extracted = batch_results[idx] if idx < len(batch_results) else {}
             extracted = _sanitize_requirements(extracted)
@@ -2254,16 +2309,8 @@ def run_market_analysis(
 
             if is_rel:
                 relevant_count += 1
-                new_id = str(uuid.uuid4())
-                now_str = datetime.now().isoformat()
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url,
-                        is_relevant, rejection_reason, requirements, nice_to_have, role_level, exp_years_min, exp_years_max,
-                        soft_skills, certifications, salary_min, salary_max, currency, extracted_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    new_id, job_id, title, company, loc, mod, source, source_url or "", 1,
+                batch_rows.append((
+                    str(uuid.uuid4()), job_id, title, company, loc, mod, source, source_url or "", 1,
                     extracted.get("rejection_reason"),
                     json.dumps(reqs_norm), json.dumps(nice_norm),
                     extracted.get("role_level"),
@@ -2271,9 +2318,8 @@ def run_market_analysis(
                     json.dumps(extracted.get("soft_skills", [])),
                     json.dumps(extracted.get("certifications", [])),
                     extracted.get("salary_min"), extracted.get("salary_max"),
-                    extracted.get("currency"), now_str
+                    extracted.get("currency"), datetime.now().isoformat()
                 ))
-                conn.commit()
 
             rejection_reason = extracted.get("rejection_reason") if not is_rel else None
             extracted_jobs.append({
@@ -2300,13 +2346,23 @@ def run_market_analysis(
                 "raw_description": description
             })
 
+        # 1 executemany + 1 commit POR LOTE (antes era commit por INSERT relevante)
+        if batch_rows:
+            cursor.executemany('''
+                INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url,
+                    is_relevant, rejection_reason, requirements, nice_to_have, role_level, exp_years_min, exp_years_max,
+                    soft_skills, certifications, salary_min, salary_max, currency, extracted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', batch_rows)
+            conn.commit()
+
     conn.close()
 
     elapsed_analysis = time.time() - analysis_start
     logger.info(f"[MARKET] AI analysis complete: {len(extracted_jobs)} jobs processed in {elapsed_analysis:.0f}s ({relevant_count} relevant)")
 
     # 4. Agregação de métricas
-    conn = sqlite3.connect(db_file)
+    conn = _connect_market_db(db_file)
     cursor = conn.cursor()
     rel_total = max(relevant_count, 1)
 
@@ -2369,12 +2425,7 @@ def run_market_analysis(
         })
 
     # Anos de experiência (Mediana + Distribuição)
-    exp_years_sorted = sorted(exp_years_list)
-    if exp_years_sorted:
-        mid = len(exp_years_sorted) // 2
-        exp_median = exp_years_sorted[mid]
-    else:
-        exp_median = 3
+    exp_median = _median(exp_years_list)
 
     # Score de Confiança
     if rel_total >= 10:
@@ -2413,6 +2464,10 @@ def run_market_analysis(
             "confidence_score": confidence,
             "confidence_reason": confidence_reason,
             "generated_at": datetime.now().isoformat(),
+            # Sempre presentes no summary (padrão do contrato; defaults quando não há falha)
+            "jsearch_status": "ok",
+            "jsearch_message": "Busca JSearch concluída." if (jsearch_api_keys or os.getenv("JSEARCH_API_KEY", "").strip())
+                               else "JSearch não utilizada nesta análise (sem chaves informadas).",
         },
         "statistics": {
             "required_technologies": req_ranking,
@@ -2435,7 +2490,6 @@ def run_market_analysis(
     }
 
     # Persiste o relatório gerado
-    import uuid
     report_id = str(uuid.uuid4())
     cursor.execute('''
         INSERT INTO market_reports (id, job_title, target_stack, seniority, location, time_window, total_jobs, relevant_jobs, confidence_score, report_data)
@@ -2459,8 +2513,8 @@ def run_market_analysis(
             request_body={"job_title": job_title, "total_jobs": total_jobs, "relevant": relevant_count},
             response_summary=f"Report generated: {relevant_count} relevant, {total_jobs - relevant_count} discarded",
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"[MARKET] log de conclusão da análise falhou (relatório já retornado): {exc}")
 
     return report_result
 
