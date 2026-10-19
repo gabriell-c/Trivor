@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
   Search,
-  MapPin,
   Briefcase,
   Clock,
   TrendingUp,
@@ -21,7 +20,6 @@ import {
   ArrowDownRight,
   ChevronDown,
   ChevronUp,
-  Building2,
   MapPin as MapPinIcon,
   Link as LinkIcon,
   ExternalLink,
@@ -282,7 +280,7 @@ export default function MarketIntelligencePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Senioridade</label>
-              <CustomSelect value={seniority} onChange={setSeniority} options={['Nenhum', 'Estagiário', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => ({ value: s, label: s }))} placeholder="Nível..." />
+              <CustomSelect value={seniority} onChange={setSeniority} options={['Nenhum', 'Estágio', 'Júnior', 'Pleno', 'Sênior', 'Especialista'].map(s => ({ value: s, label: s }))} placeholder="Nível..." />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-2">Janela Temporal</label>
@@ -723,7 +721,7 @@ export default function MarketIntelligencePage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
-                          <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>
+                          <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{job.company}</span>
                           <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
                           <span className="text-slate-600">· {job.source}</span>
@@ -991,7 +989,7 @@ export default function MarketIntelligencePage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
-                          {job.empresa && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.empresa}</span>}
+                          {job.empresa && <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{job.empresa}</span>}
                           {job.localizacao && <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.localizacao}</span>}
                           {job.modalidade && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modalidade}</span>}
                         </div>

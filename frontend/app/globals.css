@@ -131,3 +131,34 @@
 .animate-pulse-glow {
   animation: pulse-glow 4s ease-in-out infinite;
 }
+
+/* Wobble do ícone do Dropzone enquanto um arquivo é arrastado para cima. */
+@keyframes dz-wobble {
+  0%, 100% {
+    transform: translateY(-2px);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+.animate-dz-wobble {
+  animation: dz-wobble 0.6s ease-in-out infinite;
+}
+
+/* Entrada dos toasts (substituindo o framer-motion só nestes dois casos;
+    o framer segue em AppShell/Layout onde há uso real de animação). */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}

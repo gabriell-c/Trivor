@@ -1,5 +1,4 @@
 'use client'
-import { motion } from 'framer-motion'
 
 interface SkeletonProps {
   className?: string
@@ -16,13 +15,9 @@ export function Skeleton({ className = '', variant = 'rectangle' }: SkeletonProp
     text: 'h-4 w-3/4',
   }
 
+  // Pulso em CSS (animate-pulse), sem framer-motion.
   return (
-    <motion.div
-      initial={{ opacity: 0.5 }}
-      animate={{ opacity: [0.4, 0.6, 0.4] }}
-      transition={{ duration: 1.5, repeat: Infinity }}
-      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
-    />
+    <div className={`${baseClasses} ${variantClasses[variant]} ${className}`} />
   )
 }
 

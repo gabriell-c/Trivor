@@ -1,6 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect } from 'react'
 import { CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
@@ -59,11 +58,8 @@ export function ToastItem({ toast, onClose }: ToastProps) {
   }, [toast.id, toast.duration, onClose])
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -10, scale: 0.95 }}
-      className={`flex items-start gap-3 p-4 rounded-xl border ${config.bg} ${config.border} backdrop-blur-sm max-w-sm`}
+    <div
+      className={`animate-toast-in flex items-start gap-3 p-4 rounded-xl border ${config.bg} ${config.border} backdrop-blur-sm max-w-sm`}
     >
       <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${config.text}`} />
       <div className="flex-1 min-w-0">
@@ -79,7 +75,7 @@ export function ToastItem({ toast, onClose }: ToastProps) {
       >
         <XCircle className="w-4 h-4" />
       </button>
-    </motion.div>
+    </div>
   )
 }
 
@@ -90,11 +86,9 @@ export function ToastContainer({ toasts, onClose }: { toasts: Toast[]; onClose: 
       aria-live="polite"
       aria-atomic="true"
     >
-      <AnimatePresence>
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onClose={onClose} />
-        ))}
-      </AnimatePresence>
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onClose={onClose} />
+      ))}
     </div>
   )
 }

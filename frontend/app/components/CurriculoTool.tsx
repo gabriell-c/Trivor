@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play, GitCompare } from 'lucide-react'
 import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim, CoverLetter, CVDiffResult, DiffCV, DiffCVItem, DiffCVDeterministico } from '../types/analysis'
@@ -9,6 +9,16 @@ import { scoreTone } from '../lib/score'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
 import { getBestProvider } from '../hooks/useIaProviders'
+
+// Boilerplate comum às chamadas LLM desta tool: anexa as credenciais do
+// provider configurado (se houver) ao FormData.
+function addLlmProvider(formData: FormData, tools: ('curriculo' | 'market')[]) {
+  const provider = getBestProvider(tools)
+  if (!provider) return
+  formData.set('api_key', provider.apiKey)
+  formData.set('api_url', provider.apiUrl)
+  formData.set('model_name', provider.modelName)
+}
 
 const SECTION_LABELS: Record<string, string> = {
   contato: 'Contato',
@@ -54,36 +64,14 @@ export default function CurriculoTool() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportFormat, setExportFormat] = useState<'json' | 'md' | 'docx' | 'pdf'>('pdf')
 
-  // Fit semântico CV × vaga (LLM — /api/cv/semantic-fit), rodado em paralelo
-  const [semanticFit, setSemanticFit] = useState<FitSemantico | null>(null)
-  const [semanticLoading, setSemanticLoading] = useState(false)
-  const [semanticError, setSemanticError] = useState<string | null>(null)
-  const [copiedSuggestion, setCopiedSuggestion] = useState<number | null>(null)
-
-  // Simulação de recrutador CV × vaga (LLM — /api/cv/recruiter-sim), sob demanda
-  const [recruiterSim, setRecruiterSim] = useState<RecrutadorSim | null>(null)
-  const [recruiterLoading, setRecruiterLoading] = useState(false)
-  const [recruiterError, setRecruiterError] = useState<string | null>(null)
-
-  // Geração de cover letter CV × vaga (LLM — /api/cv/cover-letter), sob demanda
-  const [coverLetter, setCoverLetter] = useState<CoverLetter | null>(null)
-  const [coverLoading, setCoverLoading] = useState(false)
-  const [coverError, setCoverError] = useState<string | null>(null)
-  const [coverCopied, setCoverCopied] = useState(false)
-  const [coverFormat, setCoverFormat] = useState<'completa' | 'curta'>('completa')
-
-  // AbortControllers por feature LLM: as chamadas de IA levam minutos. Ao
-  // reiniciar a MESMA feature ou desmontar a tela, a corrida anterior é
-  // interrompida e uma resposta stale não sobrescreve o estado novo.
-  const semanticAbortRef = useRef<AbortController | null>(null)
-  const recruiterAbortRef = useRef<AbortController | null>(null)
-  const coverAbortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => () => {
-    semanticAbortRef.current?.abort()
-    recruiterAbortRef.current?.abort()
-    coverAbortRef.current?.abort()
-  }, [])
+  // Estado por seção: o loading/erro/resultado de cada feature LLM (fit
+  // semântico, recrutador, cover letter) mora no próprio componente de
+  // seção, com AbortController próprio. O pai só coordena a identidade da
+  // análise: analysisId muda a cada "Analisar Currículo" e as seções limpam
+  // o resultado antigo; fitAutoRun diz se a de fit semântico deve re-rodar
+  // sozinha (a descrição da vaga estava completa na hora da análise).
+  const [analysisId, setAnalysisId] = useState(0)
+  const [fitAutoRun, setFitAutoRun] = useState(false)
 
   const handleExport = async () => {
     if (!res) return
@@ -134,31 +122,16 @@ export default function CurriculoTool() {
     setError(null)
     setRes(null)
     setFileName(file.name)
-    setSemanticFit(null)
-    setSemanticError(null)
-    setRecruiterSim(null)
-    setRecruiterError(null)
-    setCoverLetter(null)
-    setCoverError(null)
-    setCoverCopied(false)
-    setCoverFormat('completa')
+    // Nova identidade de análise: as seções LLM limpam resultado stale com
+    // isso; a de fit semântico ainda re-roda sozinha se a vaga estiver completa.
+    setAnalysisId(id => id + 1)
+    setFitAutoRun(jobTitle.trim().length >= 40)
     const formData = new FormData()
     formData.append('cv_file', file)
     if (area) formData.set('area', area)
     if (jobTitle.trim()) formData.set('job_description', jobTitle.trim())
     if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
-    const provider = getBestProvider(['curriculo'])
-    if (provider) {
-      formData.set('api_key', provider.apiKey)
-      formData.set('api_url', provider.apiUrl)
-      formData.set('model_name', provider.modelName)
-    }
-
-    // Fit semântico (LLM) roda em PARALELO à análise principal: o resultado
-    // depende só do arquivo + descrição da vaga, sem esperar /api/cv/analyze.
-    if (jobTitle.trim().length >= 40) {
-      runSemanticFit(file)
-    }
+    addLlmProvider(formData, ['curriculo'])
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/cv/analyze`, {
@@ -178,181 +151,6 @@ export default function CurriculoTool() {
       setError(friendlyError(err, 'Falha na análise do currículo.'))
     } finally {
       setLoading(false)
-    }
-  }
-
-  // Fit semântico CV × vaga (LLM): requisitos reais da vaga, evidência
-  // literal no CV (aceita alias) e reescritas XYZ prontas para colar.
-  const runSemanticFit = async (file: File) => {
-    // Reinício da mesma feature: aborta a corrida anterior (stale) antes de
-    // começar a nova — a resposta atrasada não pode sobrescrever o estado.
-    semanticAbortRef.current?.abort()
-    const controller = new AbortController()
-    semanticAbortRef.current = controller
-    setSemanticFit(null)
-    setSemanticError(null)
-    setSemanticLoading(true)
-    const formData = new FormData()
-    formData.append('cv_file', file)
-    formData.set('job_description', jobTitle.trim())
-    if (area) formData.set('area', area)
-    const provider = getBestProvider(['curriculo'])
-    if (provider) {
-      formData.set('api_key', provider.apiKey)
-      formData.set('api_url', provider.apiUrl)
-      formData.set('model_name', provider.modelName)
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/cv/semantic-fit`, {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal
-      })
-      if (!response.ok) {
-        const errData = await response.json().catch(() => null)
-        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha no fit semântico.`)
-      }
-      const data = await response.json()
-      setSemanticFit(data.analise ?? null)
-    } catch (err) {
-      // Abort intencional (nova corrida/unmount) não é falha: silencioso.
-      if (isAbortError(err)) return
-      if (semanticAbortRef.current === controller) {
-        setSemanticError(friendlyError(err, 'Falha na análise semântica da vaga.'))
-      }
-    } finally {
-      // Só a corrida atual (ou a que vai ser abortada) toca o loading.
-      if (semanticAbortRef.current === controller) setSemanticLoading(false)
-    }
-  }
-
-  // Simulação de recrutador: a IA faz o papel de um recrutador da área,
-  // lê o CV contra a vaga atual e devolve veredito, confiança, motivos,
-  // sinais vermelhos e as 3 perguntas da entrevista.
-  const runRecruiterSim = async (file: File) => {
-    // Reinício da mesma feature: aborta a corrida anterior (stale).
-    recruiterAbortRef.current?.abort()
-    const controller = new AbortController()
-    recruiterAbortRef.current = controller
-    setRecruiterSim(null)
-    setRecruiterError(null)
-    setRecruiterLoading(true)
-    const formData = new FormData()
-    formData.append('cv_file', file)
-    formData.set('job_description', jobTitle.trim())
-    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
-    if (area) formData.set('area', area)
-    const provider = getBestProvider(['curriculo'])
-    if (provider) {
-      formData.set('api_key', provider.apiKey)
-      formData.set('api_url', provider.apiUrl)
-      formData.set('model_name', provider.modelName)
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/cv/recruiter-sim`, {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal
-      })
-      if (!response.ok) {
-        const errData = await response.json().catch(() => null)
-        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na simulação do recrutador.`)
-      }
-      const data = await response.json()
-      setRecruiterSim(data.analise ?? null)
-    } catch (err) {
-      // Abort intencional não é falha: silencioso.
-      if (isAbortError(err)) return
-      if (recruiterAbortRef.current === controller) {
-        setRecruiterError(friendlyError(err, 'Falha na simulação do recrutador.'))
-      }
-    } finally {
-      if (recruiterAbortRef.current === controller) setRecruiterLoading(false)
-    }
-  }
-
-  // Cover letter: a IA escreve a carta de apresentação a partir do CV +
-  // descrição da vaga, usando só fatos do currículo (formatos do guia:
-  // curta = 2 parágrafos, completa = 5 parágrafos).
-  const runCoverLetter = async (file: File, formato: 'completa' | 'curta') => {
-    // Reinício da mesma feature: aborta a corrida anterior (stale).
-    coverAbortRef.current?.abort()
-    const controller = new AbortController()
-    coverAbortRef.current = controller
-    setCoverLetter(null)
-    setCoverError(null)
-    setCoverCopied(false)
-    setCoverLoading(true)
-    setCoverFormat(formato)
-    const formData = new FormData()
-    formData.append('cv_file', file)
-    formData.set('job_description', jobTitle.trim())
-    formData.set('formato', formato)
-    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
-    const provider = getBestProvider(['curriculo'])
-    if (provider) {
-      formData.set('api_key', provider.apiKey)
-      formData.set('api_url', provider.apiUrl)
-      formData.set('model_name', provider.modelName)
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/cv/cover-letter`, {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal
-      })
-      if (!response.ok) {
-        const errData = await response.json().catch(() => null)
-        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na geração da cover letter.`)
-      }
-      const data = await response.json()
-      setCoverLetter(data.carta ?? null)
-    } catch (err) {
-      // Abort intencional não é falha: silencioso.
-      if (isAbortError(err)) return
-      if (coverAbortRef.current === controller) {
-        setCoverError(friendlyError(err, 'Falha na geração da cover letter.'))
-      }
-    } finally {
-      if (coverAbortRef.current === controller) setCoverLoading(false)
-    }
-  }
-
-  const copyCoverLetter = async () => {
-    if (!coverLetter) return
-    try {
-      await navigator.clipboard.writeText(coverLetter.texto)
-      setCoverCopied(true)
-      setTimeout(() => setCoverCopied(false), 2000)
-    } catch {
-      setCoverError('Não foi possível copiar para a área de transferência.')
-    }
-  }
-
-  const downloadCoverLetter = () => {
-    if (!coverLetter) return
-    const nivel = jobLevel !== 'Sem nível específico' ? jobLevel.toLowerCase().replace(/\s+/g, '-') : 'vaga'
-    const blob = new Blob([coverLetter.texto], { type: 'text/plain;charset=utf-8' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `Cover_Letter_${nivel}.txt`
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
-  }
-
-  const copySuggestion = async (sugerido: string, idx: number) => {
-    try {
-      await navigator.clipboard.writeText(sugerido)
-      setCopiedSuggestion(idx)
-      setTimeout(() => setCopiedSuggestion((cur) => (cur === idx ? null : cur)), 2000)
-    } catch {
-      setSemanticError('Não foi possível copiar para a área de transferência.')
     }
   }
 
@@ -646,6 +444,7 @@ export default function CurriculoTool() {
               <div className="flex items-center gap-2">
                 <select
                   value={exportFormat}
+                  aria-label="Formato da exportação"
                   onChange={(e) => setExportFormat(e.target.value as 'json' | 'md' | 'docx' | 'pdf')}
                   className="px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-800/60 text-slate-300 border border-slate-700/60 focus:outline-none focus:border-indigo-500/40"
                 >
@@ -881,40 +680,35 @@ export default function CurriculoTool() {
           )}
 
           {/* Análise Semântica da Vaga (LLM — fit semântico CV × vaga).
-              Sempre visível: quando a descrição da vaga está incompleta a
-              seção mostra o estado desabilitado + hint (mesmo padrão das
-              seções de Recrutador e Cover Letter). */}
+              A seção detém o próprio loading/erro/resultado + AbortController;
+              autoRun re-roda sozinha após cada análise quando a descrição da
+              vaga estava completa. Sempre visível: vaga incompleta → estado
+              desabilitado + hint (mesmo padrão das seções de Recrutador e
+              Cover Letter). */}
           <SemanticFitSection
-            fit={semanticFit}
-            loading={semanticLoading}
-            error={semanticError}
-            copiedIdx={copiedSuggestion}
-            canRun={!!selectedFile && jobTitle.trim().length >= 40}
-            canRetry={!!selectedFile}
-            onCopy={copySuggestion}
-            onRetry={() => selectedFile && runSemanticFit(selectedFile)}
+            file={selectedFile}
+            jobTitle={jobTitle}
+            area={area}
+            analysisId={analysisId}
+            autoRun={fitAutoRun}
           />
 
           {/* Simulação de Recrutador (LLM — /api/cv/recruiter-sim) */}
           <RecruiterSimSection
-            sim={recruiterSim}
-            loading={recruiterLoading}
-            error={recruiterError}
-            canRun={!!selectedFile && jobTitle.trim().length >= 40}
-            onRun={() => selectedFile && runRecruiterSim(selectedFile)}
+            file={selectedFile}
+            jobTitle={jobTitle}
+            jobLevel={jobLevel}
+            area={area}
+            analysisId={analysisId}
           />
 
           {/* Cover Letter (LLM — /api/cv/cover-letter) */}
           <CoverLetterSection
-            carta={coverLetter}
-            loading={coverLoading}
-            error={coverError}
-            copied={coverCopied}
-            canGenerate={!!selectedFile && jobTitle.trim().length >= 40}
-            onGenerate={(formato) => selectedFile && runCoverLetter(selectedFile, formato)}
-            onRetry={() => selectedFile && runCoverLetter(selectedFile, coverFormat)}
-            onCopy={copyCoverLetter}
-            onDownload={downloadCoverLetter}
+            file={selectedFile}
+            jobTitle={jobTitle}
+            jobLevel={jobLevel}
+            area={area}
+            analysisId={analysisId}
           />
 
           {/* Comparar Versões do CV (diff — /api/cv/diff) */}
@@ -1300,24 +1094,90 @@ export default function CurriculoTool() {
 // (verde=com evidência literal, rosa/âmbar=faltante), resumo do gap e cards
 // de reescrita XYZ com botão de copiar.
 function SemanticFitSection({
-  fit,
-  loading,
-  error,
-  copiedIdx,
-  canRun,
-  canRetry,
-  onCopy,
-  onRetry
+  file,
+  jobTitle,
+  area,
+  analysisId,
+  autoRun
 }: {
-  fit: FitSemantico | null
-  loading: boolean
-  error: string | null
-  copiedIdx: number | null
-  canRun: boolean
-  canRetry: boolean
-  onCopy: (sugerido: string, idx: number) => void
-  onRetry: () => void
+  file: File | null
+  jobTitle: string
+  area: string
+  analysisId: number
+  autoRun: boolean
 }) {
+  const [fit, setFit] = useState<FitSemantico | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const canRun = !!file && jobTitle.trim().length >= 40
+  const canRetry = !!file
+
+  const run = useCallback(async () => {
+    if (!file) return
+    // Reinício da mesma feature: aborta a corrida anterior (stale) antes de
+    // começar a nova — a resposta atrasada não pode sobrescrever o estado.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setFit(null)
+    setError(null)
+    setLoading(true)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    if (area) formData.set('area', area)
+    addLlmProvider(formData, ['curriculo'])
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/semantic-fit`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha no fit semântico.`)
+      }
+      const data = await response.json()
+      setFit(data.analise ?? null)
+    } catch (err) {
+      // Abort intencional (nova corrida/unmount) não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (abortRef.current === controller) {
+        setError(friendlyError(err, 'Falha na análise semântica da vaga.'))
+      }
+    } finally {
+      // Só a corrida atual (ou a que vai ser abortada) toca o loading.
+      if (abortRef.current === controller) setLoading(false)
+    }
+  }, [file, jobTitle, area])
+
+  // analysisId mudou = análise nova no CV: limpa o resultado stale e re-roda
+  // sozinha se a descrição da vaga estava completa na hora da análise
+  // (autoRun, decidido pelo pai).
+  useEffect(() => {
+    setFit(null)
+    setError(null)
+    setCopiedIdx(null)
+    if (autoRun) run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId])
+
+  useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  const copySuggestion = async (sugerido: string, idx: number) => {
+    try {
+      await navigator.clipboard.writeText(sugerido)
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 2000)
+    } catch {
+      setError('Não foi possível copiar para a área de transferência.')
+    }
+  }
+
   const requisitos = Array.isArray(fit?.requisitos) ? fit!.requisitos : []
   const comEvidencia = requisitos.filter((r) => r.presente && !!r.evidencia)
   const sugestoes = Array.isArray(fit?.sugestoes_de_reescrita) ? fit!.sugestoes_de_reescrita : []
@@ -1341,7 +1201,7 @@ function SemanticFitSection({
           {canRetry && (
             <button
               type="button"
-              onClick={onRetry}
+              onClick={() => run()}
               className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
             >
               Tentar novamente
@@ -1422,7 +1282,7 @@ function SemanticFitSection({
                       <p className="text-sm text-slate-300">{sug.sugerido}</p>
                       <button
                         type="button"
-                        onClick={() => onCopy(sug.sugerido, i)}
+                        onClick={() => copySuggestion(sug.sugerido, i)}
                         className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition"
                       >
                         {copiedIdx === i ? (
@@ -1453,18 +1313,73 @@ const VEREDITO_BADGES: Record<RecrutadorSim['veredito'], { label: string; cls: s
 }
 
 function RecruiterSimSection({
-  sim,
-  loading,
-  error,
-  canRun,
-  onRun
+  file,
+  jobTitle,
+  jobLevel,
+  area,
+  analysisId
 }: {
-  sim: RecrutadorSim | null
-  loading: boolean
-  error: string | null
-  canRun: boolean
-  onRun: () => void
+  file: File | null
+  jobTitle: string
+  jobLevel: string
+  area: string
+  analysisId: number
 }) {
+  const [sim, setSim] = useState<RecrutadorSim | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const canRun = !!file && jobTitle.trim().length >= 40
+
+  const run = useCallback(async () => {
+    if (!file) return
+    // Reinício da mesma feature: aborta a corrida anterior (stale).
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setSim(null)
+    setError(null)
+    setLoading(true)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
+    if (area) formData.set('area', area)
+    addLlmProvider(formData, ['curriculo'])
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/recruiter-sim`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na simulação do recrutador.`)
+      }
+      const data = await response.json()
+      setSim(data.analise ?? null)
+    } catch (err) {
+      // Abort intencional não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (abortRef.current === controller) {
+        setError(friendlyError(err, 'Falha na simulação do recrutador.'))
+      }
+    } finally {
+      if (abortRef.current === controller) setLoading(false)
+    }
+  }, [file, jobTitle, jobLevel, area])
+
+  // analysisId mudou = análise nova no CV: o veredito antigo ficou stale.
+  useEffect(() => {
+    setSim(null)
+    setError(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId])
+
+  useEffect(() => () => { abortRef.current?.abort() }, [])
+
   const badge = sim ? VEREDITO_BADGES[sim.veredito] ?? VEREDITO_BADGES.duvida : null
   const porQue = Array.isArray(sim?.por_que) ? sim!.por_que : []
   const sinais = Array.isArray(sim?.sinais_vermelhos) ? sim!.sinais_vermelhos : []
@@ -1492,7 +1407,7 @@ function RecruiterSimSection({
           {canRun && (
             <button
               type="button"
-              onClick={onRun}
+              onClick={() => run()}
               className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
             >
               Tentar novamente
@@ -1505,7 +1420,7 @@ function RecruiterSimSection({
         <div>
           <button
             type="button"
-            onClick={onRun}
+            onClick={() => run()}
             disabled={!canRun}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -1581,7 +1496,7 @@ function RecruiterSimSection({
 
           <button
             type="button"
-            onClick={onRun}
+            onClick={() => run()}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition"
           >
             <RotateCcw className="w-3 h-3" /> Rodar novamente
@@ -1593,26 +1508,104 @@ function RecruiterSimSection({
 }
 
 function CoverLetterSection({
-  carta,
-  loading,
-  error,
-  copied,
-  canGenerate,
-  onGenerate,
-  onRetry,
-  onCopy,
-  onDownload
+  file,
+  jobTitle,
+  jobLevel,
+  area,
+  analysisId
 }: {
-  carta: CoverLetter | null
-  loading: boolean
-  error: string | null
-  copied: boolean
-  canGenerate: boolean
-  onGenerate: (formato: 'completa' | 'curta') => void
-  onRetry: () => void
-  onCopy: () => void
-  onDownload: () => void
+  file: File | null
+  jobTitle: string
+  jobLevel: string
+  area: string
+  analysisId: number
 }) {
+  const [carta, setCarta] = useState<CoverLetter | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [format, setFormat] = useState<'completa' | 'curta'>('completa')
+  const abortRef = useRef<AbortController | null>(null)
+
+  const canGenerate = !!file && jobTitle.trim().length >= 40
+
+  const generate = useCallback(async (formato: 'completa' | 'curta') => {
+    if (!file) return
+    // Reinício da mesma feature: aborta a corrida anterior (stale).
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setCarta(null)
+    setError(null)
+    setCopied(false)
+    setLoading(true)
+    setFormat(formato)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    formData.set('formato', formato)
+    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
+    addLlmProvider(formData, ['curriculo'])
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/cover-letter`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na geração da cover letter.`)
+      }
+      const data = await response.json()
+      setCarta(data.carta ?? null)
+    } catch (err) {
+      // Abort intencional não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (abortRef.current === controller) {
+        setError(friendlyError(err, 'Falha na geração da cover letter.'))
+      }
+    } finally {
+      if (abortRef.current === controller) setLoading(false)
+    }
+  }, [file, jobTitle, jobLevel])
+
+  // analysisId mudou = análise nova no CV: a carta antiga ficou stale.
+  useEffect(() => {
+    setCarta(null)
+    setError(null)
+    setCopied(false)
+    setFormat('completa')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId])
+
+  useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  const copyLetter = useCallback(async () => {
+    if (!carta) return
+    try {
+      await navigator.clipboard.writeText(carta.texto)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setError('Não foi possível copiar para a área de transferência.')
+    }
+  }, [carta])
+
+  const downloadLetter = useCallback(() => {
+    if (!carta) return
+    const nivel = jobLevel !== 'Sem nível específico' ? jobLevel.toLowerCase().replace(/\s+/g, '-') : 'vaga'
+    const blob = new Blob([carta.texto], { type: 'text/plain;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Cover_Letter_${nivel}.txt`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  }, [carta, jobLevel])
+
   const fatos = Array.isArray(carta?.fatos_usados) ? carta!.fatos_usados : []
 
   const btnGerar = "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1629,7 +1622,7 @@ function CoverLetterSection({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => onGenerate('completa')}
+          onClick={() => generate('completa')}
           disabled={!canGenerate || loading}
           className={btnGerar}
         >
@@ -1637,7 +1630,7 @@ function CoverLetterSection({
         </button>
         <button
           type="button"
-          onClick={() => onGenerate('curta')}
+          onClick={() => generate('curta')}
           disabled={!canGenerate || loading}
           className={btnGerar}
         >
@@ -1664,7 +1657,7 @@ function CoverLetterSection({
           {canGenerate && (
             <button
               type="button"
-              onClick={onRetry}
+              onClick={() => generate(format)}
               className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
             >
               Tentar novamente
@@ -1678,8 +1671,8 @@ function CoverLetterSection({
           <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-4">
             <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">
               {carta.formato === 'curta'
-                ? 'Carta gerada · formato curta (2 parágrafos)'
-                : 'Carta gerada · formato completa (5 parágrafos)'}
+                ? 'Carta gerada · formato curto (2 parágrafos)'
+                : 'Carta gerada · formato completo (5 parágrafos)'}
             </p>
             <textarea
               readOnly
@@ -1711,7 +1704,7 @@ function CoverLetterSection({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onCopy}
+              onClick={copyLetter}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition"
             >
               {copied ? (
@@ -1722,7 +1715,7 @@ function CoverLetterSection({
             </button>
             <button
               type="button"
-              onClick={onDownload}
+              onClick={downloadLetter}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition"
             >
               <Download className="w-3.5 h-3.5" /> Baixar .txt

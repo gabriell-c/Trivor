@@ -1,6 +1,5 @@
 'use client'
 import { useState, useRef, useCallback, useId } from 'react'
-import { motion } from 'framer-motion'
 import { Upload, CheckCircle2, FileText, X } from 'lucide-react'
 
 interface DropzoneProps {
@@ -134,12 +133,9 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
           </>
         ) : (
           <>
-            <motion.div
-              animate={isDragging ? { y: [-2, 2, -2] } : {}}
-              transition={{ duration: 0.6, repeat: isDragging ? Infinity : 0 }}
-            >
+            <div className={isDragging ? 'animate-dz-wobble' : undefined}>
               <Upload className={`w-7 h-7 mb-1 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
-            </motion.div>
+            </div>
             <div className="text-center">
               <p className="text-sm font-medium text-slate-400">
                 {isDragging ? 'Solte o arquivo aqui' : 'Arraste e solte ou clique'}
