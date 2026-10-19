@@ -99,6 +99,21 @@ jobs:
         run: cd frontend && npm run build
 
   # ------------------------------------------------------------------
+  # Docker build (só build, sem run — pega imagem quebrada cedo)
+  # ------------------------------------------------------------------
+  build-docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -f Dockerfile -t trivor-backend .
+
+      - name: Build frontend image
+        run: docker build -f Dockerfile.frontend -t trivor-frontend .
+
+  # ------------------------------------------------------------------
   # E2E tests (Playwright + Next.js dev server)
   # ------------------------------------------------------------------
   e2e:

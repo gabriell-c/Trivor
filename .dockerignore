@@ -1,0 +1,30 @@
+# Ambientes virtuais e dependências locais
+venv/
+.venv/
+node_modules/
+frontend/node_modules/
+
+# VCS e caches
+.git/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+
+# Dados e logs (não fazem parte da imagem; persistidos por volumes)
+*.db
+*.sqlite
+*.sqlite3
+*.log
+reference/
+
+# Build artifacts do frontend (a imagem usa o código-fonte, não o build)
+frontend/.next/
+frontend/out/
+
+# Debug
+debug*.py
+
+# Secrets (nunca incluir .env na imagem; .env.example é documentação — incluir)
+.env*
+!.env.example

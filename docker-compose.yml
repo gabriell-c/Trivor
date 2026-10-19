@@ -8,14 +8,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Persiste dados sem esconder o código da imagem (não montar ./backend inteiro)
       - ./data:/app/data
-      - ./backend:/app/backend
+      - ./backend/market.db:/app/backend/market.db
     environment:
       - PYTHONUNBUFFERED=1
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # curl não existe em python:3.11-slim — usar stdlib
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
