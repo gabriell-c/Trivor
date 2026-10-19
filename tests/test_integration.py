@@ -563,6 +563,128 @@ class TestMarketCvFit:
 
 
 # ============================================================================
+# JSearch: sem texto puro no banco (migração + endpoints)
+# ============================================================================
+
+class TestJSearchNoPlaintext:
+    @pytest.fixture
+    def isolated_db(self, tmp_path, monkeypatch):
+        """DB isolado p/ os endpoints jsearch (padrão do fixture market_db)."""
+        import market_service
+        db = tmp_path / "jsearch_no_plaintext.db"
+        market_service.init_market_db(db)
+        monkeypatch.setattr("main.DB_FILE", db)
+        return db
+
+    def test_new_schema_has_no_api_key_column(self, isolated_db):
+        conn = sqlite3.connect(isolated_db)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(jsearch_keys)")]
+        conn.close()
+        assert "api_key" not in cols
+
+    def test_save_key_never_stores_plaintext(self, client, isolated_db):
+        r = client.post("/api/jsearch/save-key", data={
+            "api_key": "super-secret-key-12345678",
+            "description": "chave de teste",
+        })
+        assert r.status_code == 200
+        assert r.json()["success"] is True
+        assert r.json()["id"] is not None
+
+        conn = sqlite3.connect(isolated_db)
+        dump = " ".join(str(row) for row in conn.iterdump())
+        conn.close()
+        assert "super-secret-key-12345678" not in dump
+
+    def test_save_key_upsert_by_hash(self, client, isolated_db):
+        payload = {"api_key": "mesma-chave-para-upsert-99", "description": "primeira"}
+        r1 = client.post("/api/jsearch/save-key", data=payload)
+        r2 = client.post("/api/jsearch/save-key", data={**payload, "description": "segunda"})
+        assert r1.json()["id"] is not None
+        assert r1.json()["id"] == r2.json()["id"]  # upsert, não linha nova
+
+        conn = sqlite3.connect(isolated_db)
+        count = conn.execute("SELECT COUNT(*) FROM jsearch_keys").fetchone()[0]
+        conn.close()
+        assert count == 1
+
+    def test_keys_response_never_contains_key(self, client, isolated_db):
+        client.post("/api/jsearch/save-key", data={
+            "api_key": "chave-nao-vasculhavel-42", "description": "d",
+        })
+        r = client.get("/api/jsearch/keys")
+        assert r.status_code == 200
+        body = r.text
+        assert "chave-nao-vasculhavel-42" not in body
+        assert "api_key" not in r.json()["keys"][0]
+
+    def test_update_key_only_touches_description(self, client, isolated_db):
+        save = client.post("/api/jsearch/save-key", data={
+            "api_key": "chave-original-777", "description": "antes",
+        })
+        key_id = save.json()["id"]
+
+        conn = sqlite3.connect(isolated_db)
+        hash_before = conn.execute(
+            "SELECT key_hash FROM jsearch_keys WHERE id = ?", (key_id,)).fetchone()[0]
+        conn.close()
+
+        r = client.request("PUT", "/api/jsearch/update-key", data={
+            "key_id": str(key_id), "api_key": "outra-chave-que-sera-ignorada", "description": "depois",
+        })
+        assert r.status_code == 200
+        assert r.json()["success"] is True
+
+        conn = sqlite3.connect(isolated_db)
+        row = conn.execute(
+            "SELECT key_hash, description FROM jsearch_keys WHERE id = ?", (key_id,)).fetchone()
+        dump = " ".join(str(x) for x in conn.iterdump())
+        conn.close()
+        assert row[0] == hash_before          # hash intacto
+        assert row[1] == "depois"             # descrição atualizada
+        assert "outra-chave-que-sera-ignorada" not in dump
+
+    def test_legacy_db_migration_drops_plaintext_column(self, tmp_path):
+        """DB legado COM coluna api_key: init_market_db remove a coluna e
+        preserva hash/prefixo/descrição das linhas existentes."""
+        import market_service
+        db = tmp_path / "legacy_jsearch.db"
+        conn = sqlite3.connect(db)
+        conn.execute("""
+            CREATE TABLE jsearch_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                api_key TEXT,
+                key_hash TEXT UNIQUE,
+                key_prefix TEXT,
+                description TEXT,
+                rate_limit_total INTEGER,
+                rate_limit_remaining INTEGER,
+                status TEXT,
+                last_error TEXT,
+                last_tested TEXT,
+                created_at TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO jsearch_keys (api_key, key_hash, key_prefix, description) "
+            "VALUES (?, ?, ?, ?)",
+            ("plano-antigo-123", "abc123", "abc1…34", "chave antiga"),
+        )
+        conn.commit()
+        conn.close()
+
+        market_service.init_market_db(db)
+
+        conn = sqlite3.connect(db)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(jsearch_keys)")]
+        row = conn.execute(
+            "SELECT key_hash, key_prefix, description FROM jsearch_keys").fetchone()
+        conn.close()
+        assert "api_key" not in cols
+        assert row == ("abc123", "abc1…34", "chave antiga")
+
+
+# ============================================================================
 # Fit Semântico CV × Vaga (LLM) — /api/cv/semantic-fit
 # ============================================================================
 

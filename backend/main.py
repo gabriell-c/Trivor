@@ -2862,11 +2862,16 @@ async def export_market_analysis(
 
 @app.get('/api/jsearch/keys')
 async def api_get_jsearch_keys():
-    """Retorna todas as chaves JSearch com status e uso."""
+    """Retorna os registros de chaves JSearch (status e uso).
+    Nunca retorna a chave em si — apenas preview/descrição (o texto puro não
+    é mais persistido; a busca usa as chaves informadas no form + JSEARCH_API_KEY do ambiente)."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM jsearch_keys ORDER BY rowid')
+    cursor.execute(
+        'SELECT id, key_hash, key_prefix, description, rate_limit_total, rate_limit_remaining, '
+        'status, last_error, last_tested, created_at FROM jsearch_keys ORDER BY rowid'
+    )
     rows = cursor.fetchall()
     keys = []
     for r in rows:
@@ -2914,20 +2919,26 @@ async def api_save_jsearch_key(
     api_key: str = Form(...),
     description: str = Form(""),
 ):
-    """Salva uma chave JSearch no DB (com hash para upsert do market_service)."""
+    """Salva o REGISTRO de uma chave JSearch — apenas hash/prefixo/descrição.
+    O texto puro da chave NÃO é persistido (decisão de segurança): a busca usa
+    as chaves informadas no form de análise + JSEARCH_API_KEY do ambiente.
+    Upsert por key_hash: re-salvar a mesma chave apenas atualiza o preview/descrição."""
     from datetime import datetime
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-    key_prefix = api_key[:8] + "…" + api_key[-4:] if len(api_key) > 12 else api_key
+    key_prefix = (api_key[:8] + "…" + api_key[-4:]) if len(api_key) > 12 else _mask_key_preview(api_key)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO jsearch_keys (api_key, key_hash, key_prefix, description, created_at, status) "
-            "VALUES (?, ?, ?, ?, ?, 'ok')",
-            (api_key, key_hash, key_prefix, description, datetime.now().isoformat())
+            "INSERT INTO jsearch_keys (key_hash, key_prefix, description, created_at, status) "
+            "VALUES (?, ?, ?, ?, 'ok') "
+            "ON CONFLICT(key_hash) DO UPDATE SET "
+            "key_prefix = excluded.key_prefix, description = excluded.description",
+            (key_hash, key_prefix, description, datetime.now().isoformat())
         )
         conn.commit()
-        return {"success": True, "id": cursor.lastrowid}
+        row = cursor.execute("SELECT id FROM jsearch_keys WHERE key_hash = ?", (key_hash,)).fetchone()
+        return {"success": True, "id": row[0] if row else None}
     except sqlite3.Error as e:
         logger.error(f"[JSEARCH] Falha ao salvar chave: {e}")
         return {"success": False, "error": str(e)}
@@ -2938,18 +2949,19 @@ async def api_save_jsearch_key(
 @app.put('/api/jsearch/update-key')
 async def api_update_jsearch_key(
     key_id: int = Form(...),
-    api_key: str = Form(...),
+    api_key: str = Form(""),
     description: str = Form(""),
 ):
-    """Atualiza a chave/descrição de uma chave JSearch já salva."""
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-    key_prefix = api_key[:8] + "…" + api_key[-4:] if len(api_key) > 12 else api_key
+    """Atualiza a descrição de um registro de chave JSearch.
+    O parâmetro api_key permanece no contrato por compatibilidade com a UI,
+    mas é IGNORADO: o texto puro da chave não é mais persistido — para trocar
+    a chave em si, use save-key com a nova chave (upsert por hash)."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "UPDATE jsearch_keys SET api_key = ?, key_hash = ?, key_prefix = ?, description = ? WHERE id = ?",
-            (api_key, key_hash, key_prefix, description, key_id),
+            "UPDATE jsearch_keys SET description = ? WHERE id = ?",
+            (description, key_id),
         )
         conn.commit()
         return {"success": cursor.rowcount > 0}

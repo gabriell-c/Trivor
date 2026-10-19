@@ -16,6 +16,14 @@ sys.path.insert(0, str(BACKEND_PATH))
 import market_service as ms
 
 
+@pytest.fixture
+def no_jsearch_env(monkeypatch):
+    """Isola a var de ambiente: o pool de busca do generate_mock considera
+    JSEARCH_API_KEY (definível no .env). Sem isolar, um .env da máquina do
+    dev com a chave dispararia fetches HTTP reais (e consumo de créditos)."""
+    monkeypatch.delenv("JSEARCH_API_KEY", raising=False)
+
+
 # ============================================================================
 # normalize_term
 # ============================================================================
@@ -250,7 +258,7 @@ class TestRunMarketAnalysis:
         return mock
 
     @patch("market_service.OpenAI")
-    def test_basic_analysis(self, mock_openai, tmp_path):
+    def test_basic_analysis(self, mock_openai, tmp_path, no_jsearch_env):
         db_file = str(tmp_path / "test_analysis.db")
         ms.init_market_db(db_file)
         ms.generate_mock_jobs_if_empty(db_file, "Python Dev")
@@ -299,7 +307,7 @@ class TestRunMarketAnalysis:
         assert result["summary"]["total_jobs_scanned"] == 0
 
     @patch("market_service.OpenAI")
-    def test_fallback_heuristic_on_ai_failure(self, mock_openai, tmp_path):
+    def test_fallback_heuristic_on_ai_failure(self, mock_openai, tmp_path, no_jsearch_env):
         db_file = str(tmp_path / "test_fallback.db")
         ms.init_market_db(db_file)
         ms.generate_mock_jobs_if_empty(db_file, "Python Dev")
