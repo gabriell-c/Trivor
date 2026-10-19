@@ -3,7 +3,7 @@
   "name": "Trivor — LinkedIn Profile Exporter",
   "version": "3.6.0",
   "description": "Exporte seu próprio perfil do LinkedIn como JSON ou Markdown para análise avançada por IA.",
-  "permissions": ["activeTab", "scripting", "storage", "downloads"],
+  "permissions": ["activeTab", "scripting", "downloads"],
   "host_permissions": ["https://www.linkedin.com/*", "https://*.linkedin.com/*"],
   "background": { "service_worker": "src/background.js" },
   "action": {

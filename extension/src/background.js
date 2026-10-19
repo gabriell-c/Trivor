@@ -6,5 +6,5 @@
 "use strict";
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[Trivor Exporter] Extensão instalada com sucesso. Versão 3.1.0");
+  console.log("[Trivor Exporter] Extensão instalada com sucesso. Versão 3.6.0");
 });

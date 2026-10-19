@@ -29,7 +29,6 @@
 ```
 extension/
 ├── manifest.json            # Configuração Manifest V3 (Chrome/Edge)
-├── generate_icons.py        # Gerador de ícones PNG
 ├── icons/                   # Ícones da extensão (16, 32, 48, 128px)
 │   ├── icon16.png
 │   ├── icon32.png
@@ -102,4 +101,4 @@ extension/
 
 ## 📄 Licença
 
-Desenvolvido para o projeto **Trivor** — Todos os direitos reservados.
+Desenvolvido para o projeto **Trivor** — licenciado sob MIT (veja `LICENSE` na raiz).
