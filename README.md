@@ -43,6 +43,7 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 ### 5. ⚙️ Central de Configuração Multi-Provider de IA
 - Gerenciamento dinâmico e seguro de chaves API (OpenAI, Anthropic, Gemini, Groq, custom endpoints).
 - Sistema inteligente de *fallback* e balanceamento de chamadas.
+- **Chaves JSearch com segurança**: o backend guarda apenas um resumo de cada chave (prefixo + hash) — o texto puro nunca é persistido. O pool de busca usa as chaves re-digitadas na aba "Busca de Vagas" + a variável `JSEARCH_API_KEY` do `.env` do backend.
 
 ### 6. 📜 Histórico & Logs de Requisições
 - Tabela detalhada em tempo real com Timestamp, Método HTTP, Endpoint, Status Code, Duração e Modal de erro completo.
@@ -143,6 +144,8 @@ python main.py
 ```
 > O backend estará rodando em `http://127.0.0.1:8000`.
 > Chaves de IA: defina no `.env` (`OPENAI_API_KEY` / `TRIVOR_IAS`) ou pela aba de Configurações do app — sem chave, os endpoints de IA respondem com erro 400 claro.
+> **Busca de vagas reais (JSearch)**: opcional. Defina `JSEARCH_API_KEY` no `.env` (ou re-digite suas chaves na aba *Configurações → Busca de Vagas*). Sem chave, a análise de mercado segue com a heurística local (sem dados fabricados).
+> **Upgrade**: chaves JSearch antigas em texto puro foram removidas do banco por segurança — re-salve suas chaves na UI. O `.env` é carregado no boot via `load_dotenv()` (valores do ambiente já existentes têm prioridade).
 
 ### 3. Configurar & Executar o Frontend
 
