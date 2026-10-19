@@ -294,7 +294,7 @@ _SKILL_NORMALIZATION = {
     r"\b(iniciativa|inicial)\b": "Iniciativa",
     r"\b(comunicação|comunicação\s+interpessoal)\b": "Comunicação",
     r"\b(trabalho\s+em\s+(equipe|equipo|grupo|time))\b": "Trabalho em Equipe",
-    r"\b(organização|organizacao|organizado|organizada)\b": "Organização",
+    r"\b(organização|organizacao)\b": "Organização",
     r"\b(atenção\s+a\s+detalhes|olho\s+ao\s+detalhe)\b": "Atenção a Detalhes",
     r"\b(responsabilidade|responsável)\b": "Responsabilidade",
     r"\b(liderança|liderar|líder)\b": "Liderança",
@@ -387,6 +387,27 @@ def normalize_skill(skill: str) -> str:
             return replacement.strip()
     # Normalização final: capitalização padrão
     return ' '.join(w.capitalize() for w in t.split()) if t else ""
+
+
+def extract_mentioned_skills(text: str) -> List[str]:
+    """Retorna as skills canônicas mencionadas em QUALQUER parte do texto,
+    usando o mapeamento _SKILL_NORMALIZATION (mesma base canônica do market).
+    Usa-se no fit determinístico CV × vaga para complementar a extração
+    heurística estruturada (que só pega linhas com palavras-chave de requisito)."""
+    if not text or not text.strip():
+        return []
+    text_lower = text.lower()
+    mentioned: List[str] = []
+    seen = set()
+    for pattern, canonical in _SKILL_NORMALIZATION.items():
+        if not canonical:
+            continue
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            key = canonical.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                mentioned.append(canonical.strip())
+    return mentioned
 
 
 # ---------------------------------------------------------------------------
@@ -1076,27 +1097,27 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
             parts = re.split(r'[:,;]', line)
             for p in parts[1:]:
                 p = p.strip()
-                if len(p) > 3 and len(p) < 100:
+                if len(p) >= 3 and len(p) < 100:
                     result["requirements"].append(p)
         elif 'diferencial' in ll or 'desejável' in ll or 'nice to have' in ll:
             parts = re.split(r'[:,;]', line)
             for p in parts[1:]:
                 p = p.strip()
-                if len(p) > 3 and len(p) < 100:
+                if len(p) >= 3 and len(p) < 100:
                     result["nice_to_have"].append(p)
         # Formação escolar
         elif 'formação' in ll or 'formacao' in ll or 'escolaridade' in ll or 'ensino' in ll:
             parts = re.split(r'[:,;]', line)
             for p in parts[1:]:
                 p = p.strip()
-                if len(p) > 3 and len(p) < 100:
+                if len(p) >= 3 and len(p) < 100:
                     result["requirements"].append(p)
         # Idiomas
         elif 'idioma' in ll or 'idiomas' in ll:
             parts = re.split(r'[:,;]', line)
             for p in parts[1:]:
                 p = p.strip()
-                if len(p) > 3 and len(p) < 100:
+                if len(p) >= 3 and len(p) < 100:
                     result["requirements"].append(p)
         # Experiência específica
         elif ('experiência' in ll or 'experiencia' in ll) and ('anos' not in ll):
