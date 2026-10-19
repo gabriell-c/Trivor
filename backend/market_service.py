@@ -951,7 +951,34 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
 # Fallback heurístico (regex) — extrai dados mesmo quando a IA falha
 # ---------------------------------------------------------------------------
 
-_SALARY_RE = re.compile(r'(?:de|r\$|salary|salário|remuneração)?\s*(?:r\$?\s*)?([\d\.]+)[\.,]\s*(?:a\s*)?([\d\.]+)?[\.,]?\s*(?:mil|k|/\s*month|mês|anual|ao\s*ano)?', re.IGNORECASE)
+# Salário: grupo1 = valor mínimo (formato BR: 8.000 / 8.000,50 / 5k),
+# grupo2 = máximo da faixa (opcional, após "a"/"até"). Sufixos mil/k/mês/anual
+# só contam se fizerem parte do PRÓPRIO match (não do texto inteiro).
+_SALARY_RE = re.compile(
+    r'(?:\bde\b|\br\$\s*|\bsalary\b|\bsalário\b|\bremuneração\b)?'
+    r'\s*(?:r\$?\s*)?'
+    r'(\d[\d\.,]*)'
+    r'(?:\s*(?:a|até)\s*(\d[\d\.,]*))?'
+    r'\s*(?:mil|k|/\s*month|mês|anual|ao\s*ano)?',
+    re.IGNORECASE,
+)
+# Padrão BR de milhar: 1.234 / 1.234.567 / 1.234,56
+_BR_THOUSANDS_RE = re.compile(r'\d{1,3}(\.\d{3})+(,\d{1,2})?')
+
+
+def _parse_br_number(raw: str) -> float:
+    """Converte número em formato brasileiro (milhar '.', decimal ',') para float.
+    Padrão BR: '.' é milhar e ',' é decimal — '8.000' → 8000.0, '8.000,50' → 8000.5.
+    Sem vírgula, só é milhar quando se encaixa no padrão 1.234(.56)?;
+    caso contrário é decimal ('8.5' → 8.5)."""
+    s = raw.strip()
+    if not s:
+        raise ValueError("número de salário vazio")
+    if ',' in s:
+        return float(s.replace('.', '').replace(',', '.'))
+    if re.fullmatch(r'\d{1,3}(\.\d{3})+', s):
+        return float(s.replace('.', ''))
+    return float(s)
 _LEVEL_KEYWORDS = {
     "júnior": "Júnior", "junior": "Júnior", "estagiário": "Júnior", "estagiario": "Júnior", "estágio": "Júnior", "intern": "Júnior",
     "pleno": "Pleno", "middle": "Pleno",
@@ -1039,28 +1066,47 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
                 result["exp_years_max"] = float(years + 2)
             break
 
-    # Salário
-    salary_matches = _SALARY_RE.findall(job_text)
-    if salary_matches:
-        for m in salary_matches:
-            try:
-                min_val = float(m[0].replace('.', '').replace(',', '.'))
-                if m[1]:
-                    max_val = float(m[1].replace('.', '').replace(',', '.'))
-                else:
-                    max_val = min_val * 1.5
-                if 'mil' in job_text.lower() or 'k' in job_text.lower():
-                    min_val *= 1000
-                    max_val *= 1000
-                if 'anual' in job_text.lower() or 'ao ano' in job_text.lower():
-                    min_val /= 12
-                    max_val /= 12
-                result["salary_min"] = round(min_val, 2)
-                result["salary_max"] = round(max_val, 2)
-                result["currency"] = "BRL"
-                break
-            except (ValueError, IndexError):
-                pass
+    # Salário — sufixos (k/mil/anual/ao ano) valem SOMENTE quando parte do
+    # próprio segmento do match; no texto inteiro, "keyboard"/"Black" multiplicavam
+    # por 1000 e "plano anual de saúde" dividia por 12 (reproduzido no audit).
+    for m in _SALARY_RE.finditer(job_text):
+        first = m.group(1)
+        if not first:
+            continue
+        segment = m.group(0)
+        # Ignora números sem contexto de salário (datas, "12 a 15 anos", etc.)
+        has_context = bool(re.search(r'(r\$|salari|salary|remunera)', segment, re.IGNORECASE))
+        if not has_context:
+            has_context = (
+                bool(re.search(r'\d\s*(k|mil)\s*$', segment, re.IGNORECASE))
+                or bool(_BR_THOUSANDS_RE.search(segment))
+                or len(first) >= 5
+            )
+        if not has_context:
+            continue
+        try:
+            min_val = _parse_br_number(first)
+            if m.group(2):
+                max_val = _parse_br_number(m.group(2))
+                if max_val < min_val:
+                    max_val = min_val
+            elif re.fullmatch(r'\d{1,3}(\.\d{3})+(,\d{1,2})?', first.strip()):
+                max_val = min_val  # "8.000" / "8.000,50": valor único, não faixa
+            else:
+                max_val = min_val * 1.5
+            if re.search(r'\d\s*(k|mil)\s*$', segment, re.IGNORECASE):
+                min_val *= 1000
+                max_val *= 1000
+            elif re.search(r'\d\s*(anual|ao\s*ano)\s*$', segment, re.IGNORECASE) or \
+                    re.search(r'(anual|ao\s*ano)\s*(de\s*)?$', job_text[max(0, m.start() - 15):m.start()], re.IGNORECASE):
+                min_val /= 12
+                max_val /= 12
+            result["salary_min"] = round(min_val, 2)
+            result["salary_max"] = round(max_val, 2)
+            result["currency"] = "BRL"
+            break
+        except ValueError:
+            continue
 
     # Soft skills — lista expandida
     soft_skill_keywords = [
@@ -2151,8 +2197,8 @@ def run_market_analysis(
     raw_jobs = cursor.fetchall()
 
     total_jobs = len(raw_jobs)
-    conn.close()
     if total_jobs == 0:
+        conn.close()
         return {
             "summary": {
                 "job_title": job_title,

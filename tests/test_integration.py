@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1026,3 +1026,122 @@ class TestLoadDotenv:
         finally:
             # load_dotenv escreve direto no os.environ (fora do monkeypatch)
             os.environ.pop("TRIVOR_TESTE_SENTINELA", None)
+
+
+# ============================================================================
+# Market: regressão de persistência + heurística de salário
+# ============================================================================
+
+def _make_llm_response(payload):
+    """Resposta fake no formato chat.completions.create (LLM mockado)."""
+    mock_message = MagicMock()
+    mock_message.content = json.dumps(payload, ensure_ascii=False)
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    return mock_response
+
+
+
+
+class TestMarketAnalysisPersistence:
+    """Regressão (audit item 1): a conexão do loop de persistência NÃO pode
+    ser fechada antes dos INSERTs — com ≥1 vaga relevante, o código antigo
+    usava cursor de conexão fechada → ProgrammingError ('Cannot operate on a
+    closed database'), um 500 SÓ DEPOIS de pagar todos os batches de LLM."""
+
+    def test_persists_relevant_jobs_into_market_jobs(self, tmp_path, monkeypatch):
+        import market_service
+        db = tmp_path / "market_persist.db"
+        market_service.init_market_db(db)
+        monkeypatch.delenv("JSEARCH_API_KEY", raising=False)
+
+        def _fake_generate(db_file, *args, **kwargs):
+            # O run_market_analysis limpa as tabelas antes de chamar o
+            # generate_mock, então o seed acontece aqui (dentro do fake).
+            conn = sqlite3.connect(db_file)
+            conn.execute(
+                "INSERT INTO market_raw_jobs (id, title, company, description, location, modality, source, source_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("raw-persist-1", "Python Developer Pleno", "ACME",
+                 "Buscamos dev Python com Django. Salário: R$ 8.000 a 12.000.",
+                 "São Paulo", "Remoto", "test", ""),
+            )
+            conn.commit()
+            conn.close()
+
+        monkeypatch.setattr(market_service, "generate_mock_jobs_if_empty", _fake_generate)
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_llm_response([{
+            "is_relevant": True,
+            "rejection_reason": None,
+            "role_level": "Pleno",
+            "exp_years_min": 2,
+            "exp_years_max": 4,
+            "requirements": ["Python", "Django"],
+            "nice_to_have": [],
+            "soft_skills": [],
+            "certifications": [],
+            "salary_min": 8000,
+            "salary_max": 12000,
+            "currency": "BRL",
+        }])
+
+        result = market_service.run_market_analysis(
+            db_file=db, client=mock_client, selected_model="gpt-4o",
+            job_title="Python Dev", target_stack="Python, Django", seniority="Pleno",
+            location="São Paulo", time_window="30 dias", jsearch_api_keys=[],
+        )
+
+        # A análise terminou sem 500 e a vaga relevante persistiu no DB
+        assert result["summary"]["relevant_jobs_analyzed"] == 1
+        conn = sqlite3.connect(db)
+        persisted = conn.execute("SELECT COUNT(*) FROM market_jobs").fetchone()[0]
+        conn.close()
+        assert persisted == 1
+
+class TestSalaryHeuristic:
+    """Audit item 2 — os 3 corrompidos no audit + casos novos:
+    sufixo k/mil e 'anual' só valem dentro do segmento do match."""
+
+    def test_single_value_8000(self):
+        import market_service
+        r = market_service.heuristic_extract("Desenvolvedor Python. Salário: R$ 8.000")
+        assert r.get("salary_min") == 8000.0
+        assert r.get("salary_max") == 8000.0
+
+    def test_single_value_8000_00(self):
+        import market_service
+        r = market_service.heuristic_extract("Salário: R$ 8.000,00")
+        assert r.get("salary_min") == 8000.0
+        assert r.get("salary_max") == 8000.0
+
+    def test_keyboard_and_black_do_not_corrupt(self):
+        # 'k' de 'keyboard'/'Black' NÃO multiplica por 1000
+        import market_service
+        r = market_service.heuristic_extract(
+            "Suporte a teclado keyboard e linha Black. Salário: R$ 3.000")
+        assert r.get("salary_min") == 3000.0
+        assert r.get("salary_max") == 3000.0
+
+    def test_k_suffix_multiplies(self):
+        import market_service
+        r = market_service.heuristic_extract("Salário de R$ 5k")
+        assert r.get("salary_min") == 5000.0
+        assert r.get("salary_max") == 7500.0
+
+    def test_anual_word_alone_does_not_divide(self):
+        # 'plano anual de saúde' NÃO divide o salário mensal por 12
+        import market_service
+        r = market_service.heuristic_extract("Salário: R$ 4.000 + plano anual de saúde")
+        assert r.get("salary_min") == 4000.0
+        assert r.get("salary_max") == 4000.0
+
+    def test_annual_salary_divided_by_12(self):
+        # 'Salário anual de R$ 60.000' → mensal 5.000
+        import market_service
+        r = market_service.heuristic_extract("Salário anual de R$ 60.000")
+        assert r.get("salary_min") == 5000.0
+        assert r.get("salary_max") == 5000.0
