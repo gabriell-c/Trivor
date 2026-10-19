@@ -133,7 +133,7 @@ export default function LinkedinPage() {
     return { text: 'text-rose-400', stroke: '#f43f5e', bg: 'bg-rose-500/10', border: 'border-rose-500/30' }
   }
 
-  const getStatusBadge = (status?: 'ok' | 'atencao' | 'critico') => {
+  const getStatusBadge = (status?: string) => {
     if (status === 'ok') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
@@ -529,7 +529,7 @@ export default function LinkedinPage() {
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
                     <p className="text-xs text-slate-500 mb-1">Prompt</p>
-                    <span className="text-sm font-black text-blue-300 font-mono">{res.uso_tokens.prompt_tokens.toLocaleString('pt-BR')}</span>
+                    <span className="text-sm font-black text-blue-300 font-mono">{(res.uso_tokens.prompt_tokens ?? 0).toLocaleString('pt-BR')}</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
                     <p className="text-xs text-slate-500 mb-1">Completion</p>
@@ -539,7 +539,7 @@ export default function LinkedinPage() {
                 <div className="grid grid-cols-1 gap-4 mt-4">
                   <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/60 text-center">
                     <p className="text-xs text-slate-500 mb-1">Total de Tokens</p>
-                    <span className="text-sm font-black text-white font-mono">{res.uso_tokens.total_tokens.toLocaleString('pt-BR')}</span>
+                    <span className="text-sm font-black text-white font-mono">{(res.uso_tokens.total_tokens ?? 0).toLocaleString('pt-BR')}</span>
                   </div>
                 </div>
               </div>

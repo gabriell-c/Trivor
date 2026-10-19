@@ -25,7 +25,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { toast.className = 'toast'; }, 4000);
   }
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // currentWindow num popup MV3 resolve para a JANELA DO PRÓPRIO POPUP (sem abas);
+  // lastFocusedWindow traz a aba que o usuário tinha aberta (LinkedIn, etc.)
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
 
   if (!tab || !tab.url || !tab.url.includes('linkedin.com')) {
     statusText.innerHTML = '⚠️ Abra uma aba do <strong>LinkedIn</strong> e tente novamente.';
@@ -59,7 +61,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         target: { tabId },
         files: ['src/content.js']
       });
-    } catch {}
+    } catch (e) {
+      // Injeção pode falhar (aba chrome://, PDF, etc.) — o content script
+      // auto-injetado pelo manifest pode já estar ativo; segue adiante.
+      console.warn('[Trivor] Falha ao injetar content script:', e);
+    }
     await new Promise(r => setTimeout(r, 300));
   }
 

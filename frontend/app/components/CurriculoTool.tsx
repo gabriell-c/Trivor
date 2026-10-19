@@ -176,7 +176,7 @@ export default function CurriculoTool() {
               )}
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs font-mono text-slate-500">{value.score}/10</span>
+              <span className="text-xs font-mono text-slate-500">{value.score}/100</span>
               {value.status && getStatusBadge(value.status)}
             </div>
           </div>

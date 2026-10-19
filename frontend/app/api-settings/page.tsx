@@ -168,7 +168,9 @@ export default function ApiSettingsPage() {
         setNewJsearchKey('')
         await loadJsearchKeys()
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[Trivor] Falha ao salvar chave JSearch:', err)
+    }
   }
 
   const testJsearchKey = async (record: JsearchKeyRecord) => {
@@ -213,7 +215,9 @@ export default function ApiSettingsPage() {
         setEditJsearchValue('')
         await loadJsearchKeys()
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[Trivor] Falha ao atualizar chave JSearch:', err)
+    }
   }
   const deleteJsearchKey = async (record: JsearchKeyRecord) => {
     const form = new FormData()
@@ -230,7 +234,9 @@ export default function ApiSettingsPage() {
         })
         await loadJsearchKeys()
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[Trivor] Falha ao excluir chave JSearch:', err)
+    }
   }
 
   return (

@@ -106,7 +106,9 @@ async function expandAllTextButtons() {
           b.click();
           clicked++;
           found = true;
-        } catch {}
+        } catch (err) {
+          console.warn("[Trivor] Clique no botão de expansão falhou:", err);
+        }
       });
 
     $$('[aria-expanded="false"]', document).forEach((el) => {
@@ -121,7 +123,9 @@ async function expandAllTextButtons() {
           el.click();
           clicked++;
           found = true;
-        } catch {}
+        } catch (err) {
+          console.warn("[Trivor] Clique em aria-expanded falhou:", err);
+        }
       }
     });
     if (!found && round > 3) break;
@@ -162,7 +166,9 @@ async function clickShowAll() {
       el.click();
       clicked++;
       await sleep(600);
-    } catch {}
+    } catch (err) {
+      console.warn("[Trivor] Clique em 'Exibir todos' falhou:", err);
+    }
   }
   return clicked;
 }
@@ -412,7 +418,9 @@ async function extractMainPage() {
           await sleep(300);
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[Trivor] Falha ao abrir detalhes de preferências:", err);
+    }
   }
 
   // Agora extrai cada seção clicando em "Exibir todos" e scrollando
@@ -442,29 +450,16 @@ async function extractMainPage() {
  * Encontra uma seção pelo título, clica "Exibir todos", scrolla e extrai
  */
 async function extractSectionWithExpand(titleKeyword, dataTestId) {
-  // 1. Encontra o botão "Exibir todos" desta seção
-  const sections = $$('section, [class*="section"]');
-  let targetSection = null;
-  let showAllBtn = null;
-
-  for (const sec of sections) {
-    const text = getNodeText(sec);
-    if (
-      text.includes(titleKeyword) ||
-      text.toLowerCase().includes(titleKeyword)
-    ) {
-      targetSection = sec;
-      // Procura botão "Exibir todos" dentro da seção
-      showAllBtn = sec.querySelector("button, a");
-      break;
-    }
-  }
-
+  // 1. Encontra a seção — prioridade para o data-testid, fallback para texto do título
+  let targetSection = $(
+    `[data-testid*="${dataTestId}-section"], [data-section="${dataTestId}"]`,
+  );
   if (!targetSection) {
-    // Tenta buscar pelo data-testid
-    targetSection = $(
-      `[data-testid*="${dataTestId}-section"], [data-section="${dataTestId}"]`,
-    );
+    const sections = $$('section, [class*="section"]');
+    targetSection = sections.find((sec) => {
+      const text = getNodeText(sec).toLowerCase();
+      return text.includes(titleKeyword.toLowerCase());
+    }) || null;
   }
 
   if (!targetSection) return [];
@@ -494,7 +489,9 @@ async function extractSectionWithExpand(titleKeyword, dataTestId) {
         btn.click();
         await sleep(1000);
         break;
-      } catch {}
+      } catch (err) {
+        console.warn("[Trivor] Clique em 'Exibir todos' da seção falhou:", err);
+      }
     }
   }
 
@@ -503,18 +500,19 @@ async function extractSectionWithExpand(titleKeyword, dataTestId) {
   await waitForSelector('[data-testid*="card"], [class*="card"]', 8000);
   await sleep(1000);
 
-  // 4. Extrai os cards da seção
+  // 4. Extrai os cards APENAS desta seção — escopar para o documento inteiro
+  //    misturaria cards de todas as seções (experiência, cursos, idiomas...).
+  //    Se "Exibir todos" abriu um diálogo com a lista completa, usa o diálogo como escopo.
+  let scope = targetSection;
+  const dialogCard = $('dialog[open] [data-testid*="card"], [role="dialog"] [data-testid*="card"]', document);
+  if (dialogCard) {
+    scope = dialogCard.closest('dialog[open], [role="dialog"]') || scope;
+  }
+
   const cards = $$(
-    `[data-testid*="${dataTestId}-card"], ` +
-      `[data-testid*="experience-card"], ` +
-      `[data-testid*="education-card"], ` +
-      `[data-testid*="certification-card"], ` +
-      `[data-testid*="project-card"], ` +
-      `[data-testid*="skill-card"], ` +
-      `[data-testid*="course-card"], ` +
-      `[data-testid*="language-card"], ` +
-      `[class*="card"], ` +
-      `[class*="artifact"]`,
+    `[data-testid*="${dataTestId}-card"], [data-testid*="card"], ` +
+      `[class*="card"], [class*="artifact"]`,
+    scope,
   );
 
   const items = [];
@@ -553,23 +551,29 @@ async function extractCurrentStep(step) {
   }
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "EXTRACT_STEP") {
-    // Proteção: se a URL mudou para fora do perfil, aborta
-    const currentUrl = location.href;
-    if (
-      /\/recent-activity\//i.test(currentUrl) ||
-      /\/edit\//i.test(currentUrl)
-    ) {
-      sendResponse({
-        success: false,
-        error: "URL inesperada detectada: " + currentUrl,
-      });
-      return false;
+// O manifest já injeta este script em /in/* e /feed/*, e o popup pode
+// re-injetá-lo via chrome.scripting — registra o listener uma vez só.
+if (!window.__trivorContentInstalled__) {
+  window.__trivorContentInstalled__ = true;
+
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "EXTRACT_STEP") {
+      // Proteção: se a URL mudou para fora do perfil, aborta
+      const currentUrl = location.href;
+      if (
+        /\/recent-activity\//i.test(currentUrl) ||
+        /\/edit\//i.test(currentUrl)
+      ) {
+        sendResponse({
+          success: false,
+          error: "URL inesperada detectada: " + currentUrl,
+        });
+        return false;
+      }
+      extractCurrentStep(request.step)
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
     }
-    extractCurrentStep(request.step)
-      .then((result) => sendResponse(result))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-});
+  });
+}

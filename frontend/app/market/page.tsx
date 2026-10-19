@@ -106,7 +106,10 @@ export default function MarketIntelligencePage() {
           .map((k: { api_key: string }) => k.api_key)
           .join(',')
       }
-    } catch {}
+    } catch (err) {
+      // Sem chaves JSearch disponíveis (backend offline, etc.) — segue com lista vazia
+      console.warn('[Trivor] Falha ao buscar chaves JSearch:', err)
+    }
     formData.set('jsearch_api_keys', jsearchKeysStr)
 
     try {

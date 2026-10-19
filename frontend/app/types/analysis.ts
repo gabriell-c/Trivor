@@ -31,6 +31,86 @@ export interface AnaliseATS {
   explicacao?: string
 }
 
+// Erro ortográfico reportado pela IA (schema do prompt do CV)
+export interface ErroOrtografico {
+  palavra: string
+  correcao: string
+  contexto?: string
+  gravidade?: string
+}
+
+// Seção do diagnóstico estruturado (chave livre → seção)
+export interface SecaoDiagnostico {
+  status?: string
+  score?: number
+  problema?: string | null
+  como_corrigir?: string | null
+  presente?: boolean
+}
+
+// Resultado da análise de CV / LinkedIn (/api/cv/analyze, /api/linkedin/analyze)
+export interface AnalysisResult {
+  nota: number
+  score_ats?: number
+  resumo_executivo?: string
+  foto_detectada?: boolean
+  foto_recomendada?: boolean
+  ordem_secoes?: OrdemSecoes
+  palavras_chave_presentes?: string[]
+  palavras_chave_faltantes?: string[]
+  pontos_fortes?: string[]
+  pontos_fracos?: string[]
+  erros_comuns_detectados?: ErroComum[]
+  erros_ortograficos?: ErroOrtografico[]
+  analise_secoes?: Record<string, AnaliseSecao>
+  diagnostico_por_secao?: Record<string, SecaoDiagnostico>
+  analise_ats?: AnaliseATS
+  sugestoes?: string[]
+  checklist_validacao?: ChecklistValidacao
+  uso_tokens?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    total_tokens?: number
+  }
+  api_info?: {
+    model?: string
+    request_id?: string
+    response_time_ms?: number
+  }
+  // Links detectados no documento (string) — retornado pelo backend
+  _links?: string[]
+  // Mensagem de erro presente quando a análise falhou (ex.: sem chave de API)
+  error?: string
+}
+
+// Registros do log de auditoria (/api/logs)
+export interface LogEntry {
+  id: number
+  timestamp: string
+  method?: string
+  endpoint: string
+  status_code: number
+  duration_ms: number
+  model?: string
+  error?: string | null
+  extractor?: string | null
+  fallback_used?: boolean
+  fallback_level?: string | null
+  api_key_preview?: string | null
+  request_body?: string | null
+  response_summary?: string | null
+  extracted_text?: string | null
+  llm_prompt?: string | null
+}
+
+// Estatísticas agregadas do log (/api/logs/stats)
+export interface LogStats {
+  total: number
+  successes: number
+  errors: number
+  avg_duration_ms: number
+}
+
 export interface ChecklistValidacao {
   // Formatação básica
   pdf_selecionavel?: { selecionavel: boolean; problema?: string | null }
@@ -59,6 +139,16 @@ export interface ChecklistValidacao {
     sugestao?: string
   }>
   ordem_cronologica?: { cronologica: boolean; problema?: string | null }
+  multiplos_curriculos?: {
+    detectado?: boolean
+    problema?: string | null
+    sugestao?: string | null
+  }
+  cover_letter?: {
+    presente?: boolean
+    problema?: string | null
+    sugestao?: string | null
+  }
   profile_summary?: { genérico: boolean; problema?: string | null; sugestao?: string }
   tech_stack_por_experiencia?: { por_experiencia: boolean; problema?: string | null }
   projetos_com_link?: { com_links: boolean; problema?: string | null }
