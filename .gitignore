@@ -52,6 +52,7 @@ qa_*
 
 # Documentation & Sensitive Tests
 docs/
+reference/
 
 # Node / Next.js
 frontend/node_modules/

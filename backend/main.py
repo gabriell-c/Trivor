@@ -40,6 +40,7 @@ KNOWLEDGE_DIR = BASE_DIR / 'knowledge'
 LINKEDIN_PROMPT_FILE = KNOWLEDGE_DIR / 'linkedin_prompt.md'
 CV_FIT_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_fit_prompt.md'
 RECRUITER_PROMPT_FILE = KNOWLEDGE_DIR / 'recruiter_prompt.md'
+COVER_LETTER_PROMPT_FILE = KNOWLEDGE_DIR / 'cover_letter_prompt.md'
 
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
@@ -2026,6 +2027,227 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao rodar a simulação do recrutador. Verifique a chave de API e tente novamente.")
+
+
+# ---------------------------------------------------------------------------
+# Geração de Cover Letter CV × Vaga (LLM) — carta pronta a partir do CV + vaga
+# ---------------------------------------------------------------------------
+
+_COVER_LETTER_FORMATS = {'completa', 'curta'}
+
+
+def _cover_letter_validate(carta: dict, cv_text: str, formato_solicitado: str) -> dict:
+    """Pós-processo da cover letter: normaliza o JSON da LLM e aplica a
+    auditoria anti-alucinação — cada `fatos_usados` precisa ocorrer no
+    texto extraído do CV; os ausentes são descartados (com log). Retorna
+    o mesmo dict."""
+    if not isinstance(carta, dict):
+        carta = {}
+
+    texto = carta.get('texto')
+    carta['texto'] = texto if isinstance(texto, str) else ""
+
+    formato = carta.get('formato')
+    if not isinstance(formato, str) or formato.strip().lower() not in _COVER_LETTER_FORMATS:
+        formato = formato_solicitado
+    carta['formato'] = formato.strip().lower()
+
+    brutos = carta.get('fatos_usados')
+    brutos = brutos if isinstance(brutos, list) else []
+    validos = [f for f in brutos if isinstance(f, str) and f.strip()]
+    dedupados = _dedupe_keep_order(validos)
+    mantidos = []
+    descartados = []
+    for fato in dedupados:
+        if _semantic_fit_evidence_valid(fato, cv_text):
+            mantidos.append(fato)
+        else:
+            descartados.append(fato)
+    if descartados:
+        logger.info(f"[COVER-LETTER] fatos_usados descartados (não ocorrem no CV): {descartados}")
+    carta['fatos_usados'] = mantidos
+
+    return carta
+
+
+@app.post('/api/cv/cover-letter')
+@limiter.limit("10/minute")
+async def cv_cover_letter(
+    request: Request,
+    api_key: str = Form(None),
+    api_url: str = Form(None),
+    model_name: str = Form(None),
+    provider_id: str = Form(None),
+    cv_file: UploadFile = File(...),
+    job_description: str = Form(""),
+    target_role: str = Form(""),
+    formato: str = Form("completa"),
+):
+    """Geração de cover letter CV × vaga via LLM: escreve a carta no formato
+    solicitado (curta = 2 parágrafos, completa = 5) usando SOMENTE fatos do
+    CV ou afirmações genéricas. Pós-processo descarta `fatos_usados` que
+    não ocorrem no texto extraído (auditoria anti-alucinação)."""
+    if len(job_description.strip()) < 40:
+        raise HTTPException(status_code=400, detail="Cole a descrição completa da vaga (mín. 40 caracteres).")
+
+    formato_norm = formato.strip().lower() if isinstance(formato, str) else ""
+    if formato_norm not in _COVER_LETTER_FORMATS:
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 'completa' ou 'curta'.")
+
+    content = await cv_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    ext = os.path.splitext(cv_file.filename or "")[1].lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
+
+    # Provider por id (mesmo padrão do /api/cv/recruiter-sim)
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p['id'] == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                api_key = prov['apiKey']
+                api_url = prov.get('apiUrl') or api_url
+                model_name = prov.get('modelName') or model_name
+        except Exception:
+            pass
+
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
+    if not key or key.strip() == "":
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            api_key = prov['apiKey']
+            api_url = prov.get('apiUrl') or api_url
+            model_name = prov.get('modelName') or model_name
+            key = api_key
+    if not key or key.strip() == "":
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+
+    t0 = time.time()
+    temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cvcover_')
+    extractor_used = "none"
+    try:
+        with os.fdopen(temp_fd, 'wb') as f:
+            f.write(content)
+        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        if not cv_text or not cv_text.strip():
+            raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
+    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
+    if not base_url:
+        base_url = "http://localhost:20128/v1"  # omniroute local
+
+    # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
+    if COVER_LETTER_PROMPT_FILE.exists():
+        with open(COVER_LETTER_PROMPT_FILE, 'r', encoding='utf-8') as f:
+            sys_prompt = f.read()
+    else:
+        sys_prompt = ("Você escreve cartas de apresentação profissionais, em PT-BR, "
+                      "com tom simpático. Use SOMENTE fatos do currículo fornecido ou "
+                      "afirmações genéricas; NUNCA invente empresa, cargo, métrica ou "
+                      "formação. Retorne o JSON exato especificado.")
+
+    user_content = f"""DESCRIÇÃO COMPLETA DA VAGA:
+---
+{job_description.strip()}
+---
+
+CARGO ALVO: {target_role.strip() if target_role and target_role.strip() else 'Não especificado'}
+
+FORMATO SOLICITADO DA CARTA: {formato_norm}
+
+CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
+---
+{cv_text}
+---
+
+Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
+
+    client = OpenAI(api_key=key, base_url=base_url)
+    try:
+        start_time = time.time()
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.4,
+            max_tokens=2000,
+            response_format={"type": "json_object"},
+        )
+        response_time_ms = (time.time() - start_time) * 1000
+
+        raw_content = response.choices[0].message.content or ""
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+            cleaned = cleaned.strip()
+
+        try:
+            carta = json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', cleaned)
+            carta = json.loads(match.group()) if match else {}
+        if not isinstance(carta, dict):
+            carta = {}
+
+        # Normalização + auditoria anti-alucinação (fatos ausentes no CV saem)
+        carta = _cover_letter_validate(carta, cv_text, formato_norm)
+
+        uso_tokens = None
+        if hasattr(response, 'usage') and response.usage:
+            uso_tokens = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens,
+            }
+
+        log_request(
+            endpoint="/api/cv/cover-letter",
+            method="POST",
+            status_code=200,
+            duration_ms=int(response_time_ms),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            response_summary=json.dumps(
+                {"formato": carta.get('formato'), "fatos_usados": len(carta.get('fatos_usados', []))},
+                ensure_ascii=False,
+            ),
+            extracted_text=(cv_text[:5000] if cv_text else ""),
+        )
+
+        result: dict = {"carta": carta}
+        if uso_tokens:
+            result["uso_tokens"] = uso_tokens
+        result["api_info"] = {
+            "model": selected_model,
+            "request_id": str(getattr(response, 'id', None) or uuid.uuid4()),
+            "response_time_ms": int(response_time_ms),
+        }
+        return result
+
+    except Exception as e:
+        logger.error(f"[COVER-LETTER] Erro na chamada LLM: {e}")
+        log_request(
+            endpoint="/api/cv/cover-letter",
+            method="POST",
+            status_code=500,
+            duration_ms=int((time.time() - t0) * 1000),
+            model=selected_model,
+            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Erro ao gerar a cover letter. Verifique a chave de API e tente novamente.")
 
 
 @app.post('/api/ia/analyze')

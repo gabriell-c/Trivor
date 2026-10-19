@@ -57,6 +57,7 @@ class TestHealth:
         assert "/api/market/cv-fit" in paths
         assert "/api/cv/semantic-fit" in paths
         assert "/api/cv/recruiter-sim" in paths
+        assert "/api/cv/cover-letter" in paths
 
 
 # ============================================================================
@@ -569,3 +570,100 @@ class TestRecruiterSimValidation:
         assert out["por_que"] == []
         assert out["sinais_vermelhos"] == []
         assert out["perguntas_de_entrevista"] == []
+
+
+# ============================================================================
+# Geração de Cover Letter CV × Vaga (LLM) — /api/cv/cover-letter
+# ============================================================================
+
+class TestCoverLetterEndpoint:
+    def test_short_description_returns_400(self, client):
+        r = client.post(
+            "/api/cv/cover-letter",
+            files={"cv_file": ("cv.txt", b"curriculo", "text/plain")},
+            data={"job_description": "curto"},
+        )
+        assert r.status_code == 400
+        assert "40 caracteres" in r.json().get("detail", "")
+
+    def test_invalid_formato_returns_400(self, client):
+        r = client.post(
+            "/api/cv/cover-letter",
+            files={"cv_file": ("cv.txt", b"curriculo", "text/plain")},
+            data={"job_description": LONG_JOB_DESC, "formato": "media"},
+        )
+        assert r.status_code == 400
+        assert "Formato" in r.json().get("detail", "")
+
+    def test_unsupported_extension(self, client):
+        r = client.post(
+            "/api/cv/cover-letter",
+            files={"cv_file": ("cv.exe", b"MZ", "application/octet-stream")},
+            data={"job_description": LONG_JOB_DESC},
+        )
+        assert r.status_code == 400
+        assert "Formato" in r.json().get("detail", "")
+
+    def test_missing_api_key_returns_400(self, client):
+        # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
+            patch("main._get_provider_for_tool", return_value=None),
+        ):
+            r = client.post(
+                "/api/cv/cover-letter",
+                files={"cv_file": ("cv.txt", b"Texto do curriculo", "text/plain")},
+                data={"job_description": LONG_JOB_DESC},
+            )
+        assert r.status_code == 400
+        assert "Chave de API" in r.json().get("detail", "")
+
+
+class TestCoverLetterValidation:
+    """Auditoria anti-alucinação da cover letter (pós-processo), testável
+    diretamente."""
+
+    def test_hallucinated_facts_are_dropped(self):
+        from main import _cover_letter_validate
+        cv = "Experiência: Python e PostgreSQL. Gerenciei pipelines com Docker."
+        carta = {
+            "texto": "Prezado(a) Senhor(a), tenho experiência com Docker...",
+            "formato": "completa",
+            "fatos_usados": [
+                "Gerenciei pipelines com Docker",
+                "Treinei equipes com Kubernetes",  # não está no CV
+            ],
+        }
+        out = _cover_letter_validate(carta, cv, "completa")
+        assert out["fatos_usados"] == ["Gerenciei pipelines com Docker"]
+        assert out["texto"].startswith("Prezado(a)")
+
+    def test_invalid_formato_falls_back_to_requested(self):
+        from main import _cover_letter_validate
+        carta = {"texto": "abc", "formato": "ultra", "fatos_usados": []}
+        out = _cover_letter_validate(carta, "cv texto", "curta")
+        assert out["formato"] == "curta"
+        assert out["texto"] == "abc"
+        assert out["fatos_usados"] == []
+
+    def test_non_string_texto_and_fatos_are_cleared(self):
+        from main import _cover_letter_validate
+        out = _cover_letter_validate(
+            {"texto": 123, "formato": "curta", "fatos_usados": "nao-lista"},
+            "cv texto",
+            "curta",
+        )
+        assert out["texto"] == ""
+        assert out["fatos_usados"] == []
+
+    def test_formato_case_insensitive_and_deduped(self):
+        from main import _cover_letter_validate
+        cv = "Experiência: Python e PostgreSQL."
+        carta = {
+            "texto": "carta",
+            "formato": "CURTA",
+            "fatos_usados": ["Python", "python", "PostgreSQL", ""],
+        }
+        out = _cover_letter_validate(carta, cv, "completa")
+        assert out["formato"] == "curta"
+        assert out["fatos_usados"] == ["Python", "PostgreSQL"]

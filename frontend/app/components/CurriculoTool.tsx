@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play } from 'lucide-react'
-import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim } from '../types/analysis'
+import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim, CoverLetter } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
@@ -63,6 +63,13 @@ export default function CurriculoTool() {
   const [recruiterLoading, setRecruiterLoading] = useState(false)
   const [recruiterError, setRecruiterError] = useState<string | null>(null)
 
+  // Geração de cover letter CV × vaga (LLM — /api/cv/cover-letter), sob demanda
+  const [coverLetter, setCoverLetter] = useState<CoverLetter | null>(null)
+  const [coverLoading, setCoverLoading] = useState(false)
+  const [coverError, setCoverError] = useState<string | null>(null)
+  const [coverCopied, setCoverCopied] = useState(false)
+  const [coverFormat, setCoverFormat] = useState<'completa' | 'curta'>('completa')
+
   const handleExport = async () => {
     if (!res) return
     setExporting(exportFormat)
@@ -115,6 +122,10 @@ export default function CurriculoTool() {
     setSemanticError(null)
     setRecruiterSim(null)
     setRecruiterError(null)
+    setCoverLetter(null)
+    setCoverError(null)
+    setCoverCopied(false)
+    setCoverFormat('completa')
     const formData = new FormData()
     formData.append('cv_file', file)
     if (area) formData.set('area', area)
@@ -224,6 +235,70 @@ export default function CurriculoTool() {
     } finally {
       setRecruiterLoading(false)
     }
+  }
+
+  // Cover letter: a IA escreve a carta de apresentação a partir do CV +
+  // descrição da vaga, usando só fatos do currículo (formatos do guia:
+  // curta = 2 parágrafos, completa = 5 parágrafos).
+  const runCoverLetter = async (file: File, formato: 'completa' | 'curta') => {
+    setCoverLetter(null)
+    setCoverError(null)
+    setCoverCopied(false)
+    setCoverLoading(true)
+    setCoverFormat(formato)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    formData.set('formato', formato)
+    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
+    const provider = getBestProvider(['curriculo'])
+    if (provider) {
+      formData.set('api_key', provider.apiKey)
+      formData.set('api_url', provider.apiUrl)
+      formData.set('model_name', provider.modelName)
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/cover-letter`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na geração da cover letter.`)
+      }
+      const data = await response.json()
+      setCoverLetter(data.carta ?? null)
+    } catch (err) {
+      setCoverError(err instanceof Error ? err.message : 'Falha na geração da cover letter.')
+    } finally {
+      setCoverLoading(false)
+    }
+  }
+
+  const copyCoverLetter = async () => {
+    if (!coverLetter) return
+    try {
+      await navigator.clipboard.writeText(coverLetter.texto)
+      setCoverCopied(true)
+      setTimeout(() => setCoverCopied(false), 2000)
+    } catch {
+      setCoverError('Não foi possível copiar para a área de transferência.')
+    }
+  }
+
+  const downloadCoverLetter = () => {
+    if (!coverLetter) return
+    const nivel = jobLevel !== 'Sem nível específico' ? jobLevel.toLowerCase().replace(/\s+/g, '-') : 'vaga'
+    const blob = new Blob([coverLetter.texto], { type: 'text/plain;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Cover_Letter_${nivel}.txt`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
   }
 
   const copySuggestion = async (sugerido: string, idx: number) => {
@@ -784,6 +859,19 @@ export default function CurriculoTool() {
             error={recruiterError}
             canRun={!!selectedFile && jobTitle.trim().length >= 40}
             onRun={() => selectedFile && runRecruiterSim(selectedFile)}
+          />
+
+          {/* Cover Letter (LLM — /api/cv/cover-letter) */}
+          <CoverLetterSection
+            carta={coverLetter}
+            loading={coverLoading}
+            error={coverError}
+            copied={coverCopied}
+            canGenerate={!!selectedFile && jobTitle.trim().length >= 40}
+            onGenerate={(formato) => selectedFile && runCoverLetter(selectedFile, formato)}
+            onRetry={() => selectedFile && runCoverLetter(selectedFile, coverFormat)}
+            onCopy={copyCoverLetter}
+            onDownload={downloadCoverLetter}
           />
 
           {/* Palavras-chave */}
@@ -1442,6 +1530,148 @@ function RecruiterSimSection({
           >
             <RotateCcw className="w-3 h-3" /> Rodar novamente
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CoverLetterSection({
+  carta,
+  loading,
+  error,
+  copied,
+  canGenerate,
+  onGenerate,
+  onRetry,
+  onCopy,
+  onDownload
+}: {
+  carta: CoverLetter | null
+  loading: boolean
+  error: string | null
+  copied: boolean
+  canGenerate: boolean
+  onGenerate: (formato: 'completa' | 'curta') => void
+  onRetry: () => void
+  onCopy: () => void
+  onDownload: () => void
+}) {
+  const fatos = Array.isArray(carta?.fatos_usados) ? carta!.fatos_usados : []
+
+  const btnGerar = "inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+
+  return (
+    <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-2">
+        <FileText className="w-4 h-4 text-indigo-400" /> Cover Letter
+      </h2>
+      <p className="text-xs text-slate-500 mb-4">
+        A IA escreve a carta de apresentação a partir do seu CV e da descrição da vaga — só com fatos do seu currículo.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onGenerate('completa')}
+          disabled={!canGenerate || loading}
+          className={btnGerar}
+        >
+          <FileText className="w-3.5 h-3.5" /> Gerar (completa)
+        </button>
+        <button
+          type="button"
+          onClick={() => onGenerate('curta')}
+          disabled={!canGenerate || loading}
+          className={btnGerar}
+        >
+          <FileText className="w-3.5 h-3.5" /> Gerar (curta)
+        </button>
+      </div>
+
+      {!canGenerate && !carta && !loading && (
+        <p className="text-xs text-amber-400/90 mt-3">
+          Para liberar a geração, cole a descrição completa da vaga (mín. 40 caracteres) no campo “Descrição da vaga”.
+        </p>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-slate-400 mt-4">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Escrevendo a cover letter (IA)...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-4 mt-4">
+          <p className="text-sm text-rose-400">{error}</p>
+          {canGenerate && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && carta && (
+        <div className="space-y-4">
+          <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-4">
+            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">
+              {carta.formato === 'curta'
+                ? 'Carta gerada · formato curta (2 parágrafos)'
+                : 'Carta gerada · formato completa (5 parágrafos)'}
+            </p>
+            <textarea
+              readOnly
+              value={carta.texto}
+              rows={Math.max(10, carta.texto.split('\n').length + 1)}
+              className="w-full resize-y rounded-lg bg-transparent text-sm text-slate-300 leading-relaxed whitespace-pre-wrap focus:outline-none"
+            />
+          </div>
+
+          {fatos.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Fatos do CV usados na carta ({fatos.length})
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {fatos.map((fato, i) => (
+                  <span
+                    key={i}
+                    title={fato}
+                    className="px-2.5 py-1 rounded-full text-xs bg-slate-500/10 text-slate-400 border border-slate-700/50 max-w-full truncate"
+                  >
+                    {fato.length > 60 ? `${fato.slice(0, 57)}…` : fato}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onCopy}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition"
+            >
+              {copied ? (
+                <><Check className="w-3.5 h-3.5" /> Copiado</>
+              ) : (
+                <><Copy className="w-3.5 h-3.5" /> Copiar</>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onDownload}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition"
+            >
+              <Download className="w-3.5 h-3.5" /> Baixar .txt
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -104,6 +104,15 @@ export interface RecrutadorSim {
   perguntas_de_entrevista: string[]
 }
 
+// Geração de cover letter CV × vaga via LLM (/api/cv/cover-letter)
+export interface CoverLetter {
+  /** Carta completa (quebras de linha \n entre parágrafos) */
+  texto: string
+  formato: 'completa' | 'curta'
+  /** Trechos LITERAIS do CV usados na carta (auditoria anti-alucinação; ausentes são descartados pelo backend) */
+  fatos_usados?: string[]
+}
+
 export interface MarketCvFitResult {
   total_vagas: number
   vagas: MarketFitVaga[]
