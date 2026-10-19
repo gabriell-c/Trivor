@@ -100,6 +100,57 @@ def _parse_llm_json(result_text: str) -> dict:
                 pass
         return {"raw": result_text, "error": "Não foi possível parsear JSON"}
 
+
+# Fallbacks de endpoints LLM quando model/base_url não vêm da requisição
+# (omniroute local na porta 20128)
+_LLM_FALLBACK_MODEL = "auto/best-coding"
+_LLM_FALLBACK_BASE_URL = "http://localhost:20128/v1"
+
+
+def _resolve_key_and_client(provider_id: str | None, api_key: str | None,
+                           api_url: str | None, model_name: str | None):
+    """Resolve as credenciais LLM na ordem:
+    provider_id (via TRIVOR_IAS no ambiente) → api_key fornecida →
+    OPENAI_API_KEY → provider salvo de 'curriculo' (_get_provider_for_tool).
+
+    Retorna (client, key, model, base_url). Sem chave em nenhum nível,
+    client vem None — o endpoint levanta 400."""
+    resolved_key = api_key
+    resolved_url = api_url
+    resolved_model = model_name
+
+    if provider_id:
+        try:
+            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+            prov = next((p for p in providers if p.get('id') == provider_id), None)
+            if prov and prov.get('usedFor') not in ('none', 'market'):
+                resolved_key = prov['apiKey']
+                resolved_url = prov.get('apiUrl') or api_url
+                resolved_model = prov.get('modelName') or model_name
+        except Exception:
+            logger.warning(f"[PROVIDER] provider_id={provider_id} não resolvido "
+                          f"(TRIVOR_IAS inválida ou ausente); segue com fallback de chave.")
+
+    key = resolved_key or os.getenv("OPENAI_API_KEY", "")
+    if not key or key.strip() == "":
+        prov = _get_provider_for_tool('curriculo')
+        if prov:
+            key = prov['apiKey']
+            resolved_url = prov.get('apiUrl') or resolved_url
+            resolved_model = prov.get('modelName') or resolved_model
+
+    if not key or key.strip() == "":
+        return None, None, None, None
+
+    selected_model = resolved_model if (resolved_model and resolved_model.strip()) else _LLM_FALLBACK_MODEL
+    base_url = resolved_url if (resolved_url and resolved_url.strip()) else os.getenv("OPENAI_BASE_URL")
+    if not base_url:
+        base_url = _LLM_FALLBACK_BASE_URL
+
+    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
+    return client, key, selected_model, base_url
+
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -1984,27 +2035,9 @@ async def cv_semantic_fit(
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
-    # Provider por id (mesmo padrão do /api/linkedin/analyze)
-    if provider_id:
-        try:
-            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
-            if prov and prov.get('usedFor') not in ('none', 'market'):
-                api_key = prov['apiKey']
-                api_url = prov.get('apiUrl') or api_url
-                model_name = prov.get('modelName') or model_name
-        except Exception:
-            pass
-
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
-    if not key or key.strip() == "":
-        prov = _get_provider_for_tool('curriculo')
-        if prov:
-            api_key = prov['apiKey']
-            api_url = prov.get('apiUrl') or api_url
-            model_name = prov.get('modelName') or model_name
-            key = api_key
-    if not key or key.strip() == "":
+    # Resolve credenciais e client LLM (provider_id → TRIVOR_IAS → OPENAI_API_KEY → provider salvo)
+    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
@@ -2019,11 +2052,6 @@ async def cv_semantic_fit(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
-    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
-    if not base_url:
-        base_url = "http://localhost:20128/v1"  # omniroute local
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if CV_FIT_PROMPT_FILE.exists():
@@ -2049,7 +2077,6 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2065,20 +2092,7 @@ Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JS
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = response.choices[0].message.content or ""
-        cleaned = raw_content.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]
-            cleaned = cleaned.strip()
-
-        try:
-            fit = json.loads(cleaned)
-        except json.JSONDecodeError:
-            match = re.search(r'\{[\s\S]*\}', cleaned)
-            fit = json.loads(match.group()) if match else {}
-        if not isinstance(fit, dict):
-            fit = {}
+        fit = _parse_llm_json(raw_content)
 
         # Anti-alucinação: zera evidências/texto_atual que não existem no CV
         fit = _semantic_fit_validate(fit, cv_text)
@@ -2161,27 +2175,9 @@ async def cv_recruiter_sim(
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
-    # Provider por id (mesmo padrão do /api/cv/semantic-fit)
-    if provider_id:
-        try:
-            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
-            if prov and prov.get('usedFor') not in ('none', 'market'):
-                api_key = prov['apiKey']
-                api_url = prov.get('apiUrl') or api_url
-                model_name = prov.get('modelName') or model_name
-        except Exception:
-            pass
-
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
-    if not key or key.strip() == "":
-        prov = _get_provider_for_tool('curriculo')
-        if prov:
-            api_key = prov['apiKey']
-            api_url = prov.get('apiUrl') or api_url
-            model_name = prov.get('modelName') or model_name
-            key = api_key
-    if not key or key.strip() == "":
+    # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
+    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
@@ -2196,11 +2192,6 @@ async def cv_recruiter_sim(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
-    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
-    if not base_url:
-        base_url = "http://localhost:20128/v1"  # omniroute local
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if RECRUITER_PROMPT_FILE.exists():
@@ -2228,7 +2219,6 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2244,20 +2234,7 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = response.choices[0].message.content or ""
-        cleaned = raw_content.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]
-            cleaned = cleaned.strip()
-
-        try:
-            sim = json.loads(cleaned)
-        except json.JSONDecodeError:
-            match = re.search(r'\{[\s\S]*\}', cleaned)
-            sim = json.loads(match.group()) if match else {}
-        if not isinstance(sim, dict):
-            sim = {}
+        sim = _parse_llm_json(raw_content)
 
         # Normalização: não confiar no JSON bruto da LLM
         sim = _recruiter_sim_validate(sim)
@@ -2382,27 +2359,9 @@ async def cv_cover_letter(
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
-    # Provider por id (mesmo padrão do /api/cv/recruiter-sim)
-    if provider_id:
-        try:
-            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
-            if prov and prov.get('usedFor') not in ('none', 'market'):
-                api_key = prov['apiKey']
-                api_url = prov.get('apiUrl') or api_url
-                model_name = prov.get('modelName') or model_name
-        except Exception:
-            pass
-
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
-    if not key or key.strip() == "":
-        prov = _get_provider_for_tool('curriculo')
-        if prov:
-            api_key = prov['apiKey']
-            api_url = prov.get('apiUrl') or api_url
-            model_name = prov.get('modelName') or model_name
-            key = api_key
-    if not key or key.strip() == "":
+    # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
+    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
@@ -2417,11 +2376,6 @@ async def cv_cover_letter(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
-    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
-    if not base_url:
-        base_url = "http://localhost:20128/v1"  # omniroute local
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if COVER_LETTER_PROMPT_FILE.exists():
@@ -2449,7 +2403,6 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2465,20 +2418,7 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = response.choices[0].message.content or ""
-        cleaned = raw_content.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]
-            cleaned = cleaned.strip()
-
-        try:
-            carta = json.loads(cleaned)
-        except json.JSONDecodeError:
-            match = re.search(r'\{[\s\S]*\}', cleaned)
-            carta = json.loads(match.group()) if match else {}
-        if not isinstance(carta, dict):
-            carta = {}
+        carta = _parse_llm_json(raw_content)
 
         # Normalização + auditoria anti-alucinação (fatos ausentes no CV saem)
         carta = _cover_letter_validate(carta, cv_text, formato_norm)
@@ -2584,34 +2524,12 @@ async def cv_diff(
     # Diferença determinística não depende de LLM — calculada antes de tudo
     deterministico = _diff_cv_deterministic(texto_anterior, texto_novo)
 
-    # Provider por id (mesmo padrão do /api/cv/cover-letter)
-    if provider_id:
-        try:
-            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
-            if prov and prov.get('usedFor') not in ('none', 'market'):
-                api_key = prov['apiKey']
-                api_url = prov.get('apiUrl') or api_url
-                model_name = prov.get('modelName') or model_name
-        except Exception:
-            pass
-
-    key = api_key or os.getenv("OPENAI_API_KEY", "")
-    if not key or key.strip() == "":
-        prov = _get_provider_for_tool('curriculo')
-        if prov:
-            api_key = prov['apiKey']
-            api_url = prov.get('apiUrl') or api_url
-            model_name = prov.get('modelName') or model_name
-            key = api_key
-    if not key or key.strip() == "":
+    # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
+    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
-    selected_model = model_name if (model_name and model_name.strip()) else "auto/best-coding"
-    base_url = api_url if (api_url and api_url.strip()) else os.getenv("OPENAI_BASE_URL")
-    if not base_url:
-        base_url = "http://localhost:20128/v1"  # omniroute local
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if CV_DIFF_PROMPT_FILE.exists():
@@ -2637,7 +2555,6 @@ VERSÃO NOVA DO CURRÍCULO (texto extraído, Markdown):
 
 Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2653,20 +2570,7 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = response.choices[0].message.content or ""
-        cleaned = raw_content.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned.rsplit("```", 1)[0]
-            cleaned = cleaned.strip()
-
-        try:
-            narrativa = json.loads(cleaned)
-        except json.JSONDecodeError:
-            match = re.search(r'\{[\s\S]*\}', cleaned)
-            narrativa = json.loads(match.group()) if match else {}
-        if not isinstance(narrativa, dict):
-            narrativa = {}
+        narrativa = _parse_llm_json(raw_content)
 
         # Anti-alucinação: zera evidências que não existem na versão citada
         narrativa = _diff_cv_validate(narrativa, texto_anterior, texto_novo)
