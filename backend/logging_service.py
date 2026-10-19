@@ -4,7 +4,6 @@ Request Logger – registra todas as requisições de IA com métricas detalhada
 
 import sqlite3
 import json
-import time
 import uuid
 from pathlib import Path
 from datetime import datetime, timedelta

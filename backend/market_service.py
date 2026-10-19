@@ -16,7 +16,7 @@ import hashlib
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from openai import OpenAI
 
@@ -661,7 +661,6 @@ def _fetch_jsearch_jobs(
                 data = json.loads(resp.read().decode("utf-8"))
 
             if data.get("status") == "OK":
-                consecutive_429 = 0  # reset counter on success
                 raw_jobs = data.get("data", {}).get("jobs", [])
                 remaining = resp.headers.get("x-ratelimit-remaining")
                 total = resp.headers.get("x-ratelimit-limit")
@@ -943,14 +942,11 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
 
                 # Conta o número de queries bem-sucedidas/falhas por lote, para o retry posterior
                 failed_queries = []  # Registra as queries que retornaram 0 resultados
-                retry_count = 0
                 max_retries = _MAX_RETRY
 
                 for batch_idx in range(total_batches):
                     batch_queries = queries[batch_idx * batch_size : (batch_idx + 1) * batch_size]
                     # Cada query recebe um subconjunto de chaves distinto (deslocamento round-robin)
-                    subset_idx = batch_idx % len(key_subsets)
-                    batch_key_subset = key_subsets[subset_idx]
 
                     with ThreadPoolExecutor(max_workers=min(len(batch_queries), max_concurrent)) as executor:
                         futures = {}
@@ -963,12 +959,11 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                         for future in as_completed(futures):
                             q = futures[future]
                             try:
-                                jobs, rem, tot = future.result()
+                                jobs, rem, _ = future.result()
                             except Exception as e:
                                 logger.error(f"[MARKET] Query {q!r} falhou: {e}")
                                 jobs = []
                                 rem = None
-                                tot = None
                             logger.info(f"[MARKET] JSearch query {q!r}: {len(jobs)} vagas")
                             dup_before = len(all_jobs)
                             for j in jobs:
@@ -1002,13 +997,12 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                         subset_offset = (retry_attempt + failed_queries.index(q)) % len(key_subsets)
                         subset = key_subsets[subset_offset]
                         try:
-                            jobs, rem, tot = _fetch_jsearch_jobs(q, country=country, language=language,
+                            jobs, rem, _ = _fetch_jsearch_jobs(q, country=country, language=language,
                                                                   num_pages=6, api_keys=subset, date_posted=date_posted)
                         except Exception as e:
                             logger.error(f"[MARKET] Retry query {q!r} falhou: {e}")
                             jobs = []
                             rem = None
-                            tot = None
                         logger.info(f"[MARKET] Retry {retry_attempt} query {q!r}: {len(jobs)} vagas")
                         dup_before = len(all_jobs)
                         for j in jobs:
@@ -1105,37 +1099,6 @@ _LEVEL_KEYWORDS = {
     "sênior": "Sênior", "senior": "Sênior", "staff": "Sênior", "lead": "Sênior",
     "especialista": "Especialista", "expert": "Especialista", "principal": "Especialista", "architect": "Especialista", "arquiteto": "Especialista",
 }
-
-
-def is_relevant_heuristic(job_text: str, target_stack: List[str], seniority: str, location: str) -> bool:
-    """Validação heurística de relevância — funciona mesmo sem IA."""
-    text_lower = job_text.lower()
-
-    # 1. Keywords do stack precisam aparecer
-    if target_stack:
-        stack_hits = sum(1 for s in target_stack if s.lower() in text_lower)
-        if stack_hits == 0:
-            return False
-        # Pelo menos 1 skill do stack deve estar presente
-    else:
-        # Se não tem stack, considerar qualquer vaga com título razoável
-        if len(job_text) < 50:
-            return False
-
-    # 2. Senioridade compatível
-    seniority_lower = seniority.lower()
-    for kw, level in _LEVEL_KEYWORDS.items():
-        if kw in text_lower:
-            if seniority_lower == "júnior" and level not in ("Júnior",):
-                return False
-            elif seniority_lower == "sênior" and level not in ("Sênior", "Especialista"):
-                return False
-
-    # 3. Remoto ou matching de localização
-    if "remoto" in text_lower or "remote" in text_lower:
-        return True
-
-    return True  # Se passou pelos filtros acima, é relevante
 
 
 def heuristic_extract(job_text: str) -> Dict[str, Any]:
@@ -1550,7 +1513,6 @@ def _pre_filter_jobs(
     for j in raw_jobs:
         job_id, title, company, description, loc, mod, source, source_url = j
         job_text_lower = (title + " " + description).lower()
-        mod_lower = mod.lower()
 
         # Extrai job_country do metadado anexado na descrição
         _country_match = re.search(r'\[PAÍS:\s*(\w+)\]', description)
@@ -1888,8 +1850,6 @@ def _ensure_common_skills(item: Dict[str, Any], job_text: str) -> Dict[str, Any]
     nice_to_have = set(item.get("nice_to_have", []))
     all_existing = requirements | nice_to_have
 
-    # Verifica se é vaga administrativa
-    is_admin = any(kw in text_lower for kw in _ADMIN_KEYWORDS)
 
     for pattern, canonical in _ADMIN_COMMON_SKILLS:
         if re.search(pattern, text_lower, re.IGNORECASE):

@@ -1,6 +1,5 @@
 from io import BytesIO
 import html as _html
-import json
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH

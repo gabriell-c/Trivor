@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
-from pydantic import BaseModel, Field
 import httpx
 
 # Carrega .env (raiz do projeto) antes de qualquer os.getenv de chave;
@@ -156,14 +155,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # ---------------------------------------------------------------------------
-# Pydantic Models para Validação
-# ---------------------------------------------------------------------------
-
-class LogCleanupRequest(BaseModel):
-    """Modelo para limpeza de logs."""
-    days: int = Field(default=90, ge=1, le=365, description="Dias para manter logs")
-
-# ---------------------------------------------------------------------------
 # Funções de Resposta Padronizada
 # ---------------------------------------------------------------------------
 
@@ -244,17 +235,6 @@ def _format_exts(exts: set[str]) -> str:
 
 # Fonte única da lista de extensões permitidas (inclui .doc) para TODAS as mensagens 400
 _SUPPORTED_EXTS_MSG = _format_exts(_ALLOWED_EXTS)
-
-# Correções exatas de OCR — SEM regex genéricas
-_FIXES: list[tuple[str, str]] = [
-    ('Área', 'Área'), ('São', 'São'), ('João', 'João'),
-    ('Código', 'Código'), ('Códigos', 'Códigos'),
-    ('Desenvolvimento', 'Desenvolvimento'),
-    ('Tecnologia', 'Tecnologia'),
-    # Erros comuns de OCR em português
-    ('ilustração', 'ilustração'),
-    ('nao', 'não'),  # só quando óbvio pelo contexto — deixar o LLM decidir
-]
 
 def _extract_pdf_text_pymupdf(pdf_path: str) -> str:
     """Extrai texto de PDF usando PyMuPDF — preserva ordem correta em layouts de colunas."""

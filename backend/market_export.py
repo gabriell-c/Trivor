@@ -1,7 +1,6 @@
 """Market intelligence export functions - MD, PDF, DOCX"""
 
 from io import BytesIO
-import json
 from datetime import datetime
 
 
@@ -133,9 +132,8 @@ def generate_market_markdown_export(report: dict, job_title: str, seniority: str
 def generate_market_docx_export(report: dict, job_title: str, seniority: str, location: str, model_name: str) -> BytesIO:
     """Generate a well-formatted DOCX export of the market analysis report."""
     from docx import Document
-    from docx.shared import Inches, Pt, RGBColor, Cm
+    from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
 
@@ -407,10 +405,10 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     """Generate a modern, well-formatted PDF export of the market analysis report."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
-    from reportlab.lib.units import cm, mm
+    from reportlab.lib.units import cm
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        PageBreak, KeepTogether
+        KeepTogether
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
@@ -504,17 +502,6 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         leading=14,
     )
 
-    subsection_style = ParagraphStyle(
-        'MktSubsection',
-        parent=styles['Normal'],
-        fontName=font_name,
-        fontSize=9,
-        textColor=colors.HexColor('#475569'),
-        spaceBefore=6,
-        spaceAfter=2,
-        leading=12,
-    )
-
     body_style = ParagraphStyle(
         'MktBody',
         parent=styles['Normal'],
@@ -523,16 +510,6 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         textColor=colors.HexColor('#334155'),
         spaceAfter=2,
         leading=11,
-    )
-
-    small_style = ParagraphStyle(
-        'MktSmall',
-        parent=styles['Normal'],
-        fontName=font_name,
-        fontSize=7.5,
-        textColor=colors.HexColor('#64748B'),
-        spaceAfter=1,
-        leading=10,
     )
 
     # Accent table style helper
@@ -712,8 +689,6 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
             # Requirements
             reqs = job.get("requirements", [])
             if reqs:
-                p = Paragraph("Req. técnicas: ", body_style)
-                p2 = Paragraph(", ".join(reqs), body_style)
                 job_elements.append(Paragraph("<b>Req. técnicas:</b> " + ", ".join(reqs), body_style))
 
             nice = job.get("nice_to_have", [])
