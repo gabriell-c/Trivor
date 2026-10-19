@@ -464,6 +464,41 @@ class TestJobFitUnit:
         assert "Inglês" in fit["desejaveis_faltantes"]
 
 
+class TestCalcFitScore:
+    """Nota determinística reutilizada por _compute_job_fit e /api/market/cv-fit."""
+
+    def test_all_requirements_covered_scores_100(self):
+        from main import calc_fit_score
+        assert calc_fit_score(["a", "b", "c"], [], 3.0) == 100.0
+
+    def test_nice_to_have_counts_half(self):
+        from main import calc_fit_score
+        # 1 obrigatório coberto + 1 desejável coberta em total de 2 + 0.5 = 2.5
+        # → 100 * (1 + 0.5) / 2.5 = 60.0
+        assert calc_fit_score(["python"], ["docker"], 2.5) == 60.0
+
+    def test_nothing_covered_scores_0(self):
+        from main import calc_fit_score
+        assert calc_fit_score([], [], 3.0) == 0.0
+
+    def test_nice_weight_constant_is_half(self):
+        from main import NICE_TO_HAVE_WEIGHT
+        assert NICE_TO_HAVE_WEIGHT == 0.5
+
+    def test_compute_job_fit_uses_shared_formula(self):
+        """_compute_job_fit e o ranking do cv-fit devem concordar com calc_fit_score."""
+        from main import calc_fit_score, _compute_job_fit
+        cv = "Experiência: Python, Django, PostgreSQL. Liderei equipe com 5 pessoas. Excel avançado."
+        job = "Requisitos: Python, Django\nDiferencial: Kubernetes"
+        fit = _compute_job_fit(cv, job)
+        assert fit["calculado"] is True
+        total = len(fit["requisitos_cobertos"]) + len(fit["requisitos_faltantes"])
+        nice = len(fit["desejaveis_cobertas"]) + len(fit["desejaveis_faltantes"])
+        esperado = calc_fit_score(fit["requisitos_cobertos"], fit["desejaveis_cobertas"],
+                                  total + 0.5 * nice)
+        assert fit["nota"] == esperado
+
+
 class TestMarketCvFit:
     @pytest.fixture
     def market_db(self, tmp_path, monkeypatch):
@@ -951,3 +986,43 @@ class TestCVDiffValidation:
         assert out["melhorias"][0]["evidencia_nova"] == "Docker"
         assert out["piorou"] == []
         assert out["recomendacao_proxima"] == "Detalhe o uso de Docker."
+
+
+# ============================================================================
+# load_dotenv no topo do main (.env deixa de ser inócuo)
+# ============================================================================
+
+class TestLoadDotenv:
+    def test_main_wired_to_load_dotenv(self):
+        """O main importa load_dotenv (chamado no topo do módulo)."""
+        import main
+        assert hasattr(main, "load_dotenv")
+
+    def test_load_dotenv_called_before_first_key_read(self):
+        """Guarda de regressão: a chamada load_dotenv() deve vir ANTES da
+        primeira leitura de os.getenv("OPENAI_API_KEY") do main."""
+        from pathlib import Path
+        import main
+        src = Path(main.__file__).read_text(encoding="utf-8")
+        load_idx = src.index("load_dotenv(")
+        key_idx = src.index('os.getenv("OPENAI_API_KEY"')
+        assert load_idx < key_idx
+
+    def test_load_dotenv_mechanism(self, tmp_path, monkeypatch):
+        """python-dotenv carrega .env para o os.environ; variável já definida
+        no sistema prevalece (override=False)."""
+        from dotenv import load_dotenv
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "TRIVOR_TESTE_SENTINELA=valor-do-env\nTRIVOR_TESTE_OVERRIDE=dois\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("TRIVOR_TESTE_OVERRIDE", "um")
+        try:
+            load_dotenv(env_file, override=False)
+            assert os.environ.get("TRIVOR_TESTE_SENTINELA") == "valor-do-env"
+            # variável do sistema prevalece sobre o .env
+            assert os.environ.get("TRIVOR_TESTE_OVERRIDE") == "um"
+        finally:
+            # load_dotenv escreve direto no os.environ (fora do monkeypatch)
+            os.environ.pop("TRIVOR_TESTE_SENTINELA", None)

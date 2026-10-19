@@ -1,19 +1,22 @@
 import sys
 import re
 import time
-import traceback
 import logging
-import urllib.request
-import urllib.error
 import tempfile
 from pathlib import Path
 from collections import Counter
-from fastapi import FastAPI, UploadFile, File, Header, Form, HTTPException, Response, Query, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
 from pydantic import BaseModel, Field
+import httpx
+
+# Carrega .env (raiz do projeto) antes de qualquer os.getenv de chave;
+# override=False: variáveis já definidas no sistema prevalecem sobre o .env
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -29,7 +32,6 @@ if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
 
 import pypdfium2 as pdfium
-import pypdfium2.raw as pdfium_c
 from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
 from market_export import generate_market_markdown_export, generate_market_docx_export, generate_market_pdf_export
 from market_service import run_market_analysis, init_market_db
@@ -42,6 +44,19 @@ CV_FIT_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_fit_prompt.md'
 RECRUITER_PROMPT_FILE = KNOWLEDGE_DIR / 'recruiter_prompt.md'
 COVER_LETTER_PROMPT_FILE = KNOWLEDGE_DIR / 'cover_letter_prompt.md'
 CV_DIFF_PROMPT_FILE = KNOWLEDGE_DIR / 'cv_diff_prompt.md'
+
+# Timeout global das chamadas LLM: 120s no total (gerações longas), 10s para
+# abrir a conexão — sem timeout, uma base_url morta pendura o request por um tempo indeterminado.
+_LLM_TIMEOUT = httpx.Timeout(120, connect=10.0)
+
+
+def _mask_key_preview(key: str) -> str:
+    """Preview da chave para logs: apenas o SUFIXO (últimos 4 chars).
+    O prefixo nunca vai para o banco de logs (retention 90d)."""
+    if not key or len(key) <= 4:
+        return "***"
+    return f"…{key[-4:]}"
+
 
 def _get_provider_for_tool(tool: str):
     """Retorna o melhor provider para uma ferramenta, ou None."""
@@ -166,6 +181,18 @@ init_market_db(DB_FILE)
 _md_cache: dict[str, str] = {}
 _ALLOWED_EXTS = {'.pdf', '.docx', '.doc', '.txt'}
 _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def _format_exts(exts: set[str]) -> str:
+    """Monta a lista de extensões em PT-BR ('.doc, .docx, .pdf ou .txt') a partir do set."""
+    ordered = sorted(exts)
+    if len(ordered) <= 1:
+        return ordered[0] if ordered else ""
+    return ", ".join(ordered[:-1]) + " ou " + ordered[-1]
+
+
+# Fonte única da lista de extensões permitidas (inclui .doc) para TODAS as mensagens 400
+_SUPPORTED_EXTS_MSG = _format_exts(_ALLOWED_EXTS)
 
 # Correções exatas de OCR — SEM regex genéricas
 _FIXES: list[tuple[str, str]] = [
@@ -332,7 +359,6 @@ def _extract_pdf_links(pdf_path: str) -> list[str]:
 
 def _detect_hyperlinks(text: str) -> list[dict[str, str]]:
     """Detecta hyperlinks no texto convertido para markdown."""
-    import urllib.parse
     results = []
     seen = set()
 
@@ -415,7 +441,6 @@ def _detect_sensitive_data(text: str) -> list[dict]:
             encontrados.append({"tipo": "rg", "descricao": "RG detectado no currículo", "exemplo": match})
 
     # CTPS
-    ctps_pattern = r'\b\d{6,9}\b'
     if 'ctps' in text.lower() or 'carteira de trabalho' in text.lower():
         encontrados.append({"tipo": "ctps", "descricao": "CTPS mencionada no currículo", "exemplo": "CTPS"})
 
@@ -597,6 +622,18 @@ def _dedupe_keep_order(items: list) -> list:
     return out
 
 
+# Peso de um requisito "nice to have" na nota de fit: vale metade de um obrigatório
+NICE_TO_HAVE_WEIGHT = 0.5
+
+
+def calc_fit_score(cobertos: list, nice_cobertas: list, total_units: float) -> float:
+    """Nota de fit 0-100: cada requisito obrigatório coberto vale 1, cada
+    desejável (nice to have) vale NICE_TO_HAVE_WEIGHT — normalizado pelo
+    total de unidades da vaga. Reutilizada pelo _compute_job_fit e pelo
+    ranking do /api/market/cv-fit."""
+    return round(100 * (len(cobertos) + NICE_TO_HAVE_WEIGHT * len(nice_cobertas)) / total_units, 1)
+
+
 def _compute_job_fit(cv_text: str, job_description: str) -> dict:
     """Fit determinístico CV × vaga única: extrai requisitos da descrição da vaga
     (heurística do módulo de mercado + dicionário de skills canônicas) e mede a
@@ -621,7 +658,7 @@ def _compute_job_fit(cv_text: str, job_description: str) -> dict:
     nice_cobertas = [t for t in nice_to_have if _term_in_text(t, cv_norm)]
     nice_faltantes = [t for t in nice_to_have if not _term_in_text(t, cv_norm)]
 
-    total_units = len(requirements) + 0.5 * len(nice_to_have)
+    total_units = len(requirements) + NICE_TO_HAVE_WEIGHT * len(nice_to_have)
     if total_units <= 0:
         return {
             "calculado": False,
@@ -633,7 +670,7 @@ def _compute_job_fit(cv_text: str, job_description: str) -> dict:
             "resumo": "Não foi possível extrair requisitos da descrição fornecida. Cole a descrição completa da vaga (com a seção de requisitos).",
         }
 
-    nota = round(100 * (len(cobertos) + 0.5 * len(nice_cobertas)) / total_units, 1)
+    nota = calc_fit_score(cobertos, nice_cobertas, total_units)
     resumo = (
         f"{len(cobertos)} de {len(requirements)} requisito(s) identificado(s) na vaga aparecem no currículo."
         + (f" Adicione {len(faltantes)} item(ns) em falta para elevar a aderência." if faltantes else " Todos os requisitos identificados estão cobertos.")
@@ -975,7 +1012,7 @@ async def analyze_cv(
             raise HTTPException(status_code=400, detail="Arquivo vazio.")
         ext = os.path.splitext(cv_file.filename or "")[1].lower()
         if ext not in _ALLOWED_EXTS:
-            raise HTTPException(status_code=400, detail="Formato de arquivo não suportado.")
+            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado. Use {_SUPPORTED_EXTS_MSG}.")
         if len(content) > _MAX_FILE_SIZE:
             raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
@@ -1115,7 +1152,7 @@ async def analyze_cv(
             if not base_url:
                 base_url = "http://localhost:20128/v1"  # omniroute local
 
-            client = OpenAI(api_key=key, base_url=base_url)
+            client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
 
             # Carregar prompts — análise em 2 passes (estrutura → qualidade).
             # O prompt monolítico cv_analysis_prompt.md continua em knowledge/
@@ -1562,7 +1599,7 @@ Retorne o JSON com pontos_fortes e pontos_fracos, com citações literais do cur
                 status_code=200,
                 duration_ms=0,
                 model=selected_model,
-                api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+                api_key_preview=_mask_key_preview(key),
                 response_summary=response_summary_json,
                 extracted_text=extracted_truncated,
                 llm_prompt=prompt_truncated,
@@ -1600,7 +1637,7 @@ async def market_cv_fit(
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
     ext = os.path.splitext(cv_file.filename or "")[1].lower()
     if ext not in _ALLOWED_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+        raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado. Use {_SUPPORTED_EXTS_MSG}.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
@@ -1629,7 +1666,7 @@ async def market_cv_fit(
         conn.close()
 
     if not rows:
-        raise HTTPException(status_code=400, detail="Base de mercado vazia. Rode uma análise de mercado primeiro (página /market).")
+        raise HTTPException(status_code=400, detail="Base de mercado vazia. Rode uma análise de mercado primeiro (aba Mercado).")
 
     cv_norm = _norm_text(cv_text)
     results = []
@@ -1642,14 +1679,14 @@ async def market_cv_fit(
             reqs, nice = [], []
         reqs = [r for r in reqs if isinstance(r, str) and r.strip()]
         nice = [n for n in nice if isinstance(n, str) and n.strip()]
-        total_units = len(reqs) + 0.5 * len(nice)
+        total_units = len(reqs) + NICE_TO_HAVE_WEIGHT * len(nice)
         if total_units <= 0:
             continue
         cobertos = [t for t in reqs if _term_in_text(t, cv_norm)]
         faltantes = [t for t in reqs if not _term_in_text(t, cv_norm)]
         nice_cobertas = [t for t in nice if _term_in_text(t, cv_norm)]
         nice_faltantes = [t for t in nice if not _term_in_text(t, cv_norm)]
-        nota = round(100 * (len(cobertos) + 0.5 * len(nice_cobertas)) / total_units, 1)
+        nota = calc_fit_score(cobertos, nice_cobertas, total_units)
         results.append({
             "id": job_id,
             "titulo": title,
@@ -1943,7 +1980,7 @@ async def cv_semantic_fit(
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
     ext = os.path.splitext(cv_file.filename or "")[1].lower()
     if ext not in _ALLOWED_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+        raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado. Use {_SUPPORTED_EXTS_MSG}.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
@@ -2012,7 +2049,7 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url)
+    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2062,7 +2099,7 @@ Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JS
             status_code=200,
             duration_ms=int(response_time_ms),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             response_summary=json.dumps(
                 {"requisitos": len(reqs_list), "sugestoes": len(sugg_list)},
                 ensure_ascii=False,
@@ -2088,7 +2125,7 @@ Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JS
             status_code=500,
             duration_ms=int((time.time() - t0) * 1000),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao gerar o fit semântico. Verifique a chave de API e tente novamente.")
@@ -2120,7 +2157,7 @@ async def cv_recruiter_sim(
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
     ext = os.path.splitext(cv_file.filename or "")[1].lower()
     if ext not in _ALLOWED_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+        raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado. Use {_SUPPORTED_EXTS_MSG}.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
@@ -2191,7 +2228,7 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url)
+    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2239,7 +2276,7 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
             status_code=200,
             duration_ms=int(response_time_ms),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             response_summary=json.dumps(
                 {"veredito": sim.get('veredito'), "confianca": sim.get('confianca')},
                 ensure_ascii=False,
@@ -2265,7 +2302,7 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
             status_code=500,
             duration_ms=int((time.time() - t0) * 1000),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao rodar a simulação do recrutador. Verifique a chave de API e tente novamente.")
@@ -2341,7 +2378,7 @@ async def cv_cover_letter(
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
     ext = os.path.splitext(cv_file.filename or "")[1].lower()
     if ext not in _ALLOWED_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .pdf, .docx ou .txt.")
+        raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado. Use {_SUPPORTED_EXTS_MSG}.")
     if len(content) > _MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
@@ -2412,7 +2449,7 @@ CURRÍCULO DO CANDIDATO (texto extraído, Markdown):
 
 Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url)
+    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2460,7 +2497,7 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
             status_code=200,
             duration_ms=int(response_time_ms),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             response_summary=json.dumps(
                 {"formato": carta.get('formato'), "fatos_usados": len(carta.get('fatos_usados', []))},
                 ensure_ascii=False,
@@ -2486,7 +2523,7 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
             status_code=500,
             duration_ms=int((time.time() - t0) * 1000),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao gerar a cover letter. Verifique a chave de API e tente novamente.")
@@ -2520,7 +2557,7 @@ async def cv_diff(
             raise HTTPException(status_code=400, detail=f"Arquivo {rotulo} vazio.")
         ext = os.path.splitext(uf.filename or "")[1].lower()
         if ext not in _ALLOWED_EXTS:
-            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado ({rotulo}). Use .pdf, .docx, .doc ou .txt.")
+            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado ({rotulo}). Use {_SUPPORTED_EXTS_MSG}.")
         if len(content) > _MAX_FILE_SIZE:
             raise HTTPException(status_code=400, detail=f"Arquivo {rotulo} excede 10MB.")
         return content, ext
@@ -2600,7 +2637,7 @@ VERSÃO NOVA DO CURRÍCULO (texto extraído, Markdown):
 
 Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o JSON exato."""
 
-    client = OpenAI(api_key=key, base_url=base_url)
+    client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
     try:
         start_time = time.time()
         response = client.chat.completions.create(
@@ -2648,7 +2685,7 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
             status_code=200,
             duration_ms=int(response_time_ms),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             response_summary=json.dumps(
                 {
                     "melhorias": len(narrativa.get('melhorias', [])),
@@ -2682,7 +2719,7 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
             status_code=500,
             duration_ms=int((time.time() - t0) * 1000),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Erro ao comparar as versões do currículo. Verifique a chave de API e tente novamente.")
@@ -2714,7 +2751,7 @@ async def analyze_ia(
     if not base_url or base_url.strip() == "":
         base_url = "https://api.openai.com/v1"
     try:
-        client = OpenAI(api_key=key, base_url=base_url)
+        client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
         response = client.chat.completions.create(
             model=selected_model,
             messages=[
@@ -2742,7 +2779,9 @@ async def analyze_ia(
 # ---------------------------------------------------------------------------
 
 @app.post('/api/market/analyze')
+@limiter.limit("10/minute")
 async def analyze_market(
+    request: Request,
     api_key: str = Form(None),
     api_url: str = Form(None),
     model_name: str = Form(None),
@@ -2766,7 +2805,7 @@ async def analyze_market(
                 api_url = prov.get('apiUrl') or api_url
                 model_name = prov.get('modelName') or model_name
         except Exception:
-            pass
+            logger.warning(f"[MARKET/ANALYZE] provider_id={provider_id} não resolvido (TRIVOR_IAS inválida ou ausente); segue com fallback de chave.")
 
     # Use system-level OPENAI_API_KEY as primary fallback before checking stored providers
     key = api_key or os.getenv("OPENAI_API_KEY", "")
@@ -2788,11 +2827,10 @@ async def analyze_market(
     if not base_url or base_url.strip() == "":
         base_url = "https://api.openai.com/v1"
 
-    db_file = DB_FILE
     start_time = time.time()
 
     try:
-        client = OpenAI(api_key=key, base_url=base_url)
+        client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
         report = run_market_analysis(
             db_file=DB_FILE,
             client=client,
@@ -2807,10 +2845,10 @@ async def analyze_market(
         )
         elapsed = round(time.time() - start_time, 2)
         return {"success": True, "report": report, "model": selected_model, "elapsed_seconds": elapsed}
-    except Exception as e:
-        logger.error(f"[MARKET ERROR] {e}")
-        logger.debug(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Erro ao processar inteligência de mercado: {str(e)}")
+    except Exception:
+        # Detalhe vai só para os logs (com stacktrace); o cliente recebe mensagem genérica
+        logger.exception("[MARKET ERROR] falha interna na análise de mercado")
+        raise HTTPException(status_code=500, detail="Falha interna na análise de mercado. Tente novamente em instantes.")
 
 
 # ---------------------------------------------------------------------------
@@ -3151,13 +3189,13 @@ async def analyze_linkedin(
     if provider_id:
         try:
             providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p['id'] == provider_id), None)
+            prov = next((p for p in providers if p.get('id') == provider_id), None)
             if prov and prov.get('usedFor') not in ('none', 'market'):
                 api_key = prov['apiKey']
                 api_url = prov.get('apiUrl') or api_url
                 model_name = prov.get('modelName') or model_name
         except Exception:
-            pass
+            logger.warning(f"[LINKEDIN] provider_id={provider_id} não resolvido (TRIVOR_IAS inválida ou ausente); segue com fallback de chave.")
 
     # Auto-select provider for linkedin if not provided
     if not api_key or not api_key.strip():
@@ -3215,9 +3253,9 @@ async def analyze_linkedin(
 
     try:
         if not base_url or 'openai.com' in base_url:
-            client = OpenAI(api_key=key)
+            client = OpenAI(api_key=key, timeout=_LLM_TIMEOUT)
         else:
-            client = OpenAI(api_key=key, base_url=base_url)
+            client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
 
         start_time = time.time()
         comp = client.chat.completions.create(**create_kwargs)
@@ -3265,7 +3303,7 @@ async def analyze_linkedin(
             status_code=200,
             duration_ms=int(response_time_ms),
             model=selected_model,
-            api_key_preview=key[:8] + "..." if len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
         )
 
         return data
@@ -3277,7 +3315,7 @@ async def analyze_linkedin(
             status_code=500,
             duration_ms=0,
             model=selected_model,
-            api_key_preview=key[:8] + "..." if key and len(key) > 8 else "***",
+            api_key_preview=_mask_key_preview(key),
         )
         return error_response(
             code="ANALYSIS_ERROR",
