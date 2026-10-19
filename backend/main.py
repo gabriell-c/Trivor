@@ -62,6 +62,29 @@ def _get_provider_for_tool(tool: str):
     except Exception:
         return None
 
+
+def _parse_llm_json(result_text: str) -> dict:
+    """Faz parse da resposta JSON da LLM (response_format json_object).
+    Se a resposta vier com markdown/lixo, tenta extrair o primeiro {...};
+    se tudo falhar, devolve um dict mínimo com o texto bruto (o endpoint decide)."""
+    text = (result_text or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {"raw": result_text}
+    except json.JSONDecodeError:
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                data = json.loads(match.group())
+                return data if isinstance(data, dict) else {}
+            except json.JSONDecodeError:
+                pass
+        return {"raw": result_text, "error": "Não foi possível parsear JSON"}
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -1094,13 +1117,16 @@ async def analyze_cv(
 
             client = OpenAI(api_key=key, base_url=base_url)
 
-            # Carregar prompt
-            prompt_file = KNOWLEDGE_DIR / 'cv_analysis_prompt.md'
-            if prompt_file.exists():
-                with open(prompt_file, 'r', encoding='utf-8') as f:
-                    sys_prompt = f.read()
+            # Carregar prompts — análise em 2 passes (estrutura → qualidade).
+            # O prompt monolítico cv_analysis_prompt.md continua em knowledge/
+            # apenas para referência/histórico; o endpoint usa os prompts divididos.
+            prompt_estrut_file = KNOWLEDGE_DIR / 'cv_analysis_estrutura.md'
+            prompt_qual_file = KNOWLEDGE_DIR / 'cv_analysis_qualidade.md'
+            if prompt_estrut_file.exists():
+                with open(prompt_estrut_file, 'r', encoding='utf-8') as f:
+                    sys_prompt_estrut = f.read()
             else:
-                sys_prompt = """Você é um especialista em análise de currículos (CV) para ATS e mercado de trabalho.
+                sys_prompt_estrut = """Você é um especialista em análise de currículos (CV) para ATS e mercado de trabalho.
 
 REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
 1. CAPITALIZAÇÃO: Preserve EXATAMENTE como no currículo original. Não invente capitalização.
@@ -1165,9 +1191,20 @@ REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
   "sugestoes": ["<string>"]
 }"""
 
-            # Montar user message
+            # Fallback do passo 2 (arquivo ausente → prompt mínimo, mesmo padrão)
+            if prompt_qual_file.exists():
+                with open(prompt_qual_file, 'r', encoding='utf-8') as f:
+                    sys_prompt_qual = f.read()
+            else:
+                sys_prompt_qual = ("Você é um especialista em QUALIDADE de currículos (CV). "
+                                   "Avalie a fórmula XYZ, a presença de métricas e a narrativa, e retorne um JSON "
+                                   "válido com os campos pontos_fortes e pontos_fracos. Cada item deve incluir um "
+                                   "trecho LITERAL do CV no formato (trecho: 'texto'); se não houver trecho que "
+                                   "sustente o item, omita a citação — NUNCA invente trechos nem informação.")
+
+            # Montar user message — PASSO 1 (estrutura)
             area_info = target_role or area or ''
-            user_content = f"""ANALISE ESTE CURRÍCULO COMPLETAMENTE.
+            user_content_estrut = f"""ANALISE A ESTRUTURA DESTE CURRÍCULO (PASSO 1 DE 2).
 
 CURRÍCULO (Markdown):
 ---
@@ -1183,31 +1220,98 @@ INFORMAÇÕES ADICIONAIS:
 
 {f'- O candidato busca posição na área de: {area_info}' if area_info else '- ÁREA DO CANDIDATO NÃO ESPECIFICADA: não assuma nenhuma área (não assuma que é tecnologia, desenvolvimento, etc.). Analise o CV de forma genérica, avaliando apenas o que está escrito.'}
 
-Faça uma análise COMPLETA e DETALHADA do currículo."""
+Avalie APENAS o escopo deste passo (estrutura, seções, ortografia, erros comuns, ATS e checklist do guia). A crítica de qualidade (fórmula XYZ, métricas, narrativa) será feita no passo 2."""
 
-            response = client.chat.completions.create(
+            # PASSO 1 — estrutura (nota base, seções, ortografia, erros comuns, ATS)
+            response_estrut = client.chat.completions.create(
                 model=selected_model,
                 messages=[
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": user_content},
+                    {"role": "system", "content": sys_prompt_estrut},
+                    {"role": "user", "content": user_content_estrut},
                 ],
                 temperature=0.3,
-                max_tokens=4000,
+                max_tokens=3500,
                 response_format={"type": "json_object"},
             )
 
-            result_text = response.choices[0].message.content
+            analysis = _parse_llm_json(response_estrut.choices[0].message.content)
 
-            # Parsear resultado JSON
+            # PASSO 2 — qualidade (XYZ, métricas, narrativa), com o resumo do
+            # passo 1 como contexto. Sequencial de propósito: o passo 2 depende
+            # do resultado do passo 1. Se falhar, segue com a estrutura só.
+            resumo_pass1 = {
+                "resumo_executivo": analysis.get("resumo_executivo"),
+                "analise_secoes": analysis.get("analise_secoes"),
+                "analise_ats": analysis.get("analise_ats"),
+                "erros_comuns_detectados": analysis.get("erros_comuns_detectados"),
+            }
+            user_content_qual = f"""ANALISE A QUALIDADE DESTE CURRÍCULO (PASSO 2 DE 2).
+
+CURRÍCULO (Markdown):
+---
+{markdown_text}
+---
+
+CONTEXTO DO PASSO 1 (análise de estrutura, JSON):
+---
+{json.dumps(resumo_pass1, ensure_ascii=False)[:4000]}
+---
+
+INFORMAÇÕES ADICIONAIS:
+- Target role: {area_info or 'Não especificado'}
+
+{f'- O candidato busca posição na área de: {area_info}' if area_info else '- ÁREA DO CANDIDATO NÃO ESPECIFICADA: não assuma nenhuma área (não assuma que é tecnologia, desenvolvimento, etc.). Analise a qualidade de forma genérica.'}
+
+Avalie APENAS a qualidade (fórmula XYZ, métricas, narrativa) seguindo o prompt de sistema.
+Retorne o JSON com pontos_fortes e pontos_fracos, com citações literais do currículo."""
+
+            response_qual = None
             try:
-                analysis = json.loads(result_text)
-            except json.JSONDecodeError:
-                # Tentar extrair JSON do texto
-                match = re.search(r'\{[\s\S]*\}', result_text)
-                if match:
-                    analysis = json.loads(match.group())
-                else:
-                    analysis = {"raw": result_text, "error": "Não foi possível parsear JSON"}
+                response_qual = client.chat.completions.create(
+                    model=selected_model,
+                    messages=[
+                        {"role": "system", "content": sys_prompt_qual},
+                        {"role": "user", "content": user_content_qual},
+                    ],
+                    temperature=0.2,
+                    max_tokens=1500,
+                    response_format={"type": "json_object"},
+                )
+                qualidade = _parse_llm_json(response_qual.choices[0].message.content)
+                # Merge: só os campos de qualidade vêm do passo 2; o resto
+                # permanece do passo 1 (contrato final = campos de hoje).
+                for campo in ("pontos_fortes", "pontos_fracos"):
+                    val = qualidade.get(campo)
+                    analysis[campo] = [i for i in val if isinstance(i, str)] if isinstance(val, list) else []
+            except Exception as qual_err:
+                logger.warning(f"[CV] Passo 2 (qualidade) falhou; mantendo apenas a análise estrutural: {qual_err}")
+
+            # VALIDAÇÃO DE CITAÇÕES (passo 2): cada trecho em (trecho: '...')
+            # tem que existir no texto extraído (comparação ignora acentos/maiúsculas).
+            # Trecho inválido → remover a citação, manter o item.
+            import unicodedata as _ud_cit
+            def _norm_trecho(s: str) -> str:
+                return _ud_cit.normalize('NFD', (s or '').lower()).encode('ascii', 'ignore').decode('ascii')
+            _norm_texto_cv = _norm_trecho(markdown_text)
+            _citacao_pat = re.compile(
+                r"\(\s*trecho\s*:\s*[\"'“”‘’]((?:(?!\s*[\"'”’]\)).)*)[\"'“”‘’]\s*\)",
+                re.DOTALL,
+            )
+            for _campo_cit in ("pontos_fortes", "pontos_fracos"):
+                if not isinstance(analysis.get(_campo_cit), list):
+                    continue
+                def _validar_citacao(item: str) -> str:
+                    def _sub(m):
+                        trecho = m.group(1).strip()
+                        if trecho and _norm_trecho(trecho) in _norm_texto_cv:
+                            return m.group(0)
+                        return ""
+                    limpo = _citacao_pat.sub(_sub, item)
+                    return re.sub(r'\s{2,}', ' ', limpo).strip()
+                analysis[_campo_cit] = [
+                    s for s in (_validar_citacao(i) for i in analysis[_campo_cit] if isinstance(i, str))
+                    if s
+                ]
 
             # VALIDAÇÃO DE GROUNDING: remover erros ortográficos alucinados
             # Critérios de remoção (todos devem passar para manter o erro):
@@ -1421,10 +1525,14 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                 analysis['resumo_executivo'] = re.sub(r'([.,;:!])\s*\1+', r'\1', analysis['resumo_executivo'])
 
             # Adicionar metadados compatíveis com o frontend
+            # Uso_tokens: soma dos 2 passes (estrutura + qualidade)
+            _u1 = getattr(response_estrut, 'usage', None)
+            _u2 = getattr(response_qual, 'usage', None) if response_qual is not None else None
             analysis['uso_tokens'] = {
-                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                "total_tokens": (response.usage.prompt_tokens + response.usage.completion_tokens) if response.usage else 0,
+                "prompt_tokens": (_u1.prompt_tokens if _u1 else 0) + (_u2.prompt_tokens if _u2 else 0),
+                "completion_tokens": (_u1.completion_tokens if _u1 else 0) + (_u2.completion_tokens if _u2 else 0),
+                "total_tokens": ((_u1.prompt_tokens + _u1.completion_tokens) if _u1 else 0)
+                                + ((_u2.prompt_tokens + _u2.completion_tokens) if _u2 else 0),
             }
             analysis['api_info'] = {
                 "model": selected_model,
@@ -1443,7 +1551,8 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
             analysis['_links'] = [l['url'] for l in links_info]
 
             # Salvar log com texto extraído e prompt
-            llm_prompt = f"SYSTEM:\n{sys_prompt}\n\nUSER:\n{user_content}"
+            llm_prompt = (f"SYSTEM (passo 1):\n{sys_prompt_estrut}\n\nUSER (passo 1):\n{user_content_estrut}\n\n"
+                          f"SYSTEM (passo 2):\n{sys_prompt_qual}\n\nUSER (passo 2):\n{user_content_qual}")
             extracted_truncated = markdown_text[:5000] if markdown_text else ""
             prompt_truncated = llm_prompt[:8000] if llm_prompt else ""
             response_summary_json = json.dumps(analysis, ensure_ascii=False)

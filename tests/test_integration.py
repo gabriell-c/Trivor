@@ -207,6 +207,130 @@ class TestAnalyzeCV:
 
 
 # ============================================================================
+# Análise de CV em 2 passes (estrutura + qualidade) — LLM mockada
+# ============================================================================
+
+class _FakeLLMUsage:
+    def __init__(self, prompt_tokens: int, completion_tokens: int):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = prompt_tokens + completion_tokens
+
+
+class _FakeLLMResponse:
+    """Simula a resposta de chat.completions.create (provider mockado):
+    .choices[0].message.content = JSON do passo; .usage = tokens do passo."""
+
+    def __init__(self, payload: dict, prompt_tokens: int = 0, completion_tokens: int = 0):
+        class _Message:
+            def __init__(self, content: str):
+                self.content = content
+
+        class _Choice:
+            def __init__(self):
+                self.message = _Message(json.dumps(payload, ensure_ascii=False))
+
+        self.choices = [_Choice()]
+        self.usage = _FakeLLMUsage(prompt_tokens, completion_tokens)
+
+
+class TestAnalyzeCVTwoPasses:
+    def test_analyze_cv_two_passes_merged(self, client):
+        """Com o client OpenAI mockado, os 2 passes rodam sequenciais e a
+        resposta final é o merge dos campos: estrutura do pass 1 + pontos de
+        qualidade do pass 2, com citações validadas contra o texto do CV."""
+        cv_text = (
+            "Maria Silva\n"
+            "maria.silva@email.com | São Paulo, SP\n"
+            "Linkedin: linkedin.com/in/mariasilva\n"
+            "\n"
+            "Resumo\n"
+            "Analista de suporte com 4 anos de experiência em atendimento.\n"
+            "\n"
+            "Experiência\n"
+            "Empresa ABC — Analista de Suporte (Mar/2022 – Presente)\n"
+            "- Migrei 300 clientes para o novo CRM, reduzindo tempo de resposta em 40%\n"
+            "- Usei MySQL 8.0 para relatórios diários\n"
+            "\n"
+            "Formação\n"
+            "Técnico em Administração — SENAC (2018-2020)\n"
+        )
+        passo1 = {
+            "nota": 74.0,
+            "score_ats": 80,
+            "resumo_executivo": "Currículo estruturado, com experiência bem apresentada.",
+            "foto_detectada": False,
+            "foto_recomendada": False,
+            "ordem_secoes": {"correta": True, "problema": None, "como_corrigir": None},
+            "palavras_chave_presentes": ["CRM", "atendimento"],
+            "palavras_chave_faltantes": [],
+            "erros_ortograficos": [],
+            "erros_comuns_detectados": [],
+            "analise_secoes": {
+                "experiencia_profissional": {
+                    "status": "ok", "score": 80, "problema": None, "como_corrigir": None, "presente": True
+                }
+            },
+            "analise_ats": {
+                "score_ats": 80,
+                "palavras_chave_faltantes": [],
+                "gargalos_formatacao": [],
+                "veredito_robos": "aprovado",
+                "explicacao": "Formatação limpa e seções completas.",
+            },
+        }
+        passo2 = {
+            "pontos_fortes": [
+                "Métricas concretas nos bullets (trecho: 'Migrei 300 clientes para o novo CRM, reduzindo tempo de resposta em 40%')",
+                "Experiência relevante e quantificada (trecho: 'Analista de suporte com 4 anos de experiência em atendimento')",
+            ],
+            "pontos_fracos": [
+                "Formação sem detalhes de conteúdo (trecho: 'trecho inventado que não existe no CV')",
+            ],
+        }
+
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "sk-teste-1234567890", "TRIVOR_IAS": "[]"}),
+            patch("main._extract_cv_text", return_value=(cv_text, "mock", False)),
+            patch("main.OpenAI") as mock_openai,
+        ):
+            mock_openai.return_value.chat.completions.create.side_effect = [
+                _FakeLLMResponse(passo1, 100, 200),
+                _FakeLLMResponse(passo2, 300, 400),
+            ]
+            r = client.post(
+                "/api/cv/analyze",
+                files={"cv_file": ("Maria_Silva_CV.txt", cv_text.encode("utf-8"), "text/plain")},
+                data={"api_key": "sk-teste-1234567890", "area": "suporte"},
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+
+        # Os 2 passes rodaram sequenciais (passo 1 → passo 2)
+        assert mock_openai.return_value.chat.completions.create.call_count == 2
+
+        # Merge: campos estruturais vêm do passo 1
+        assert data["nota"] == 74.0
+        assert data["resumo_executivo"].startswith("Currículo estruturado")
+        assert data["analise_ats"]["veredito_robos"] == "aprovado"
+        assert data["analise_secoes"]["experiencia_profissional"]["status"] == "ok"
+
+        # Merge: campos de qualidade vêm do passo 2, com citação válida mantida
+        assert any("Métricas concretas" in p for p in data["pontos_fortes"])
+        assert any("Migrei 300 clientes" in p for p in data["pontos_fortes"])
+        assert any("Experiência relevante" in p for p in data["pontos_fortes"])
+
+        # Citação inventada foi removida; o item permaneceu sem o trecho
+        assert data["pontos_fracos"] == ["Formação sem detalhes de conteúdo"]
+
+        # uso_tokens = soma dos 2 passes
+        assert data["uso_tokens"]["prompt_tokens"] == 400
+        assert data["uso_tokens"]["completion_tokens"] == 600
+        assert data["uso_tokens"]["total_tokens"] == 1000
+
+
+# ============================================================================
 # Analyze LinkedIn
 # ============================================================================
 
