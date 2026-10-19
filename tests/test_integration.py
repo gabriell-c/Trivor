@@ -56,6 +56,7 @@ class TestHealth:
         assert "/api/market/analyze" in paths
         assert "/api/market/cv-fit" in paths
         assert "/api/cv/semantic-fit" in paths
+        assert "/api/cv/recruiter-sim" in paths
 
 
 # ============================================================================
@@ -501,3 +502,70 @@ class TestSemanticFitValidation:
         assert _semantic_fit_evidence_valid("banco relacional", cv) is False
         # Citação curta demais (1 palavra relevante) e sem match exato → inválido
         assert _semantic_fit_evidence_valid("Docker", cv) is False
+
+
+# ============================================================================
+# Simulador de Recrutador CV × Vaga (LLM) — /api/cv/recruiter-sim
+# ============================================================================
+
+class TestRecruiterSimEndpoint:
+    def test_short_description_returns_400(self, client):
+        r = client.post(
+            "/api/cv/recruiter-sim",
+            files={"cv_file": ("cv.txt", b"curriculo", "text/plain")},
+            data={"job_description": "curto"},
+        )
+        assert r.status_code == 400
+        assert "40 caracteres" in r.json().get("detail", "")
+
+    def test_unsupported_extension(self, client):
+        r = client.post(
+            "/api/cv/recruiter-sim",
+            files={"cv_file": ("cv.exe", b"MZ", "application/octet-stream")},
+            data={"job_description": LONG_JOB_DESC},
+        )
+        assert r.status_code == 400
+        assert "Formato" in r.json().get("detail", "")
+
+    def test_missing_api_key_returns_400(self, client):
+        # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
+            patch("main._get_provider_for_tool", return_value=None),
+        ):
+            r = client.post(
+                "/api/cv/recruiter-sim",
+                files={"cv_file": ("cv.txt", b"Texto do curriculo", "text/plain")},
+                data={"job_description": LONG_JOB_DESC},
+            )
+        assert r.status_code == 400
+        assert "Chave de API" in r.json().get("detail", "")
+
+
+class TestRecruiterSimValidation:
+    """Pós-processo do simulador (normalização), testável diretamente."""
+
+    def test_normalizes_and_truncates(self):
+        from main import _recruiter_sim_validate
+        sim = {
+            "veredito": "DUVIDA",
+            "confianca": 12,
+            "por_que": ["a", "", "b", "c", "d", "e", "f", "g"],
+            "sinais_vermelhos": ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"],
+            "perguntas_de_entrevista": ["p1", "p2"],
+        }
+        out = _recruiter_sim_validate(sim)
+        assert out["veredito"] == "duvida"
+        assert out["confianca"] == 10.0
+        assert out["por_que"] == ["a", "b", "c", "d", "e", "f"]
+        assert out["sinais_vermelhos"] == ["s1", "s2", "s3", "s4", "s5"]
+        assert out["perguntas_de_entrevista"] == ["p1", "p2"]
+
+    def test_invalid_verdict_and_confidence_fall_back(self):
+        from main import _recruiter_sim_validate
+        out = _recruiter_sim_validate({"veredito": "nao_sei", "confianca": "alto"})
+        assert out["veredito"] == "duvida"
+        assert out["confianca"] == 5
+        assert out["por_que"] == []
+        assert out["sinais_vermelhos"] == []
+        assert out["perguntas_de_entrevista"] == []

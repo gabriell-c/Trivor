@@ -1,8 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown } from 'lucide-react'
-import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico } from '../types/analysis'
+import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play } from 'lucide-react'
+import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
@@ -58,6 +58,11 @@ export default function CurriculoTool() {
   const [semanticError, setSemanticError] = useState<string | null>(null)
   const [copiedSuggestion, setCopiedSuggestion] = useState<number | null>(null)
 
+  // Simulação de recrutador CV × vaga (LLM — /api/cv/recruiter-sim), sob demanda
+  const [recruiterSim, setRecruiterSim] = useState<RecrutadorSim | null>(null)
+  const [recruiterLoading, setRecruiterLoading] = useState(false)
+  const [recruiterError, setRecruiterError] = useState<string | null>(null)
+
   const handleExport = async () => {
     if (!res) return
     setExporting(exportFormat)
@@ -108,6 +113,8 @@ export default function CurriculoTool() {
     setRes(null)
     setSemanticFit(null)
     setSemanticError(null)
+    setRecruiterSim(null)
+    setRecruiterError(null)
     const formData = new FormData()
     formData.append('cv_file', file)
     if (area) formData.set('area', area)
@@ -179,6 +186,43 @@ export default function CurriculoTool() {
       setSemanticError(err instanceof Error ? err.message : 'Falha na análise semântica da vaga.')
     } finally {
       setSemanticLoading(false)
+    }
+  }
+
+  // Simulação de recrutador: a IA faz o papel de um recrutador da área,
+  // lê o CV contra a vaga atual e devolve veredito, confiança, motivos,
+  // sinais vermelhos e as 3 perguntas da entrevista.
+  const runRecruiterSim = async (file: File) => {
+    setRecruiterSim(null)
+    setRecruiterError(null)
+    setRecruiterLoading(true)
+    const formData = new FormData()
+    formData.append('cv_file', file)
+    formData.set('job_description', jobTitle.trim())
+    if (jobLevel !== 'Sem nível específico') formData.set('target_role', jobLevel.toLowerCase())
+    if (area) formData.set('area', area)
+    const provider = getBestProvider(['curriculo'])
+    if (provider) {
+      formData.set('api_key', provider.apiKey)
+      formData.set('api_url', provider.apiUrl)
+      formData.set('model_name', provider.modelName)
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cv/recruiter-sim`, {
+        method: 'POST',
+        body: formData
+      })
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null)
+        throw new Error(errData?.detail || `Erro HTTP ${response.status}: falha na simulação do recrutador.`)
+      }
+      const data = await response.json()
+      setRecruiterSim(data.analise ?? null)
+    } catch (err) {
+      setRecruiterError(err instanceof Error ? err.message : 'Falha na simulação do recrutador.')
+    } finally {
+      setRecruiterLoading(false)
     }
   }
 
@@ -733,6 +777,15 @@ export default function CurriculoTool() {
             />
           )}
 
+          {/* Simulação de Recrutador (LLM — /api/cv/recruiter-sim) */}
+          <RecruiterSimSection
+            sim={recruiterSim}
+            loading={recruiterLoading}
+            error={recruiterError}
+            canRun={!!selectedFile && jobTitle.trim().length >= 40}
+            onRun={() => selectedFile && runRecruiterSim(selectedFile)}
+          />
+
           {/* Palavras-chave */}
           {(res.palavras_chave_presentes?.length ?? 0) > 0 || (res.palavras_chave_faltantes?.length ?? 0) > 0 ? (
             <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
@@ -1166,7 +1219,6 @@ function SemanticFitSection({
           {fit.gap_resumido && (
             <p className="text-sm text-slate-400">{fit.gap_resumido}</p>
           )}
-
           {requisitos.length > 0 && (
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
@@ -1244,6 +1296,152 @@ function SemanticFitSection({
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const VEREDITO_BADGES: Record<RecrutadorSim['veredito'], { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
+  aprovado: { label: 'Aprovado', cls: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400', Icon: CheckCircle2 },
+  duvida: { label: 'Dúvida', cls: 'bg-amber-500/15 border-amber-500/30 text-amber-400', Icon: AlertCircle },
+  reprovado: { label: 'Reprovado', cls: 'bg-rose-500/15 border-rose-500/30 text-rose-400', Icon: XCircle }
+}
+
+function RecruiterSimSection({
+  sim,
+  loading,
+  error,
+  canRun,
+  onRun
+}: {
+  sim: RecrutadorSim | null
+  loading: boolean
+  error: string | null
+  canRun: boolean
+  onRun: () => void
+}) {
+  const badge = sim ? VEREDITO_BADGES[sim.veredito] ?? VEREDITO_BADGES.duvida : null
+  const porQue = Array.isArray(sim?.por_que) ? sim!.por_que : []
+  const sinais = Array.isArray(sim?.sinais_vermelhos) ? sim!.sinais_vermelhos : []
+  const perguntas = Array.isArray(sim?.perguntas_de_entrevista) ? sim!.perguntas_de_entrevista : []
+
+  return (
+    <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 md:p-8">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2 mb-2">
+        <Gavel className="w-4 h-4 text-indigo-400" /> Simulação de Recrutador
+      </h2>
+      <p className="text-xs text-slate-500 mb-4">
+        A IA lê seu CV como um recrutador da vaga e devolve o veredito mais honesto antes de você aplicar.
+      </p>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Simulando a leitura do recrutador (IA)...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-4">
+          <p className="text-sm text-rose-400">{error}</p>
+          {canRun && (
+            <button
+              type="button"
+              onClick={onRun}
+              className="mt-2 text-xs font-bold text-rose-300 hover:text-rose-200 transition"
+            >
+              Tentar novamente
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && !sim && (
+        <div>
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={!canRun}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Play className="w-3.5 h-3.5" /> Rodar simulação
+          </button>
+          {!canRun && (
+            <p className="text-xs text-amber-400/90 mt-3">
+              Para liberar a simulação, cole a descrição completa da vaga (mín. 40 caracteres) no campo “Descrição da vaga”.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && sim && badge && (
+        <div className="space-y-5">
+          <div className="flex items-center gap-4">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${badge.cls}`}>
+              <badge.Icon className="w-3.5 h-3.5" />
+              {badge.label}
+            </span>
+            <div className="flex flex-col">
+              <span className="text-lg font-black text-white leading-tight">
+                {sim.confianca}
+                <span className="text-xs font-medium text-slate-500"> /10</span>
+              </span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider">confiança no veredito</span>
+            </div>
+          </div>
+
+          {porQue.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Por quê</p>
+              <ul className="space-y-1.5">
+                {porQue.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-400 flex gap-2">
+                    <span className="text-indigo-400 shrink-0">•</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs font-bold text-rose-400 uppercase tracking-wider mb-2">Sinais vermelhos</p>
+            {sinais.length > 0 ? (
+              <ul className="space-y-1.5">
+                {sinais.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-400 flex gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-emerald-400">Nenhum sinal vermelho identificado para esta vaga.</p>
+            )}
+          </div>
+
+          {perguntas.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">Perguntas da entrevista</p>
+              <ol className="space-y-1.5">
+                {perguntas.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-400">
+                    <span className="font-bold text-indigo-300 mr-2">{i + 1}.</span>
+                    {item}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onRun}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white hover:border-indigo-500/40 transition"
+          >
+            <RotateCcw className="w-3 h-3" /> Rodar novamente
+          </button>
         </div>
       )}
     </div>

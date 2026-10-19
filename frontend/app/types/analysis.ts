@@ -91,6 +91,19 @@ export interface FitSemantico {
   sugestoes_de_reescrita: SugestaoReescrita[]
 }
 
+// Simulação de recrutador CV × vaga via LLM (/api/cv/recruiter-sim)
+export interface RecrutadorSim {
+  veredito: 'aprovado' | 'duvida' | 'reprovado'
+  /** Confiança no veredito, de 0 a 10 */
+  confianca: number
+  /** Motivos do veredito (3-6), fundamentados no texto do CV/vaga */
+  por_que: string[]
+  /** Sinais vermelhos que um recrutador notaria (0-5; vazio se nenhum) */
+  sinais_vermelhos: string[]
+  /** As 3 perguntas que o recrutador faria na entrevista */
+  perguntas_de_entrevista: string[]
+}
+
 export interface MarketCvFitResult {
   total_vagas: number
   vagas: MarketFitVaga[]
