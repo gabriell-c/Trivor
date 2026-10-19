@@ -1,0 +1,4 @@
+# Launchers de Windows: cmd.exe quebra a parsing de blocos `for (...)`
+# em batch com line endings LF ("...foi inesperado neste momento").
+*.bat text eol=crlf
+*.cmd text eol=crlf
