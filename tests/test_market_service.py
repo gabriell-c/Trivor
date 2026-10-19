@@ -87,7 +87,9 @@ class TestKeywordScore:
         )
         assert score > 0
 
-    def test_no_match(self):
+    def test_no_match_keeps_base(self):
+        # Design permissivo: a base é 1 e "nunca zera por falta de palavra
+        # exata" — a decisão de relevância fica com a IA.
         score = ms._keyword_score(
             "cooking recipe blogger",
             "Developer",
@@ -95,9 +97,11 @@ class TestKeywordScore:
             "Pleno",
             "Remoto"
         )
-        assert score == 0
+        assert score == 1
 
-    def test_seniority_rejection(self):
+    def test_seniority_mismatch_not_rejected(self):
+        # Senioridade virou bônus (nunca rejeita): mesmo com nível
+        # desalinhado, a vaga passa para a IA decidir.
         score = ms._keyword_score(
             "júnior developer python",
             "Developer",
@@ -105,7 +109,7 @@ class TestKeywordScore:
             "Sênior",
             "Remoto"
         )
-        assert score == 0
+        assert score > 0
 
 
 # ============================================================================
@@ -123,10 +127,14 @@ class TestPreFilterJobs:
         result = ms._pre_filter_jobs(jobs, ["Python"], "Pleno", "São Paulo", [], max_jobs=10)
         assert len(result) == 1
 
-    def test_filters_out_no_match(self):
+    def test_permissive_keywords_pass_to_ai(self):
+        # Com score base permissivo (1), vaga de stack diferente NÃO é
+        # descartada pelo pré-filtro — ela segue para a IA decidir relevância.
+        # (O pré-filtro rejeita só por keyword negativa, nacionalidade,
+        # localização e modalidade.)
         jobs = [self._make_job(title="Java Developer", desc="Java developer needed")]
         result = ms._pre_filter_jobs(jobs, ["Python"], "Pleno", "São Paulo", [], max_jobs=10)
-        assert len(result) == 0
+        assert len(result) == 1
 
     def test_negative_keywords(self):
         jobs = [
@@ -174,7 +182,9 @@ class TestInitMarketDb:
 # ============================================================================
 
 class TestGenerateMockJobsIfEmpty:
-    def test_generates_jobs(self, tmp_path):
+    def test_no_keys_leaves_base_empty(self, tmp_path, no_jsearch_env):
+        # Sem chave JSearch, a função não fabrica dados: a base permanece
+        # vazia (contrato atual — "sem dados fabricados").
         db_file = str(tmp_path / "test_mock.db")
         ms.init_market_db(db_file)
         ms.generate_mock_jobs_if_empty(db_file, "Python Dev")
@@ -183,9 +193,10 @@ class TestGenerateMockJobsIfEmpty:
         cursor.execute("SELECT COUNT(*) FROM market_raw_jobs")
         count = cursor.fetchone()[0]
         conn.close()
-        assert count > 0
+        assert count == 0
 
-    def test_no_duplicate_jobs(self, tmp_path):
+    def test_idempotent_without_keys(self, tmp_path, no_jsearch_env):
+        # Executar duas vezes sem chaves segue sem inserir nada.
         db_file = str(tmp_path / "test_mock_dup.db")
         ms.init_market_db(db_file)
         ms.generate_mock_jobs_if_empty(db_file, "Python Dev")
@@ -195,7 +206,7 @@ class TestGenerateMockJobsIfEmpty:
         cursor.execute("SELECT COUNT(*) FROM market_raw_jobs")
         count = cursor.fetchone()[0]
         conn.close()
-        assert count > 0
+        assert count == 0
 
 
 # ============================================================================
