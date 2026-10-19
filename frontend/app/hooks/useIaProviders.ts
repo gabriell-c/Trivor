@@ -17,18 +17,31 @@ export interface IAProvider {
 const STORAGE_KEY = 'trivor_ia_providers_v2';
 
 export function loadProviders(): IAProvider[] {
+  // SSR/build: localStorage não existe — volta vazio em silêncio (o
+  // useState de inicialização roda no servidor).
+  if (typeof localStorage === 'undefined') return [];
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch {}
+  } catch (err) {
+    // JSON corrompido ou storage bloqueado: parte de vazio mas deixa registro.
+    console.warn('[Trivor] Falha ao carregar providers do localStorage:', err);
+  }
   return [];
 }
 
 export function saveProviders(providers: IAProvider[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(providers));
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(providers));
+  } catch (err) {
+    // Quota excedida ou modo privado: a sessão continua funcionando, só não
+    // persiste — avisa em vez de cair.
+    console.warn('[Trivor] Falha ao salvar providers no localStorage (modo privado/quota?):', err);
+  }
 }
 
 export function getBestProvider(tools: ('curriculo' | 'market')[]): IAProvider | null {

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
@@ -35,7 +35,19 @@ import { CustomButton } from '../components/CustomButton'
 import { TagInput } from '../components/TagInput'
 import { getBestProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
+import { friendlyError } from '../lib/errors'
+import { scoreTone } from '../lib/score'
 import type { MarketAnalysisResult, MarketReport, MarketJob, MarketCvFitResult } from '../types/analysis'
+
+// Moeda → símbolo exibido. Moedas fora do mapeamento mostram o próprio
+// código (evita "R$" para EUR/GBP/etc.); vazia → padrão real (Brasil).
+function currencySymbol(code?: string): string {
+  if (code === 'USD') return 'US$'
+  if (code === 'EUR') return '€'
+  if (code === 'GBP') return '£'
+  if (code === 'BRL' || !code) return 'R$'
+  return code
+}
 
 export default function MarketIntelligencePage() {
   const [jobTitle, setJobTitle] = useState('')
@@ -85,8 +97,8 @@ export default function MarketIntelligencePage() {
         throw new Error(typeof detail === 'string' ? detail : `Falha ao calcular fit (HTTP ${res.status})`)
       }
       setFitResult(data as MarketCvFitResult)
-    } catch (err: any) {
-      setFitError(err.message || 'Erro ao calcular fit do CV com o mercado.')
+    } catch (err) {
+      setFitError(friendlyError(err, 'Falha ao calcular o fit do CV com o mercado.'))
     } finally {
       setFitLoading(false)
     }
@@ -133,10 +145,12 @@ export default function MarketIntelligencePage() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/jsearch/keys`)
       if (res.ok) {
-        const data = await res.json()
-        jsearchKeysStr = (data.keys || [])
-          .map((k: { api_key: string }) => k.api_key)
-          .join(',')
+        const data = await res.json().catch(() => null)
+        if (data) {
+          jsearchKeysStr = (data.keys || [])
+            .map((k: { api_key: string }) => k.api_key)
+            .join(',')
+        }
       }
     } catch (err) {
       // Sem chaves JSearch disponíveis (backend offline, etc.) — segue com lista vazia
@@ -146,12 +160,16 @@ export default function MarketIntelligencePage() {
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/market/analyze`, { method: 'POST', body: formData })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || 'Erro na análise')
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail = data?.detail
+        throw new Error(typeof detail === 'string' ? detail : `Erro HTTP ${res.status}: falha na análise de mercado.`)
+      }
+      if (!data) throw new Error('Resposta inválida na análise de mercado.')
       setResult(data)
       setActiveTab('results')
-    } catch (err: any) {
-      setError(err.message || 'Erro desconhecido')
+    } catch (err) {
+      setError(friendlyError(err, 'Erro desconhecido na análise de mercado.'))
     } finally {
       setLoading(false)
     }
@@ -179,14 +197,33 @@ export default function MarketIntelligencePage() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch (err: any) {
-      setError(err.message || 'Erro ao exportar')
+    } catch (err) {
+      setError(friendlyError(err, 'Erro ao exportar o relatório de mercado.'))
     } finally {
       setExporting(false)
     }
   }
 
   const R = result?.report
+
+  // Performance: lista filtrada calculada 1× por mudança de estado (não a cada
+  // render, como no IIFE antigo), guardando o índice original (idx) nas
+  // allJobs para manter chaves/expansão estáveis sem indexOf O(n²).
+  const jobList = useMemo(() => {
+    const allJobs = R?.sample_jobs ?? R?.vagas ?? []
+    const q = jobSearchText.trim().toLowerCase()
+    return allJobs
+      .map((job, idx) => ({ job, idx }))
+      .filter(({ job }) => {
+        if (jobFilter === 'relevant' && !job.is_relevant) return false
+        if (jobFilter === 'discarded' && job.is_relevant) return false
+        if (jobSourceFilter !== 'all' && job.source !== jobSourceFilter) return false
+        if (q && !job.title.toLowerCase().includes(q) && !job.company.toLowerCase().includes(q)) return false
+        return true
+      })
+  }, [R, jobFilter, jobSourceFilter, jobSearchText])
+  const jobTotalPages = Math.max(1, Math.ceil(jobList.length / JOB_PAGE_SIZE))
+  const jobPaginated = jobList.slice(jobPage * JOB_PAGE_SIZE, (jobPage + 1) * JOB_PAGE_SIZE)
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="w-full max-w-4xl mx-auto z-10 space-y-6">
@@ -659,89 +696,72 @@ export default function MarketIntelligencePage() {
           </div>
 
           {/* Job list */}
-          {(() => {
-            const allJobs = R.sample_jobs ?? R.vagas
-            const sources = [...new Set(allJobs.map(j => j.source).filter(Boolean))]
-            const filtered = allJobs.filter(j => {
-              if (jobFilter === 'relevant' && !j.is_relevant) return false
-              if (jobFilter === 'discarded' && j.is_relevant) return false
-              if (jobSourceFilter !== 'all' && j.source !== jobSourceFilter) return false
-              if (jobSearchText.trim()) {
-                const q = jobSearchText.toLowerCase()
-                if (!j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false
-              }
-              return true
-            })
-            const totalPages = Math.max(1, Math.ceil(filtered.length / JOB_PAGE_SIZE))
-            const paginated = filtered.slice(jobPage * JOB_PAGE_SIZE, (jobPage + 1) * JOB_PAGE_SIZE)
+          {jobList.length === 0 ? (
+            <div className="text-center py-8 text-slate-500 text-sm">Nenhuma vaga corresponde aos filtros.</div>
+          ) : (
+            <div className="space-y-2">
+              {jobPaginated.map(({ job, idx }) => (
+                <div key={idx} className="rounded-2xl bg-slate-950/60 border border-slate-800 overflow-hidden">
+                  <div className="p-4">
+                    <button
+                      onClick={() => setExpandedJob(expandedJob === idx ? null : idx)}
+                      aria-expanded={expandedJob === idx}
+                      aria-controls={`job-details-${idx}`}
+                      className="w-full flex items-start justify-between gap-3 text-left rounded-lg hover:bg-slate-800/30 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-bold text-white truncate">{job.title}</p>
+                          {job.is_relevant
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                            : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                          }
+                          {job.rejection_reason && (
+                            <span className="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 flex-shrink-0" title={job.rejection_reason}>
+                              {job.rejection_reason}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
+                          <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>
+                          <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
+                          <span className="text-slate-600">· {job.source}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {job.requirements.slice(0, 4).map(t => (
+                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
+                          ))}
+                          {job.nice_to_have.slice(0, 2).map(t => (
+                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {expandedJob === idx
+                          ? <ChevronUp className="w-4 h-4 text-slate-400" />
+                          : <ChevronDown className="w-4 h-4 text-slate-400" />
+                        }
+                      </div>
+                    </button>
+                    {job.source_url && (
+                      <a href={job.source_url} target="_blank" rel="noopener noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 transition-colors">
+                        <ExternalLink className="w-3 h-3" />Ver vaga
+                      </a>
+                    )}
+                  </div>
 
-            if (filtered.length === 0) {
-              return <div className="text-center py-8 text-slate-500 text-sm">Nenhuma vaga corresponde aos filtros.</div>
-            }
-
-            return (
-              <>
-                <div className="space-y-2">
-                  {paginated.map((job, i) => {
-                    const globalIdx = allJobs.indexOf(job)
-                    return (
-                      <div key={globalIdx} className="rounded-2xl bg-slate-950/60 border border-slate-800 overflow-hidden">
-                        <button
-                          onClick={() => setExpandedJob(expandedJob === globalIdx ? null : globalIdx)}
-                          className="w-full flex items-start justify-between p-4 text-left hover:bg-slate-800/30 transition"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-sm font-bold text-white truncate">{job.title}</p>
-                              {job.is_relevant
-                                ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                                : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                              }
-                              {job.rejection_reason && (
-                                <span className="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 flex-shrink-0" title={job.rejection_reason}>
-                                  {job.rejection_reason}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
-                              <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>
-                              <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
-                              <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
-                              <span className="text-slate-600">· {job.source}</span>
-                              {job.source_url && (
-                                <a href={job.source_url} target="_blank" rel="noopener noreferrer"
-                                  onClick={e => e.stopPropagation()}
-                                  className="flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors">
-                                  <ExternalLink className="w-3 h-3" />Ver vaga
-                                </a>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {job.requirements.slice(0, 4).map(t => (
-                                <span key={t} className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
-                              ))}
-                              {job.nice_to_have.slice(0, 2).map(t => (
-                                <span key={t} className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="ml-4 flex-shrink-0">
-                            {expandedJob === globalIdx
-                              ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                              : <ChevronDown className="w-4 h-4 text-slate-400" />
-                            }
-                          </div>
-                        </button>
-
-                        <AnimatePresence>
-                          {expandedJob === globalIdx && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="border-t border-slate-800/60"
-                            >
+                  <AnimatePresence>
+                    {expandedJob === idx && (
+                      <motion.div
+                        id={`job-details-${idx}`}
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="border-t border-slate-800/60"
+                      >
                               <div className="p-4 space-y-4">
                                 {/* Description */}
                                 <div>
@@ -786,8 +806,8 @@ export default function MarketIntelligencePage() {
                                   <div className="p-2 rounded-xl bg-slate-900/60">
                                     <p className="text-[10px] text-slate-500">Salário</p>
                                     <p className="text-xs text-white font-semibold">
-                                      {job.salary_min ? `${job.currency === 'USD' ? 'US$' : 'R$'} ${job.salary_min}` : '—'}
-                                      {job.salary_max ? ` - ${job.currency === 'USD' ? 'US$' : 'R$'} ${job.salary_max}` : ''}
+                                      {job.salary_min ? `${currencySymbol(job.currency)} ${job.salary_min}` : '—'}
+                                      {job.salary_max ? ` - ${currencySymbol(job.currency)} ${job.salary_max}` : ''}
                                     </p>
                                   </div>
                                   <div className="p-2 rounded-xl bg-slate-900/60">
@@ -839,30 +859,27 @@ export default function MarketIntelligencePage() {
                           )}
                         </AnimatePresence>
                       </div>
-                    )
-                  })}
-                </div>
+                    ))}
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between pt-2">
-                    <p className="text-xs text-slate-500">Mostrando {jobPage * JOB_PAGE_SIZE + 1}-{Math.min((jobPage + 1) * JOB_PAGE_SIZE, filtered.length)} de {filtered.length}</p>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setJobPage(p => Math.max(0, p - 1))} disabled={jobPage === 0}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors">
-                        Anterior
-                      </button>
-                      <span className="text-xs text-slate-500">{jobPage + 1} / {totalPages}</span>
-                      <button onClick={() => setJobPage(p => Math.min(totalPages - 1, p + 1))} disabled={jobPage >= totalPages - 1}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors">
-                        Próxima
-                      </button>
-                    </div>
+                    {/* Pagination */}
+                    {jobTotalPages > 1 && (
+                      <div className="flex items-center justify-between pt-2">
+                        <p className="text-xs text-slate-500">Mostrando {jobPage * JOB_PAGE_SIZE + 1}-{Math.min((jobPage + 1) * JOB_PAGE_SIZE, jobList.length)} de {jobList.length}</p>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setJobPage(p => Math.max(0, p - 1))} disabled={jobPage === 0}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors">
+                            Anterior
+                          </button>
+                          <span className="text-xs text-slate-500">{jobPage + 1} / {jobTotalPages}</span>
+                          <button onClick={() => setJobPage(p => Math.min(jobTotalPages - 1, p + 1))} disabled={jobPage >= jobTotalPages - 1}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors">
+                            Próxima
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-              </>
-            )
-          })()}
         </div>
       )}
 
@@ -958,7 +975,7 @@ export default function MarketIntelligencePage() {
                   <div key={job.id} className="rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-5 space-y-3">
                     <div className="flex items-start gap-4">
                       <div className="flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-slate-950/60 border border-slate-800/80 shrink-0">
-                        <span className="text-lg font-black" style={{ color: job.score >= 70 ? '#34d399' : job.score >= 40 ? '#fbbf24' : '#fb7185' }}>
+                        <span className="text-lg font-black" style={{ color: scoreTone(job.score).stroke }}>
                           {Math.round(job.score)}
                         </span>
                         <span className="text-[9px] text-slate-500 uppercase">fit</span>

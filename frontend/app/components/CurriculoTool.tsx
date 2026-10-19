@@ -1,9 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, Key, Briefcase, Upload, Sparkles, CheckCircle2, AlertTriangle, TrendingUp, Cpu, RefreshCw, Zap, Award, Settings2, Globe, Sliders, Eye, EyeOff, Check, Copy, XCircle, Activity, Clock, BarChart3, UserCheck, FileSearch, ChevronRight, RotateCcw, Target, FileCode2, AlertCircle, Download, FileSpreadsheet, ChevronDown, Gavel, Play, GitCompare } from 'lucide-react'
 import type { AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim, CoverLetter, CVDiffResult, DiffCV, DiffCVItem, DiffCVDeterministico } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
+import { friendlyError, isAbortError } from '../lib/errors'
+import { scoreTone } from '../lib/score'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
 import { getBestProvider } from '../hooks/useIaProviders'
@@ -70,6 +72,19 @@ export default function CurriculoTool() {
   const [coverCopied, setCoverCopied] = useState(false)
   const [coverFormat, setCoverFormat] = useState<'completa' | 'curta'>('completa')
 
+  // AbortControllers por feature LLM: as chamadas de IA levam minutos. Ao
+  // reiniciar a MESMA feature ou desmontar a tela, a corrida anterior é
+  // interrompida e uma resposta stale não sobrescreve o estado novo.
+  const semanticAbortRef = useRef<AbortController | null>(null)
+  const recruiterAbortRef = useRef<AbortController | null>(null)
+  const coverAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => {
+    semanticAbortRef.current?.abort()
+    recruiterAbortRef.current?.abort()
+    coverAbortRef.current?.abort()
+  }, [])
+
   const handleExport = async () => {
     if (!res) return
     setExporting(exportFormat)
@@ -97,7 +112,7 @@ export default function CurriculoTool() {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'Erro ao baixar o arquivo.')
+      setExportError(friendlyError(err, 'Erro ao baixar o arquivo.'))
     } finally {
       setExporting(null)
     }
@@ -160,7 +175,7 @@ export default function CurriculoTool() {
       setRes(data)
       setActiveStep(2) // Avança para a aba de resultados
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro desconhecido ao conectar ao servidor backend.')
+      setError(friendlyError(err, 'Falha na análise do currículo.'))
     } finally {
       setLoading(false)
     }
@@ -169,6 +184,11 @@ export default function CurriculoTool() {
   // Fit semântico CV × vaga (LLM): requisitos reais da vaga, evidência
   // literal no CV (aceita alias) e reescritas XYZ prontas para colar.
   const runSemanticFit = async (file: File) => {
+    // Reinício da mesma feature: aborta a corrida anterior (stale) antes de
+    // começar a nova — a resposta atrasada não pode sobrescrever o estado.
+    semanticAbortRef.current?.abort()
+    const controller = new AbortController()
+    semanticAbortRef.current = controller
     setSemanticFit(null)
     setSemanticError(null)
     setSemanticLoading(true)
@@ -186,7 +206,8 @@ export default function CurriculoTool() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/cv/semantic-fit`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       })
       if (!response.ok) {
         const errData = await response.json().catch(() => null)
@@ -195,9 +216,14 @@ export default function CurriculoTool() {
       const data = await response.json()
       setSemanticFit(data.analise ?? null)
     } catch (err) {
-      setSemanticError(err instanceof Error ? err.message : 'Falha na análise semântica da vaga.')
+      // Abort intencional (nova corrida/unmount) não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (semanticAbortRef.current === controller) {
+        setSemanticError(friendlyError(err, 'Falha na análise semântica da vaga.'))
+      }
     } finally {
-      setSemanticLoading(false)
+      // Só a corrida atual (ou a que vai ser abortada) toca o loading.
+      if (semanticAbortRef.current === controller) setSemanticLoading(false)
     }
   }
 
@@ -205,6 +231,10 @@ export default function CurriculoTool() {
   // lê o CV contra a vaga atual e devolve veredito, confiança, motivos,
   // sinais vermelhos e as 3 perguntas da entrevista.
   const runRecruiterSim = async (file: File) => {
+    // Reinício da mesma feature: aborta a corrida anterior (stale).
+    recruiterAbortRef.current?.abort()
+    const controller = new AbortController()
+    recruiterAbortRef.current = controller
     setRecruiterSim(null)
     setRecruiterError(null)
     setRecruiterLoading(true)
@@ -223,7 +253,8 @@ export default function CurriculoTool() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/cv/recruiter-sim`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       })
       if (!response.ok) {
         const errData = await response.json().catch(() => null)
@@ -232,9 +263,13 @@ export default function CurriculoTool() {
       const data = await response.json()
       setRecruiterSim(data.analise ?? null)
     } catch (err) {
-      setRecruiterError(err instanceof Error ? err.message : 'Falha na simulação do recrutador.')
+      // Abort intencional não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (recruiterAbortRef.current === controller) {
+        setRecruiterError(friendlyError(err, 'Falha na simulação do recrutador.'))
+      }
     } finally {
-      setRecruiterLoading(false)
+      if (recruiterAbortRef.current === controller) setRecruiterLoading(false)
     }
   }
 
@@ -242,6 +277,10 @@ export default function CurriculoTool() {
   // descrição da vaga, usando só fatos do currículo (formatos do guia:
   // curta = 2 parágrafos, completa = 5 parágrafos).
   const runCoverLetter = async (file: File, formato: 'completa' | 'curta') => {
+    // Reinício da mesma feature: aborta a corrida anterior (stale).
+    coverAbortRef.current?.abort()
+    const controller = new AbortController()
+    coverAbortRef.current = controller
     setCoverLetter(null)
     setCoverError(null)
     setCoverCopied(false)
@@ -262,7 +301,8 @@ export default function CurriculoTool() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/cv/cover-letter`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       })
       if (!response.ok) {
         const errData = await response.json().catch(() => null)
@@ -271,9 +311,13 @@ export default function CurriculoTool() {
       const data = await response.json()
       setCoverLetter(data.carta ?? null)
     } catch (err) {
-      setCoverError(err instanceof Error ? err.message : 'Falha na geração da cover letter.')
+      // Abort intencional não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (coverAbortRef.current === controller) {
+        setCoverError(friendlyError(err, 'Falha na geração da cover letter.'))
+      }
     } finally {
-      setCoverLoading(false)
+      if (coverAbortRef.current === controller) setCoverLoading(false)
     }
   }
 
@@ -312,11 +356,7 @@ export default function CurriculoTool() {
     }
   }
 
-  const getScoreColor = (score: number = 0) => {
-    if (score >= 80) return { text: 'text-emerald-400', stroke: '#10b981', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' }
-    if (score >= 60) return { text: 'text-amber-400', stroke: '#f59e0b', bg: 'bg-amber-500/10', border: 'border-amber-500/30' }
-    return { text: 'text-rose-400', stroke: '#f43f5e', bg: 'bg-rose-500/10', border: 'border-rose-500/30' }
-  }
+  const getScoreColor = (score: number = 0) => scoreTone(score)
 
   const getStatusBadge = (status?: 'ok' | 'atencao' | 'critico') => {
     if (status === 'ok') {
@@ -840,18 +880,20 @@ export default function CurriculoTool() {
             </div>
           )}
 
-          {/* Análise Semântica da Vaga (LLM — fit semântico CV × vaga) */}
-          {(semanticFit || semanticLoading || semanticError) && (
-            <SemanticFitSection
-              fit={semanticFit}
-              loading={semanticLoading}
-              error={semanticError}
-              copiedIdx={copiedSuggestion}
-              canRetry={!!selectedFile}
-              onCopy={copySuggestion}
-              onRetry={() => selectedFile && runSemanticFit(selectedFile)}
-            />
-          )}
+          {/* Análise Semântica da Vaga (LLM — fit semântico CV × vaga).
+              Sempre visível: quando a descrição da vaga está incompleta a
+              seção mostra o estado desabilitado + hint (mesmo padrão das
+              seções de Recrutador e Cover Letter). */}
+          <SemanticFitSection
+            fit={semanticFit}
+            loading={semanticLoading}
+            error={semanticError}
+            copiedIdx={copiedSuggestion}
+            canRun={!!selectedFile && jobTitle.trim().length >= 40}
+            canRetry={!!selectedFile}
+            onCopy={copySuggestion}
+            onRetry={() => selectedFile && runSemanticFit(selectedFile)}
+          />
 
           {/* Simulação de Recrutador (LLM — /api/cv/recruiter-sim) */}
           <RecruiterSimSection
@@ -1262,6 +1304,7 @@ function SemanticFitSection({
   loading,
   error,
   copiedIdx,
+  canRun,
   canRetry,
   onCopy,
   onRetry
@@ -1270,6 +1313,7 @@ function SemanticFitSection({
   loading: boolean
   error: string | null
   copiedIdx: number | null
+  canRun: boolean
   canRetry: boolean
   onCopy: (sugerido: string, idx: number) => void
   onRetry: () => void
@@ -1304,6 +1348,14 @@ function SemanticFitSection({
             </button>
           )}
         </div>
+      )}
+
+      {!loading && !error && !fit && (
+        <p className="text-xs text-amber-400/90">
+          {canRun
+            ? 'Esta análise roda sozinha ao clicar em "Analisar Currículo" com a descrição da vaga preenchida.'
+            : 'Para liberar a análise, cole a descrição completa da vaga (mín. 40 caracteres) no campo "Descrição da vaga".'}
+        </p>
       )}
 
       {!loading && !error && fit && (
@@ -1768,12 +1820,20 @@ function CVDiffSection({ area }: { area: string }) {
   const [diff, setDiff] = useState<CVDiffResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const diffAbortRef = useRef<AbortController | null>(null)
+
+  // Unmount: interrompe a comparação LLM em voo (leva minutos).
+  useEffect(() => () => { diffAbortRef.current?.abort() }, [])
 
   const narrativa: DiffCV | null = diff ? diff.narrativa : null
   const canRun = !!arquivoAnterior && !!arquivoNovo && !loading
 
   const runDiff = async () => {
     if (!arquivoAnterior || !arquivoNovo) return
+    // Reinício da mesma feature: aborta a corrida anterior (stale).
+    diffAbortRef.current?.abort()
+    const controller = new AbortController()
+    diffAbortRef.current = controller
     setLoading(true)
     setError(null)
     setDiff(null)
@@ -1791,7 +1851,8 @@ function CVDiffSection({ area }: { area: string }) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/cv/diff`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       })
       if (!response.ok) {
         const errData = await response.json().catch(() => null)
@@ -1800,9 +1861,13 @@ function CVDiffSection({ area }: { area: string }) {
       const data: CVDiffResult = await response.json()
       setDiff(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao comparar as versões do currículo.')
+      // Abort intencional não é falha: silencioso.
+      if (isAbortError(err)) return
+      if (diffAbortRef.current === controller) {
+        setError(friendlyError(err, 'Falha ao comparar as versões do currículo.'))
+      }
     } finally {
-      setLoading(false)
+      if (diffAbortRef.current === controller) setLoading(false)
     }
   }
 

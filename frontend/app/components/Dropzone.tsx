@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useId } from 'react'
 import { motion } from 'framer-motion'
 import { Upload, CheckCircle2, FileText, X } from 'lucide-react'
 
@@ -15,6 +15,7 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const inputId = useId()
 
   const validateFile = useCallback((f: File): string | null => {
     const allowed = accept.split(',').map(s => s.trim().toLowerCase())
@@ -63,17 +64,37 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
     onFileSelect(null as unknown as File)
   }, [onFileSelect])
 
+  // Acessibilidade: o wrapper é "apenas visual" para o DOM — sem role/tabIndex/
+  // keydown, o input de arquivo ficaria inacessível por teclado.
+  const openPicker = useCallback(() => {
+    inputRef.current?.click()
+  }, [])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      openPicker()
+    }
+  }, [openPicker])
+
   return (
     <div className="space-y-2">
       <div
+        role="button"
+        tabIndex={0}
+        aria-label={file
+          ? `Arquivo selecionado: ${file.name}. Pressione Enter para trocar ou remova com o botão ao lado.`
+          : 'Selecionar arquivo. Pressione Enter para abrir o explorador de arquivos.'}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={() => inputRef.current?.click()}
+        onClick={openPicker}
+        onKeyDown={handleKeyDown}
         className={`
           relative flex flex-col items-center justify-center gap-2
           border-2 border-dashed rounded-2xl cursor-pointer
           transition-all duration-200 select-none
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70
           ${isDragging
             ? 'border-indigo-400 bg-indigo-500/10 scale-[1.02]'
             : file
@@ -83,8 +104,10 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
           py-6 px-4
         `}
       >
+        <label htmlFor={inputId} className="sr-only">Selecionar arquivo</label>
         <input
           ref={inputRef}
+          id={inputId}
           type="file"
           accept={accept}
           className="hidden"
