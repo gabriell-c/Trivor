@@ -6,6 +6,7 @@
 2. **Precisão > suposição**: se algo não foi identificado, marque como "não identificada".
 3. **Ignore o lixo do LinkedIn**: navegação, footer, recomendações, métricas de visualização, selos, textos de UI.
 4. **Se foto enviada, analise-a**: avalie foto de perfil profissionalmente (rosto visível, fundo neutro, iluminação, profissionalismo).
+5. **Agnóstico de área**: NUNCA assuma que o perfil é da área de tecnologia. Onde o checklist falar em "tecnologias"/"stack", leia como "keywords/palavras-chave da área" do candidato (valem skills, ferramentas e competências de qualquer domínio: administrativo, vendas, saúde, educação, finanças, RH, marketing, logística, etc.). Se a área não for identificável no texto, avalie de forma genérica e NUNCA cite linguagens de programação, frameworks ou tecnologias de TI como palavras-chave faltantes.
 
 ---
 
@@ -23,7 +24,7 @@
 - **Crítico**: Foto de capa ausente.
 
 ### C. Headline (Título)
-- **Bom**: Formato "Cargo | Tech1 | Tech2 | Tech3", empresa conhecida incluída se relevante.
+- **Bom**: Formato "Cargo | Palavra1 | Palavra2 | Palavra3" (3-5 keywords da área do candidato), empresa conhecida incluída se relevante.
 - **Atenção**: Headline muito genérico sem tecnologias, ou apenas cargo sem contexto.
 - **Crítico**: Headline ausente ou muito vaga ("Em busca de recolocação", "Open to work").
 
@@ -33,7 +34,7 @@
 - **Crítico**: Localização ausente.
 
 ### E. About (Sobre)
-- **Bom**: 3 partes claras: quem é (cargo + senioridade + XP) + o que fez (produto/escala/resultado) + stack de tecnologias no final.
+- **Bom**: 3 partes claras: quem é (cargo + senioridade + XP) + o que fez (produto/escala/resultado) + lista das principais skills/keywords da área no final.
 - **Atenção**: Texto muito curto sem dados, ou muito longo (>5 parágrafos), ou apenas lista de tecnologias sem narrativa.
 - **Crítico**: Clichês vazios ("apaixonado por tecnologia", "em busca de novos desafios") sem dados concretos.
 
@@ -53,7 +54,7 @@
 - **Crítico**: Educação ausente.
 
 ### I. Certificações
-- **Bom**: Certs relevantes listados (AWS, Kubernetes, etc).
+- **Bom**: Certs relevantes listados (ex.: AWS, PMP, CFA, OAB, Excel avançado, conforme a área do candidato).
 - **Atenção**: Certs presentes mas irrelevantes para a stack.
 - **Crítico**: Certificações ausentes (se o candidato tem experiências que poderiam tê-las).
 
@@ -82,13 +83,13 @@
 - Se nada informado: "Foto não identificada no texto ou imagem fornecida."
 
 ### Headline
-- Verificar: cargo atual/desejado presente? 3-5 tecnologias listadas? Empresa conhecida incluída?
+- Verificar: cargo atual/desejado presente? 3-5 keywords da área listadas? Empresa conhecida incluída?
 
 ### About
-- Verificar: anos de XP declarados? Tipo de produto/escala mencionado? Resultados mensuráveis? Stack no final?
+- Verificar: anos de XP declarados? Tipo de produto/escala mencionado? Resultados mensuráveis? Lista de skills/keywords da área no final?
 
 ### Experiências
-- Verificar: bullets com métricas? Tecnologia + ação + resultado? Skills por experiência? Tech stack ao final?
+- Verificar: bullets com métricas? Skill/ferramenta da área + ação + resultado? Skills por experiência? Lista de skills ao final?
 
 ### Skills
 - Estimar quantidade (se listadas no texto). Verificar se top skills são relevantes.
@@ -118,8 +119,8 @@
     },
     "headline": {
       "status": "atencao",
-      "problema": "Headline muito genérico, sem tecnologias listadas",
-      "como_corrigir": "Use o formato: Cargo | Tech1 | Tech2 | Tech3. Ex: Backend Developer | Python | Django | PostgreSQL"
+      "problema": "Headline muito genérico, sem keywords da área listadas",
+      "como_corrigir": "Use o formato: Cargo | Palavra-chave1 | Palavra-chave2 | Palavra-chave3 (3-5 keywords reais da área do candidato)"
     },
     "localizacao": {
       "status": "ok",
@@ -204,5 +205,5 @@
 - Sua resposta DEVE SER EXCLUSIVAMENTE um objeto JSON válido (sem ```json, sem texto adicional).
 - Se algo não foi identificado no texto ou imagem, use "Não identificada no texto ou imagem fornecida" no campo problema.
 - Notas devem ser numéricas entre 0 e 10.
-- Palavras-chave faltantes devem ser termos técnicos reais da área do candidato.
+- Palavras-chave faltantes devem ser termos técnicos reais da área do candidato — ex. para área administrativa: "Excel avançado", "KPIs", "PAC"; para saúde: "TETO", "SIGTAP", "Técnicas de enfermagem"; nunca invente termos de TI em perfis não-dev. Os exemplos do JSON acima (AWS, Kubernetes, Django) ilustram uma vaga dev; adapte ao domínio do candidato.
 - Veredito dos robôs deve ser um resumo objetivo (1-2 frases) sobre a compatibilidade com ATS.
