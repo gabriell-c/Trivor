@@ -176,14 +176,20 @@ class TestAnalyzeCV:
         assert "10MB" in r.json().get("detail", "") or "detail" in r.json()
 
     def test_analyze_cv_pdf_accepted(self, client):
-        # PDF válido mas sem API key — deve falhar com 400 (sem key) não 500
-        r = client.post(
-            "/api/cv/analyze",
-            files={"cv_file": ("test.pdf", b"%PDF-1.4 test", "application/pdf")},
-            data={"job": "test"}
-        )
-        # Pode falhar por falta de key ou erro de processamento — ambos são OK
-        assert r.status_code in (400, 422, 500)
+        # PDF válido mas SEM API key — deve falhar com 400 (sem key), não 500.
+        # Isola o ambiente para não depender dos providers configurados na máquina
+        # do desenvolvedor (TRIVOR_IAS / OPENAI_API_KEY no .env).
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
+            patch("main._get_provider_for_tool", return_value=None),
+        ):
+            r = client.post(
+                "/api/cv/analyze",
+                files={"cv_file": ("test.pdf", b"%PDF-1.4 test", "application/pdf")},
+                data={"job": "test"}
+            )
+        assert r.status_code == 400
+        assert "Chave de API" in r.json().get("detail", "")
 
     def test_analyze_cv_docx_accepted(self, client):
         r = client.post(

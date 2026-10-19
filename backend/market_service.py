@@ -5,6 +5,7 @@ Coleta, filtro, extração IA e agregação estatística.
 
 import sqlite3
 import json
+import os
 import re
 import time
 import traceback
@@ -19,10 +20,18 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
-_logger_file = logging.FileHandler(r'C:\Users\xxxsa\OneDrive\Área de Trabalho\python\curriculo\backend\market_log.txt', encoding='utf-8')
-_logger_file.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
-logger.addHandler(_logger_file)
-logger.setLevel(logging.INFO)
+# Log de mercado em arquivo configurável — nunca hardcoded (roda em qualquer máquina/Docker).
+# Padrão: backend/market_log.txt (gitignored); override via TRIVOR_MARKET_LOG.
+_MARKET_LOG_PATH = os.getenv('TRIVOR_MARKET_LOG') or str(Path(__file__).resolve().parent / 'market_log.txt')
+try:
+    _logger_file = logging.FileHandler(_MARKET_LOG_PATH, encoding='utf-8')
+    _logger_file.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
+    logger.addHandler(_logger_file)
+    logger.setLevel(logging.INFO)
+except OSError as exc:
+    # Caminho não gravável — segue só com log de console sem derrubar o import
+    logger.addHandler(logging.NullHandler())
+    logger.warning(f"Sem log de mercado em arquivo ({_MARKET_LOG_PATH}): {exc}")
 
 # Max jobs sent to AI per analysis — pre-filter reduces the pool first
 _MAX_JOBS_FOR_ANALYSIS = 3000
@@ -434,6 +443,20 @@ CREATE TABLE IF NOT EXISTS market_reports (
     report_data TEXT,
     created_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS jsearch_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key TEXT,
+    key_hash TEXT UNIQUE,
+    key_prefix TEXT,
+    description TEXT,
+    rate_limit_total INTEGER,
+    rate_limit_remaining INTEGER,
+    status TEXT,
+    last_error TEXT,
+    last_tested TEXT,
+    created_at TEXT
+);
 """
 
 
@@ -656,20 +679,26 @@ def _build_jobs_from_raw(raw_jobs: List, default_country: str) -> List[Dict]:
 
 
 def _update_jsearch_usage(db_file: Path, key: str, remaining: int):
-    """Atualiza o rate limit remaining de uma chave JSearch no DB."""
-    key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
-    key_prefix = key[:8] + "…" + key[-4:] if len(key) > 12 else key
-    conn = sqlite3.connect(db_file)
-    conn.execute('''
-        INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
-        VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, 'ok', '')
-        ON CONFLICT(key_hash) DO UPDATE SET
-            key_prefix = excluded.key_prefix,
-            last_tested = CURRENT_TIMESTAMP,
-            rate_limit_remaining = excluded.rate_limit_remaining
-    ''', (key_hash, key_prefix, 200, remaining))
-    conn.commit()
-    conn.close()
+    """Atualiza o rate limit remaining de uma chave JSearch no DB.
+    Chamado depois do fetch: falha aqui não pode derrubar a análise, então loga e segue."""
+    try:
+        key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+        key_prefix = key[:8] + "…" + key[-4:] if len(key) > 12 else key
+        conn = sqlite3.connect(db_file)
+        try:
+            conn.execute('''
+                INSERT INTO jsearch_keys (api_key, key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 'ok', '')
+                ON CONFLICT(key_hash) DO UPDATE SET
+                    key_prefix = excluded.key_prefix,
+                    last_tested = CURRENT_TIMESTAMP,
+                    rate_limit_remaining = excluded.rate_limit_remaining
+            ''', (key, key_hash, key_prefix, 200, remaining))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"[_update_jsearch_usage] não foi possível atualizar uso da chave: {e}")
 
 
 def _get_jsearch_country_language(location: str) -> tuple:
@@ -684,41 +713,9 @@ def _get_geo_keywords(location: str) -> List[str]:
     """Retorna palavras-chave geográficas para enriquecer as queries de busca."""
     loc = location.lower()
     if "internacional" in loc:
-        return ["Brazil", "Latam", "Latin America", "Brazilian", "remoto Brasil"]
+        # Busca internacional roda em inglês (country=us, language=en) → keywords em inglês, não do Brasil
+        return ["remote", "global", "international", "work from anywhere"]
     return ["Brasil", "Brazil", "remoto Brasil", "vaga Brasil"]
-
-
-_PORT_TRANSLATIONS = {
-    "developer": "desenvolvedor", "engineer": "engenheiro",
-    "analyst": "analista", "designer": "designer", "manager": "gerente",
-    "lead": "líder", "architect": "arquiteto",
-    "data": "dados", "scientist": "cientista",
-    "product": "produto", "marketing": "marketing",
-    "sales": "vendas", "support": "suporte",
-    "fullstack": "fullstack", "frontend": "frontend",
-    "backend": "backend", "devops": "devops",
-    "qa": "qa", "tester": "testador", "writer": "escritor",
-    "coordinator": "coordenador", "specialist": "especialista",
-    "administrator": "administrador", "director": "diretor",
-    "consultant": "consultor", "representative": "representante",
-    "coordinator": "coordenador",
-}
-
-
-def _translate_to_portuguese(english_query: str) -> str:
-    """Tenta traduzir query em inglês para português palavra por palavra."""
-    words = english_query.lower().split()
-    translated = []
-    for w in words:
-        # Remove suffixos comuns
-        clean = w.rstrip("s").rstrip("ed").rstrip("ing")
-        por = _PORT_TRANSLATIONS.get(clean, w)
-        translated.append(por)
-    result = " ".join(translated)
-    # Se nenhuma palavra foi traduzida, retorna None
-    if result == english_query.lower():
-        return None
-    return result
 
 
 def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all", location: str = "Remoto Nacional"):
@@ -1171,13 +1168,22 @@ def _detect_job_seniority(job_text_lower: str) -> str:
 
 
 def map_time_window_to_date_posted(time_window: str) -> str:
-    """Mapeia time_window do frontend para valor da API JSearch."""
-    tw = time_window.lower().strip()
-    if '7' in tw:
+    """Mapeia time_window do frontend para valor da API JSearch.
+
+    Regra: nunca encolher a janela pedida — usa o valor suportado pela API
+    com amplitude MENOR OU IGUAL à janela solicitada ('3days', 'week'=7d,
+    'month'=30d, 'all'). Janelas acima de 30 dias viram 'all', o que pode
+    incluir vagas mais antigas, mas nunca subestima a recência pedida.
+    """
+    match = re.search(r'(\d+)\s*dias?', time_window.lower().strip())
+    if not match:
+        return 'all'
+    days = int(match.group(1))
+    if days <= 3:
         return '3days'
-    if '15' in tw:
+    if days <= 7:
         return 'week'
-    if '30' in tw or '60' in tw or '90' in tw:
+    if days <= 30:
         return 'month'
     return 'all'
 
@@ -2110,6 +2116,7 @@ def run_market_analysis(
     conn.cursor().execute("DELETE FROM market_raw_jobs")
     conn.cursor().execute("DELETE FROM market_jobs")
     conn.commit()
+    conn.close()
     date_posted = map_time_window_to_date_posted(time_window)
     generate_mock_jobs_if_empty(db_file, job_title, jsearch_api_keys=jsearch_api_keys, date_posted=date_posted, location=location)
 
@@ -2123,6 +2130,7 @@ def run_market_analysis(
     raw_jobs = cursor.fetchall()
 
     total_jobs = len(raw_jobs)
+    conn.close()
     if total_jobs == 0:
         return {
             "summary": {
@@ -2148,7 +2156,7 @@ def run_market_analysis(
     # 3. Pré-filtro por keywords — reduz o pool antes de enviar para IA
     pending = _pre_filter_jobs(raw_jobs, stack_list, seniority, location, neg_list, max_jobs=_MAX_JOBS_FOR_ANALYSIS)
     total_scanned = len(raw_jobs)
-    print(f"[MARKET] Pré-filtro: {total_scanned} vagas → {len(pending)} vagas para análise IA")
+    logger.info(f"[MARKET] Pré-filtro: {total_scanned} vagas → {len(pending)} vagas para análise IA")
 
     # Processa em lotes
     extracted_jobs = []

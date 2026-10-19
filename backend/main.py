@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -20,7 +20,7 @@ if not logger.handlers:
     _h = logging.StreamHandler()
     _h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
     logger.addHandler(_h)
-import sqlite3, json, os, uuid
+import sqlite3, json, os, uuid, hashlib
 
 # Adiciona o diretório backend ao Python path para importar export_utils
 backend_path = Path(__file__).parent
@@ -65,18 +65,6 @@ from slowapi.errors import RateLimitExceeded
 # Pydantic Models para Validação
 # ---------------------------------------------------------------------------
 
-class JSearchKeyRequest(BaseModel):
-    """Modelo para teste de chave JSearch."""
-    key: str = Field(..., min_length=10, description="API key do JSearch")
-    provider: str = Field(default='jsearch', description="Nome do provider")
-
-    @field_validator('key')
-    @classmethod
-    def validate_key(cls, v: str) -> str:
-        if not v or len(v.strip()) < 10:
-            raise ValueError('API key deve ter pelo menos 10 caracteres')
-        return v.strip()
-
 class LogCleanupRequest(BaseModel):
     """Modelo para limpeza de logs."""
     days: int = Field(default=90, ge=1, le=365, description="Dias para manter logs")
@@ -99,18 +87,6 @@ def error_response(code: str, message: str, details: dict = None, status_code: i
         }
     )
 
-def success_response(data: dict = None, message: str = "Sucesso") -> JSONResponse:
-    """Retorna resposta de sucesso padronizada."""
-    return JSONResponse(
-        status_code=200,
-        content={
-            "success": True,
-            "message": message,
-            "data": data,
-            "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S%z')
-        }
-    )
-
 DB_FILE = Path(__file__).parent / "market.db"
 
 app = FastAPI(
@@ -126,7 +102,9 @@ app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # CORS configurável via env (CLAUDE.md §13 — nada hardcoded); fallback são as origens locais de dev
+    allow_origins=[o.strip() for o in os.getenv('CORS_ALLOW_ORIGINS', '').split(',') if o.strip()]
+    or ['http://localhost:3000', 'http://127.0.0.1:3000'],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -150,6 +128,8 @@ async def rate_limit_handler(request, exc):
 
 # Inicializa DB de logs
 init_logs_db()
+# Garante as tabelas do market DB (inclui jsearch_keys) desde o start
+init_market_db(DB_FILE)
 
 # ---------------------------------------------------------------------------
 # Extração de PDF com fallback chain: PyMuPDF → pypdfium2 → docling_parse
@@ -883,13 +863,19 @@ async def analyze_cv(
                 extractor_used = "none"
                 logger.warning("[CV] Todos os extratores falharam!")
 
-            # Cache de markdown
-            cache_key = temp_path
-            if cache_key in _md_cache:
-                markdown_text = _md_cache[cache_key]
-            else:
-                markdown_text = _text_to_markdown(markdown_text)
-                _md_cache[cache_key] = markdown_text
+            # Cache de markdown — chaveada pelo CONTEÚDO do texto:
+            # o nome do mkstemp é único por request, então chave por path nunca acertaria.
+            cache_key = hashlib.md5(markdown_text.encode('utf-8', 'ignore')).hexdigest() if markdown_text else None
+            if cache_key:
+                cached_md = _md_cache.get(cache_key)
+                if cached_md is not None:
+                    markdown_text = cached_md
+                else:
+                    markdown_text = _text_to_markdown(markdown_text)
+                    _md_cache[cache_key] = markdown_text
+                    # Evicção simples (dict preserva ordem de inserção): mantém as últimas 64
+                    while len(_md_cache) > 64:
+                        _md_cache.pop(next(iter(_md_cache)))
 
             # Detectar hyperlinks
             links_info = _detect_hyperlinks(markdown_text)
@@ -1292,7 +1278,10 @@ Faça uma análise COMPLETA e DETALHADA do currículo."""
                         or 'maiúsc' in desc_lower):
                         continue
                     # Remover se erro é sobre capitalização: palavra + correção = mesma palavra em cases diferentes
-                    if correcao and word.lower() == correcao.lower() and word != correcao:
+                    # Remove se erro é sobre capitalização: exemplo + correção = mesma palavra em cases diferentes
+                    # (usa os campos do PRÓPRIO erro comum — nunca variáveis de outro loop)
+                    correcao_comum = (err.get('correcao') or '').strip()
+                    if correcao_comum and exemplo and exemplo.lower() == correcao_comum.lower() and exemplo != correcao_comum:
                         continue
                     # Remover se exemplo é toda maiúscula e a versão lowercase existe no texto
                     if exemplo and exemplo == exemplo.upper() and len(exemplo) > 1:
@@ -1547,6 +1536,8 @@ async def export_analysis(
             )
         else:
             raise HTTPException(status_code=400, detail="Formato não suportado.")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {str(e)}")
 
@@ -1592,6 +1583,8 @@ async def export_market_analysis(
             )
         else:
             raise HTTPException(status_code=400, detail="Formato não suportado. Use: md, docx, pdf")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {str(e)}")
 
@@ -1654,18 +1647,47 @@ async def api_save_jsearch_key(
     api_key: str = Form(...),
     description: str = Form(""),
 ):
-    """Salva uma chave JSearch no DB."""
+    """Salva uma chave JSearch no DB (com hash para upsert do market_service)."""
     from datetime import datetime
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    key_prefix = api_key[:8] + "…" + api_key[-4:] if len(api_key) > 12 else api_key
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO jsearch_keys (api_key, description, rate_limit_total, rate_limit_remaining, created_at) VALUES (?, ?, NULL, NULL, ?)",
-            (api_key, description, datetime.now().isoformat())
+            "INSERT INTO jsearch_keys (api_key, key_hash, key_prefix, description, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?, 'ok')",
+            (api_key, key_hash, key_prefix, description, datetime.now().isoformat())
         )
         conn.commit()
         return {"success": True, "id": cursor.lastrowid}
-    except Exception as e:
+    except sqlite3.Error as e:
+        logger.error(f"[JSEARCH] Falha ao salvar chave: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+@app.put('/api/jsearch/update-key')
+async def api_update_jsearch_key(
+    key_id: int = Form(...),
+    api_key: str = Form(...),
+    description: str = Form(""),
+):
+    """Atualiza a chave/descrição de uma chave JSearch já salva."""
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    key_prefix = api_key[:8] + "…" + api_key[-4:] if len(api_key) > 12 else api_key
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE jsearch_keys SET api_key = ?, key_hash = ?, key_prefix = ?, description = ? WHERE id = ?",
+            (api_key, key_hash, key_prefix, description, key_id),
+        )
+        conn.commit()
+        return {"success": cursor.rowcount > 0}
+    except sqlite3.Error as e:
+        logger.error(f"[JSEARCH] Falha ao atualizar chave: {e}")
         return {"success": False, "error": str(e)}
     finally:
         conn.close()
@@ -1785,7 +1807,7 @@ async def health():
 @limiter.limit("20/minute")
 async def analyze_linkedin(
     request: Request,
-    text: str = Form(..., min_length=10, description="Texto do perfil LinkedIn"),
+    text: str = Form(..., description="Texto do perfil LinkedIn"),
     image_url: str = Form(None),
     api_key: str = Form(None),
     api_url: str = Form(None),

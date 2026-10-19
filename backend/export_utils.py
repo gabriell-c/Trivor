@@ -1,4 +1,5 @@
 from io import BytesIO
+import html as _html
 import json
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -15,26 +16,65 @@ def set_cell_background(cell, fill_hex):
     shd.set(qn('w:fill'), fill_hex)
     tcPr.append(shd)
 
+
+def _nota_formatada(data: dict) -> str:
+    """Formata a nota do CV (escala 0-100, conforme o schema do prompt). None ausente → 'N/D'."""
+    nota = data.get('nota')
+    try:
+        return f"{float(nota):.1f}"
+    except (TypeError, ValueError):
+        return "N/D"
+
+
+def _secoes_diagnostico(data: dict) -> dict:
+    """Lê o diagnóstico estruturado por seção.
+
+    O schema do prompt do CV emite 'analise_secoes' (mesma chave consumida
+    pelo frontend); 'diagnostico_por_secao' é mantido como fallback legado.
+    """
+    secoes = data.get('analise_secoes')
+    if not isinstance(secoes, dict) or not secoes:
+        secoes = data.get('diagnostico_por_secao')
+    return secoes if isinstance(secoes, dict) else {}
+
+
+# Títulos das seções do diagnóstico (chave → rótulo). Cobre o schema atual
+# ('analise_secoes': formacao_academica/habilidades/objetivo) e o legado.
+_SECAO_TITULOS = {
+    'dados_pessoais': 'Dados Pessoais & Contatos',
+    'resumo_profissional': 'Resumo / Perfil Profissional',
+    'experiencia_profissional': 'Experiência Profissional & Métricas',
+    'formacao_academica': 'Formação Acadêmica',
+    'educacao_e_cursos': 'Formação Acadêmica & Cursos',
+    'habilidades': 'Habilidades & Palavras-Chave',
+    'habilidades_e_keywords': 'Habilidades & Palavras-Chave',
+    'objetivo': 'Objetivo',
+}
+
+
 def generate_markdown_export(data: dict, filename: str, job_target: str, model_name: str) -> str:
     md = []
     md.append(f"# Trivor")
     md.append(f"**Arquivo:** {filename} | **Vaga / Nível:** {job_target} | **Modelo:** {model_name}\n")
-    md.append(f"## 🏆 Resume Score: {data.get('nota', 0)} / 10\n")
+    md.append(f"## 🏆 Resume Score: {_nota_formatada(data)} / 100\n")
     md.append(f"### 📋 Parecer Executivo\n{data.get('resumo_executivo', 'Sem resumo disponível.')}\n")
-    
+
     md.append("## 🔍 Diagnóstico Estruturado por Seção\n")
-    secoes = data.get('diagnostico_por_secao', {})
+    secoes = _secoes_diagnostico(data)
     titulos = {
-        'dados_pessoais': '👤 Dados Pessoais & Contatos',
-        'resumo_profissional': '📝 Resumo / Perfil Profissional',
-        'experiencia_profissional': '💼 Experiência Profissional & Métricas',
-        'educacao_e_cursos': '🎓 Formação Acadêmica & Cursos',
-        'habilidades_e_keywords': '🛠️ Habilidades & Palavras-Chave'
+        'dados_pessoais': '👤 ' + _SECAO_TITULOS['dados_pessoais'],
+        'resumo_profissional': '📝 ' + _SECAO_TITULOS['resumo_profissional'],
+        'experiencia_profissional': '💼 ' + _SECAO_TITULOS['experiencia_profissional'],
+        'formacao_academica': '🎓 ' + _SECAO_TITULOS['formacao_academica'],
+        'educacao_e_cursos': '🎓 ' + _SECAO_TITULOS['educacao_e_cursos'],
+        'habilidades': '🛠️ ' + _SECAO_TITULOS['habilidades'],
+        'habilidades_e_keywords': '🛠️ ' + _SECAO_TITULOS['habilidades_e_keywords'],
+        'objetivo': '🎯 ' + _SECAO_TITULOS['objetivo'],
     }
     for k, title in titulos.items():
         if k in secoes and secoes[k]:
             item = secoes[k]
-            status = item.get('status', 'atencao').upper()
+            status = (item.get('status') or 'atencao').upper()
             md.append(f"### {title} [{status}]")
             if item.get('problema'):
                 md.append(f"- **Problema Detectado:** {item['problema']}")
@@ -45,7 +85,7 @@ def generate_markdown_export(data: dict, filename: str, job_target: str, model_n
     ats = data.get('analise_ats', {})
     if isinstance(ats, dict):
         md.append("## 🤖 Compatibilidade ATS (Robôs de Triagem)\n")
-        md.append(f"- **ATS Score:** {ats.get('score_ats', 'N/A')}/10")
+        md.append(f"- **ATS Score:** {ats.get('score_ats', 'N/A')}/100")
         md.append(f"- **Veredito:** {ats.get('veredito_robos', '')}\n")
         if ats.get('palavras_chave_faltantes'):
             md.append(f"**Palavras-chave Faltantes:** {', '.join(ats['palavras_chave_faltantes'])}\n")
@@ -110,13 +150,13 @@ def generate_docx_export(data: dict, filename: str, job_target: str, model_name:
 
     p_sc = cell_score.paragraphs[0]
     p_sc.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_sc1 = p_sc.add_run(f"\n{data.get('nota', 0.0):.1f}\n")
+    r_sc1 = p_sc.add_run(f"\n{_nota_formatada(data)}\n")
     r_sc1.font.name = "Arial"
     r_sc1.font.size = Pt(36)
     r_sc1.font.bold = True
     r_sc1.font.color.rgb = RGBColor(99, 102, 241)
 
-    r_sc2 = p_sc.add_run("RESUME SCORE / 10\n")
+    r_sc2 = p_sc.add_run("RESUME SCORE / 100\n")
     r_sc2.font.name = "Arial"
     r_sc2.font.size = Pt(9)
     r_sc2.font.bold = True
@@ -144,20 +184,14 @@ def generate_docx_export(data: dict, filename: str, job_target: str, model_name:
     r_hsec.font.bold = True
     r_hsec.font.color.rgb = RGBColor(15, 23, 42)
 
-    secoes = data.get('diagnostico_por_secao', {})
-    titulos = {
-        'dados_pessoais': 'Dados Pessoais & Contatos',
-        'resumo_profissional': 'Resumo / Perfil Profissional',
-        'experiencia_profissional': 'Experiência Profissional & Métricas',
-        'educacao_e_cursos': 'Formação Acadêmica & Cursos',
-        'habilidades_e_keywords': 'Habilidades & Palavras-Chave'
-    }
+    secoes = _secoes_diagnostico(data)
+    titulos = _SECAO_TITULOS
 
     for k, title in titulos.items():
         if k in secoes and secoes[k]:
             item = secoes[k]
             p_s = doc.add_paragraph()
-            r_st = p_s.add_run(f"• {title}  [{item.get('status', 'atencao').upper()}]\n")
+            r_st = p_s.add_run(f"• {title}  [{(item.get('status') or 'atencao').upper()}]\n")
             r_st.font.name = "Arial"
             r_st.font.size = Pt(11)
             r_st.font.bold = True
@@ -292,9 +326,9 @@ def generate_pdf_export(data: dict, filename: str, job_target: str, model_name: 
     elements.append(Spacer(1, 14))
 
     # Score Card Banner Tabela
-    score_val = f"{data.get('nota', 0.0):.1f}"
-    score_html = f"<font size=28 color='#6366F1'><b>{score_val}</b></font><br/><font size=8 color='#94A3B8'><b>RESUME SCORE / 10</b></font>"
-    parecer_html = f"<font size=9 color='#6366F1'><b>PARECER EXECUTIVO DO DIAGNÓSTICO</b></font><br/><br/><font size=9 color='#CBD5E1'>{data.get('resumo_executivo', '')}</font>"
+    score_val = _nota_formatada(data)
+    score_html = f"<font size=28 color='#6366F1'><b>{score_val}</b></font><br/><font size=8 color='#94A3B8'><b>RESUME SCORE / 100</b></font>"
+    parecer_html = f"<font size=9 color='#6366F1'><b>PARECER EXECUTIVO DO DIAGNÓSTICO</b></font><br/><br/><font size=9 color='#CBD5E1'>{_html.escape(data.get('resumo_executivo') or '')}</font>"
 
     p_score = Paragraph(score_html, ParagraphStyle('ScP', alignment=1))
     p_parecer = Paragraph(parecer_html, ParagraphStyle('ParP'))
@@ -315,30 +349,24 @@ def generate_pdf_export(data: dict, filename: str, job_target: str, model_name: 
     elements.append(t_score)
     elements.append(Spacer(1, 14))
 
-    # Diagnóstico por Seções
+    # Diagnóstico por Seções — sem emojis (fonte Helvetica do ReportLab não os suporta)
     elements.append(Paragraph("DIAGNÓSTICO ESTRUTURADO POR SEÇÃO", section_heading))
-    secoes = data.get('diagnostico_por_secao', {})
-    titulos = {
-        'dados_pessoais': '👤 Dados Pessoais & Contatos',
-        'resumo_profissional': '📝 Resumo / Perfil Profissional',
-        'experiencia_profissional': '💼 Experiência Profissional & Métricas',
-        'educacao_e_cursos': '🎓 Formação Acadêmica & Cursos',
-        'habilidades_e_keywords': '🛠️ Habilidades & Palavras-Chave'
-    }
+    secoes = _secoes_diagnostico(data)
+    titulos = _SECAO_TITULOS
 
     for k, title in titulos.items():
         if k in secoes and secoes[k]:
             item = secoes[k]
-            status = item.get('status', 'atencao').upper()
+            status = (item.get('status') or 'atencao').upper()
             status_color = '#059669' if status == 'OK' else ('#D97706' if status == 'ATENCAO' else '#E11D48')
 
-            sec_title = f"<b>{title}</b> &nbsp;&nbsp;<font size=8 color='{status_color}'><b>[{status}]</b></font>"
+            sec_title = f"<b>{_html.escape(title)}</b> &nbsp;&nbsp;<font size=8 color='{status_color}'><b>[{status}]</b></font>"
             elements.append(Paragraph(sec_title, body_text))
 
             if item.get('problema'):
-                elements.append(Paragraph(f"• <b>Problema Detectado:</b> {item['problema']}", problem_text))
+                elements.append(Paragraph(f"• <b>Problema Detectado:</b> {_html.escape(item['problema'])}", problem_text))
             if item.get('como_corrigir'):
-                elements.append(Paragraph(f"• <b>Como Ajustar:</b> {item['como_corrigir']}", solution_text))
+                elements.append(Paragraph(f"• <b>Como Ajustar:</b> {_html.escape(item['como_corrigir'])}", solution_text))
 
             elements.append(Spacer(1, 6))
 
@@ -348,9 +376,9 @@ def generate_pdf_export(data: dict, filename: str, job_target: str, model_name: 
         elements.append(Spacer(1, 8))
         elements.append(Paragraph("COMPATIBILIDADE COM ROBÔS ATS", section_heading))
         if ats.get('veredito_robos'):
-            elements.append(Paragraph(f"<b>Veredito dos Robôs:</b> {ats['veredito_robos']}", body_text))
+            elements.append(Paragraph(f"<b>Veredito dos Robôs:</b> {_html.escape(str(ats['veredito_robos']))}", body_text))
         if ats.get('palavras_chave_faltantes'):
-            elements.append(Paragraph(f"<b>Palavras-Chave Faltantes:</b> {', '.join(ats['palavras_chave_faltantes'])}", body_text))
+            elements.append(Paragraph(f"<b>Palavras-Chave Faltantes:</b> {', '.join(_html.escape(str(p)) for p in ats['palavras_chave_faltantes'])}", body_text))
 
     doc.build(elements)
     buffer.seek(0)

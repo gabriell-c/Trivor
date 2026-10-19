@@ -1,6 +1,6 @@
 # Makefile - Trivor
 
-.PHONY: help dev backend-dev frontend-dev test test-backend test-frontend lint lint-backend lint-frontend clean build docker-up docker-down
+.PHONY: help dev backend-dev frontend-dev test test-backend test-frontend lint lint-backend lint-frontend clean clean-all build build-backend build-frontend docker-up docker-down docker-logs install install-backend install-frontend
 
 help: ## Mostra ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -27,7 +27,8 @@ test: test-backend test-frontend ## Roda todos os testes
 
 test-backend: ## Roda testes do backend
 	@echo "🧪 Rodando testes do backend..."
-	cd backend && python -m pytest tests/ -v
+	@echo "   (pasta tests/ fica na raiz do projeto)"
+	python -m pytest tests/ -v
 
 test-frontend: ## Roda testes do frontend
 	@echo "🧪 Rodando testes do frontend..."
