@@ -8,7 +8,9 @@ import { getGlobalStatus, useIaProviders } from '../hooks/useIaProviders'
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
 
-const CurriculoPage = dynamic(() => import('../page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+// Tool de CV real: CurriculoTool (5 features: fit determinístico, análise
+// semântica da vaga, simulação de recrutador, cover letter e diff de versões).
+const CurriculoTool = dynamic(() => import('../components/CurriculoTool').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
@@ -55,7 +57,7 @@ export default function AppShell() {
           {activeTool === 'curriculo' && (
             <motion.div key="curriculo" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
               <div className="w-full max-w-4xl space-y-6">
-              <CurriculoPage />
+              <CurriculoTool />
               </div>
             </motion.div>
           )}

@@ -118,6 +118,7 @@ export default function CurriculoTool() {
     setLoading(true)
     setError(null)
     setRes(null)
+    setFileName(file.name)
     setSemanticFit(null)
     setSemanticError(null)
     setRecruiterSim(null)
