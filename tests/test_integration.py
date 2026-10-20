@@ -1373,3 +1373,94 @@ class TestSalaryHeuristic:
         r = market_service.heuristic_extract("Salário anual de R$ 60.000")
         assert r.get("salary_min") == 5000.0
         assert r.get("salary_max") == 5000.0
+
+# ============================================================================
+# Teste de conexão do provedor de IA (ping de custo mínimo)
+# ============================================================================
+
+class _FakeUsage:
+    prompt_tokens = 1
+    completion_tokens = 1
+
+
+class _FakePingResponse:
+    usage = _FakeUsage()
+
+
+class TestConnectionPingEndpoint:
+    def test_success_returns_latency_and_usage(self, client):
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _FakePingResponse()
+        with patch("main.OpenAI", return_value=fake_client):
+            r = client.post(
+                "/api/test-connection",
+                data={
+                    "api_key": "sk-fake-test-key-12345",
+                    "api_url": "https://api.openai.com/v1",
+                    "model_name": "gpt-4o",
+                },
+            )
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        assert d["model"] == "gpt-4o"
+        assert d["latency_ms"] >= 0
+        assert d["usage"]["prompt_tokens"] == 1
+
+    def test_missing_key_returns_400(self, client):
+        # Só-espaços chega ao handler (campo presente com conteúdo) → guard 400.
+        # Valor TOTALMENTE vazio nunca chega: o parser multipart do Starlette
+        # descarta partes sem conteúdo e o FastAPI devolve 422 "Field required"
+        # — ambos bloqueiam; o 400 é o de mensagem amigável.
+        r = client.post("/api/test-connection", data={"api_key": "   "})
+        assert r.status_code == 400
+        assert "Chave" in r.json().get("detail", "")
+
+    def test_error_sanitizes_api_key(self, client):
+        # A chave NUNCA pode vazar na resposta 502 (propriedade de segurança).
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.side_effect = Exception(
+            "Authentication failed for sk-fake-test-key-12345: invalid token"
+        )
+        with patch("main.OpenAI", return_value=fake_client):
+            r = client.post(
+                "/api/test-connection",
+                data={"api_key": "sk-fake-test-key-12345", "model_name": "gpt-4o"},
+            )
+        assert r.status_code == 502
+        detail = r.json().get("detail", "")
+        assert "sk-fake-test-key-12345" not in detail
+        assert "Erro na conexão" in detail
+
+    def test_ping_uses_minimum_tokens(self, client):
+        # Contrato de custo mínimo: max_tokens=1 e prompt fixo curto.
+        fake_client = MagicMock()
+        fake_client.chat.completions.create.return_value = _FakePingResponse()
+        with patch("main.OpenAI", return_value=fake_client):
+            client.post(
+                "/api/test-connection",
+                data={"api_key": "sk-x", "model_name": "gpt-4o"},
+            )
+        kwargs = fake_client.chat.completions.create.call_args.kwargs
+        assert kwargs["max_tokens"] == 1
+        assert len(kwargs["messages"][0]["content"]) <= 16
+
+
+# ============================================================================
+# Detector de abreviações — regressão do falso-positivo "js" em Next.js
+# ============================================================================
+
+class TestDetectAbbreviations:
+    def test_framework_js_suffixes_not_flagged(self):
+        from main import _detect_abbreviations
+        r = _detect_abbreviations("Stack: Next.js, React.js, Node.js e Express.js")
+        assert [e["tipo"] for e in r] == []
+
+    def test_lone_js_is_flagged(self):
+        from main import _detect_abbreviations
+        r = _detect_abbreviations("domina js a 5 anos")
+        assert [e["tipo"] for e in r] == ["abreviacao"]
+
+    def test_compound_js_names_not_flagged(self):
+        from main import _detect_abbreviations
+        assert _detect_abbreviations("Conheço JSX, NodeJS e TypeScript") == []
