@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
   Plus, Trash2, CheckCircle2, XCircle, Loader2, Eye, EyeOff,
-  AlertCircle, RefreshCw, Pencil, X, Check, Copy, ChevronDown,
+  AlertCircle, AlertTriangle, RefreshCw, Pencil, X, Check, Copy, ChevronDown,
   ExternalLink, Bot, Zap, Globe, Save, Server, KeyRound, Link2,
   Sparkles, Briefcase,
 } from 'lucide-react'
@@ -12,6 +12,10 @@ import { useIaProviders, IAProvider } from '../hooks/useIaProviders'
 import { API_BASE_URL } from '../lib/api'
 
 const EASE = [0.16, 1, 0.3, 1] as const
+
+// SLA do teste de conexão: ping abaixo de 3s = "Conectado" (verde);
+// acima disso o provedor responde, mas a pílula vira "Lento" (âmbar).
+const SLOW_THRESHOLD_MS = 3000
 
 /* ═══════════ Theme — cores sólidas, sem gradiente ═══════════ */
 const PROVIDER_THEME = {
@@ -66,7 +70,7 @@ interface JsearchKeyRecord {
 
 interface ToastItem {
   id: number
-  kind: 'success' | 'error' | 'info'
+  kind: 'success' | 'error' | 'info' | 'warning'
   message: string
 }
 
@@ -283,6 +287,13 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
                   icon: 'text-rose-300',
                   glow: 'shadow-[0_0_24px_-6px_rgba(244,63,94,0.5)]',
                 }
+              : t.kind === 'warning'
+              ? {
+                  bar: 'bg-amber-500',
+                  Icon: AlertTriangle,
+                  icon: 'text-amber-300',
+                  glow: 'shadow-[0_0_24px_-6px_rgba(245,158,11,0.5)]',
+                }
               : {
                   bar: 'bg-blue-500',
                   Icon: AlertCircle,
@@ -319,14 +330,29 @@ function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id
 }
 
 /* ═══════════ Status pill ═══════════ */
+function fmtLatency(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1).replace('.', ',')}s` : `${ms}ms`
+}
+
+function fmtWhen(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function StatusPill({
   status,
   testing,
   message,
+  latencyMs,
 }: {
-  status?: 'connected' | 'error' | 'unknown'
+  status?: 'connected' | 'slow' | 'error' | 'unknown' | 'testing'
   testing?: boolean
   message?: string
+  latencyMs?: number
 }) {
   if (testing) {
     return (
@@ -350,7 +376,18 @@ function StatusPill({
           />
           <span className="relative w-2 h-2 rounded-full bg-emerald-400" />
         </span>
-        Conectado
+        Conectado{latencyMs != null ? ` · ${fmtLatency(latencyMs)}` : ''}
+      </span>
+    )
+  }
+  if (status === 'slow') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-400/40 text-amber-200"
+        title={message}
+      >
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Lento{latencyMs != null ? ` · ${fmtLatency(latencyMs)}` : ''}
       </span>
     )
   }
@@ -577,7 +614,7 @@ export default function ApiSettingsPage() {
   const [keysLoading, setKeysLoading] = useState(true)
 
   const meta = PROVIDER_THEME[newProv.providerType]
-  const connectedCount = providers.filter((p) => p.status === 'connected').length
+  const connectedCount = providers.filter((p) => p.status === 'connected' || p.status === 'slow').length
   const jsearchQuota = keys.length * 200
 
   /* ──────── handlers ──────── */
@@ -634,17 +671,23 @@ export default function ApiSettingsPage() {
     body.set('model_name', p.modelName)
     try {
       const res = await fetch(`${API_BASE_URL}/api/test-connection`, { method: 'POST', body })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as any))
       if (res.ok) {
-        updateStatus(p.id, 'connected')
-        pushToast('success', data.latency_ms ? `${data.message} em ${data.latency_ms}ms` : (data.message || 'Conexão OK'))
+        const slow = data.latency_ms != null && data.latency_ms >= SLOW_THRESHOLD_MS
+        const detail = data.message || 'Conexão OK'
+        updateStatus(p.id, slow ? 'slow' : 'connected', detail, data.latency_ms)
+        if (slow) {
+          pushToast('warning', `Respondeu, mas demorou: ${detail} em ${fmtLatency(data.latency_ms)}`)
+        } else {
+          pushToast('success', data.latency_ms != null ? `${detail} em ${fmtLatency(data.latency_ms)}` : detail)
+        }
       } else {
-        updateStatus(p.id, 'error', data.detail || '')
+        updateStatus(p.id, 'error', data.detail || 'Erro na conexão')
         pushToast('error', data.detail || 'Erro na conexão')
       }
     } catch (e: any) {
-      updateStatus(p.id, 'error', e.message || '')
-      pushToast('error', e.message || 'Erro na conexão')
+      updateStatus(p.id, 'error', e.message || 'Erro na conexão')
+      pushToast('error', e.message || 'Falha ao contatar o backend')
     } finally {
       setTestingId(null)
     }
@@ -661,7 +704,8 @@ export default function ApiSettingsPage() {
 
   const saveEdit = () => {
     if (!expandedId) return
-    update(expandedId, editData)
+    // Config mudou → resultado do último teste ficou inválido: volta a "não testado".
+    update(expandedId, { ...editData, status: 'unknown', statusMessage: '', lastLatencyMs: undefined, lastTestedAt: undefined })
     setExpandedId(null)
     setEditData({})
     pushToast('success', 'Alterações salvas')
@@ -973,7 +1017,7 @@ export default function ApiSettingsPage() {
                         <span className="text-base font-semibold text-white truncate">
                           {p.name || cfg.name}
                         </span>
-                        <StatusPill status={p.status as any} testing={isTesting} message={p.statusMessage} />
+                        <StatusPill status={p.status} testing={isTesting} message={p.statusMessage} latencyMs={p.lastLatencyMs} />
                       </div>
                       <div className="text-sm text-slate-300 truncate">
                         <span className="font-medium text-slate-200">{p.modelName}</span>
@@ -982,6 +1026,24 @@ export default function ApiSettingsPage() {
                           {p.apiKey.slice(0, 8)}…{p.apiKey.slice(-4)}
                         </span>
                       </div>
+                      {p.lastTestedAt ? (
+                        <div
+                          className={`text-[11px] truncate ${
+                            p.status === 'error'
+                              ? 'text-rose-300/90'
+                              : p.status === 'slow'
+                                ? 'text-amber-300/90'
+                                : 'text-slate-400/80'
+                          }`}
+                          title={p.status === 'error' ? p.statusMessage : undefined}
+                        >
+                          {p.status === 'error'
+                            ? `Último teste: falhou ${fmtWhen(p.lastTestedAt)}${p.statusMessage ? ` — ${p.statusMessage}` : ''}`
+                            : p.lastLatencyMs != null
+                              ? `Último teste: ${fmtLatency(p.lastLatencyMs)} · ${fmtWhen(p.lastTestedAt)}`
+                              : `Último teste: ${fmtWhen(p.lastTestedAt)}`}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>

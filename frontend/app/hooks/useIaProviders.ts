@@ -9,8 +9,10 @@ export interface IAProvider {
   apiUrl: string;
   modelName: string;
   usedFor: 'all' | 'curriculo' | 'market' | 'none';
-  status: 'unknown' | 'testing' | 'connected' | 'error';
+  status: 'unknown' | 'testing' | 'connected' | 'slow' | 'error';
   statusMessage: string;
+  lastLatencyMs?: number;
+  lastTestedAt?: string;
   created_at: string;
 }
 
@@ -99,7 +101,7 @@ export function useIaProviders() {
   );
 
   const update = useCallback(
-    (id: string, patch: Partial<Omit<IAProvider, 'id' | 'created_at' | 'status' | 'statusMessage'>>) => {
+    (id: string, patch: Partial<Omit<IAProvider, 'id' | 'created_at'>>) => {
       const updated = providers.map((p) => (p.id === id ? { ...p, ...patch } : p));
       setProviders(updated);
       saveProviders(updated);
@@ -107,20 +109,39 @@ export function useIaProviders() {
     [providers]
   );
 
-  const updateStatus = useCallback((id: string, status: IAProvider['status'], message?: string) => {
-    setProviders((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status, statusMessage: message || '' } : p))
-    );
-  }, []);
+  // Persiste no localStorage: sem isso o polling de 5s em `loadProviders`
+  // devolveria o status antigo e apagaria o resultado do teste.
+  const updateStatus = useCallback(
+    (id: string, status: IAProvider['status'], message?: string, latencyMs?: number) => {
+      // unknown/teste novo sem latência limpa a memória do último teste;
+      // erro mantém o "quando" mas descarta a latência.
+      const stale = status === 'unknown' || status === 'testing';
+      const updated = providers.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              status,
+              statusMessage: message || '',
+              lastLatencyMs: stale ? undefined : latencyMs,
+              lastTestedAt: stale ? undefined : new Date().toISOString(),
+            }
+          : p
+      );
+      setProviders(updated);
+      saveProviders(updated);
+    },
+    [providers]
+  );
 
   return { providers, add, remove, updateUsedFor, update, updateStatus };
 }
 
 export function getGlobalStatus(providers: IAProvider[]): 'green' | 'yellow' | 'red' | 'none' {
   if (providers.length === 0) return 'none';
-  const connected = providers.filter((p) => p.status === 'connected').length;
+  // "slow" ainda é um provedor alcançável — conta como conectado.
+  const reachable = providers.filter((p) => p.status === 'connected' || p.status === 'slow').length;
   const hasError = providers.some((p) => p.status === 'error');
-  if (connected === providers.length) return 'green';
+  if (reachable === providers.length) return 'green';
   if (hasError) return 'red';
   return 'yellow';
 }
