@@ -39,9 +39,11 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
   - Soft Skills e Certificações indispensáveis.
   - Requisitos desejáveis (*Nice-to-Have*) e distribuição de modalidades (Remoto, Híbrido, Presencial).
   - Vagas detalhadas analisadas vs. descartadas com justificativa lógica.
+- **Retenção automática**: o histórico de relatórios de mercado guarda as 30 análises mais recentes — cada relatório é um JSON de ~300 KB, então o cap mantém o banco local enxuto sem perder o histórico útil.
 
 ### 5. ⚙️ Central de Configuração Multi-Provider de IA
 - Gerenciamento dinâmico e seguro de chaves API (OpenAI, Anthropic, Gemini, Groq, custom endpoints).
+- **Teste de conexão por provider** (ping de 1 token, custo mínimo): resposta imediata com a latência; acima de 3s fica amarelo ("lento"); em erro, mostra a causa sem vazar a chave. O histórico do último teste (latência + data/hora) fica no cartão do provider.
 - Sistema inteligente de *fallback* e balanceamento de chamadas.
 - **Chaves JSearch com segurança**: o backend guarda apenas um resumo de cada chave (prefixo + hash) — o texto puro nunca é persistido. O pool de busca usa as chaves re-digitadas na aba "Busca de Vagas" + a variável `JSEARCH_API_KEY` do `.env` do backend.
 
@@ -63,6 +65,7 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 ### 9. ⚙️ Análise de CV em 2 Passes
 - Pass 1: estrutura, ortografia, ordem de seções e ATS.
 - Pass 2: qualidade (XYZ, métricas, narrativa) usando o resumo do pass 1 como contexto — resultados mais estáveis e criticidades ancoradas em trechos citados do próprio CV.
+- **Especificidade obrigatória**: cada crítica nomeia o item concreto (empresa + cargo + período, bullet ou seção); a análise ATS lista, em ordem de impacto, o que falta para a nota chegar a 100. Trechos como "Next.js"/"React.js" não são flaggados como abreviação.
 
 ---
 
@@ -76,8 +79,9 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 ### **Backend**
 - **Framework**: FastAPI (Python 3.11+) + Uvicorn
 - **Processamento de PDF**: PyMuPDF (`fitz`), pdfplumber, PyPDF
-- **Persistência**: SQLite (Async Engine)
+- **Persistência**: SQLite (arquivo local `backend/market.db`)
 - **Modelos de IA**: OpenAI API (GPT-4o, GPT-4o-mini) / OmniRoute Fallback
+- **Performance**: trabalho bloqueante (chamadas LLM, pipeline de mercado com pausas de 15s, extração de PDF) roda em thread pool — o servidor não trava durante uma análise; health, logs e configurações continuam respondendo mesmo com o provider lento em voo.
 
 ### **Extensão Browser**
 - Extensão Google Chrome (Manifest V3) para captura direta de perfis e dados de vagas.
