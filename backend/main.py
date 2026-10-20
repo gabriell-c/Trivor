@@ -2609,6 +2609,49 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
         raise HTTPException(status_code=500, detail="Erro ao comparar as versões do currículo. Verifique a chave de API e tente novamente.")
 
 
+@app.post('/api/test-connection')
+@limiter.limit("10/minute")
+async def api_test_ia_connection(
+    request: Request,
+    api_key: str = Form(...),
+    api_url: str = Form(''),
+    model_name: str = Form(''),
+    text: str = Form(''),
+):
+    """Ping de conexão do provedor de IA com custo mínimo: 1 chamada,
+    1 token de saída. `text` não é usado de propósito (o prompt do ping
+    é fixo e pequeno, independente do que o front envie)."""
+    key = (api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
+    base_url = (api_url or "").strip() or "https://api.openai.com/v1"
+    model = (model_name or "").strip() or "gpt-4o"
+    start = time.time()
+    try:
+        client = OpenAI(api_key=key, base_url=base_url,
+                        timeout=httpx.Timeout(20, connect=10.0))
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=1,
+        )
+        usage = response.usage
+        return {
+            "success": True,
+            "message": f"Conexão OK ({model})",
+            "model": model,
+            "latency_ms": round((time.time() - start) * 1000),
+            "usage": {
+                "prompt_tokens": usage.prompt_tokens if usage else 0,
+                "completion_tokens": usage.completion_tokens if usage else 0,
+            },
+        }
+    except Exception as e:
+        # Sanitiza: a chave nunca deve aparecer na resposta nem no log.
+        detail = str(e).replace(key, "")[:300]
+        raise HTTPException(status_code=502, detail=f"Erro na conexão: {detail}")
+
+
 @app.post('/api/ia/analyze')
 @limiter.limit("20/minute")
 async def analyze_ia(
