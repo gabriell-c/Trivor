@@ -180,6 +180,8 @@ Retorne APENAS um JSON válido, sem markdown, com EXATAMENTE estes campos:
 - NÃO assuma área de atuação do candidato. Se não foi especificado, analise de forma GENÉRICA para QUALQUER área (admin, vendas, saúde, educação, etc).
 - NÃO critique falta de linguagens/frameworks/tecnologias se o CV não é de tecnologia.
 - Ordens alternativas de seções NÃO são erros — descreva a ordem encontrada sem punir.
+- **ESPECIFICIDADE:** nenhum campo "problema" ou "como_corrigir" pode ser genérico. Nomeie o item concreto: empresa + cargo + período para experiências ("na experiência na ACME (2023–2024), nenhum dos 3 bullets tem número"), bullet ou frase específica. "As experiências" sem dizer quais é proibido; cite até 3 exemplos nomeados.
+- **ANÁLISE ATS — explicacao:** liste em ordem de impacto os motivos concretos da perda de pontos que impedem o score_ats de chegar a 100 (ex.: "-8: nenhuma métrica na experiência X; -5: faltam as palavras-chave Y e Z"). Se score_ats >= 90, explique em 1 linha o que falta para 100.
 - **ERROS ORTOGRÁFICOS:** Só reporte erros que são óbvios e inquestionáveis. Se a palavra tem til, cedilha, acento, ou parece artefato de PDF, NÃO reporte.
 - **NUNCA juntes palavras:** Se o texto extraído diz "segurança" (correto), NUNCA crie um erro dizendo "seguran ca" ou "segur ança". Isso é artefato de OCR, não erro do candidato.
 - **NUNCA separe palavras:** Se o texto extraído diz "seguran ca" (artefato OCR), NÃO crie um erro ortográfico. Trate como artefato.
@@ -221,6 +223,7 @@ Você deve verificar TODOS os itens abaixo e refleti-los no JSON de resposta
 - **Método STAR**: Situação, Tarefa, Ação, Resultado. Para descrições mais longas.
 - **Tecnologias/ferramentas**: Devem ser mencionadas EM CADA experiência, não só na seção de skills.
 - **Abreviações**: NÃO usar abreviações que o recrutador não entende. Ex: "JS" → "JavaScript", "HTML" → escrever por extenso se for a primeira menção.
+  - **CONTEXTOS VÁLIDOS (NUNCA flaggear):** o sufixo ".js" em nomes de frameworks é parte do nome oficial — "Next.js", "React.js", "Node.js", "Express.js", "AngularJS" NÃO são abreviações. Só flagge "JS"/"js" quando aparecer como palavra isolada (ex: "domina js e css").
 - **Motivo de saída**: NÃO colocar "demissão sem justa causa" ou semelhantes. Se presente, é erro.
 - **Projetos pessoais**: Se tiver, deve ter link (URL) para o projeto.
 
@@ -248,7 +251,7 @@ Você deve verificar TODOS os itens abaixo e refleti-los no JSON de resposta
 ### 7. ERROS COMUNS DO GUIA (VERIFICAR E FLAGGEAR)
 - Texto em parágrafo ao invés de bullet points
 - Falta de números/métricas
-- Abreviações que só o candidato entende (JS, HTML, CSS → escrever por extenso)
+- Abreviações que só o candidato entende (JS, HTML, CSS → escrever por extenso — mas NUNCA flaggar o ".js" de Next.js/React.js/Node.js: é nome oficial, não abreviação)
 - Colocar motivo de saída do emprego
 - Profile summary genérico ("apaixonado por tecnologia", "busco crescimento")
 - Tecnologias citadas só na seção de skills, não nas experiências

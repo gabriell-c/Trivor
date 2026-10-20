@@ -506,8 +506,10 @@ def _detect_abbreviations(text: str) -> list[dict]:
 
     # Verificar cada abreviação
     for abrev, expansao in abrev_map.items():
-        # Padrão: a abreviação isolada, não parte de outra palavra
-        pattern = rf'\b{abrev}\b'
+        # Padrão: a abreviação isolada, não parte de outra palavra.
+        # (?<!\.) evita flaggear o "js" de nomes compostos legítimos
+        # (Next.js, React.js, Express.js — o ponto é parte do nome oficial).
+        pattern = rf'(?<!\.)\b{abrev}\b'
         matches = re.findall(pattern, text, re.IGNORECASE)
         for match in matches:
             # Não flaggear se for parte de nome próprio ou sigla conhecida
@@ -1288,7 +1290,7 @@ INFORMAÇÕES ADICIONAIS:
 
 {f'- O candidato busca posição na área de: {area_info}' if area_info else '- ÁREA DO CANDIDATO NÃO ESPECIFICADA: não assuma nenhuma área (não assuma que é tecnologia, desenvolvimento, etc.). Analise o CV de forma genérica, avaliando apenas o que está escrito.'}
 
-Avalie APENAS o escopo deste passo (estrutura, seções, ortografia, erros comuns, ATS e checklist do guia). A crítica de qualidade (fórmula XYZ, métricas, narrativa) será feita no passo 2."""
+Avalie APENAS o escopo deste passo (estrutura, seções, ortografia, erros comuns, ATS e checklist do guia). A crítica de qualidade (fórmula XYZ, métricas, narrativa) será feita no passo 2.""" + "\n\nESPECIFICIDADE OBRIGATÓRIA:\n- Nenhum problema pode ser genérico. Cite SEMPRE o item concreto: empresa + cargo + período para experiências ('na experiência na ACME (2023–2024), nenhum dos 3 bullets tem número mensurável'), bullet específico, seção específica. 'As experiências' sem nomear qual é proibido.\n- O campo analise_ats.explicacao deve listar, em ordem de impacto, os motivos concretos da perda de pontos que impedem score_ats de chegar a 100 (ex.: '-8: nenhuma métrica na experiência X; -5: falta a palavra-chave Y'). Se score_ats >= 90, explique em 1 linha o que ainda falta."
 
             # PASSO 1 — estrutura (nota base, seções, ortografia, erros comuns, ATS)
             response_estrut = client.chat.completions.create(
@@ -1331,7 +1333,12 @@ INFORMAÇÕES ADICIONAIS:
 {f'- O candidato busca posição na área de: {area_info}' if area_info else '- ÁREA DO CANDIDATO NÃO ESPECIFICADA: não assuma nenhuma área (não assuma que é tecnologia, desenvolvimento, etc.). Analise a qualidade de forma genérica.'}
 
 Avalie APENAS a qualidade (fórmula XYZ, métricas, narrativa) seguindo o prompt de sistema.
-Retorne o JSON com pontos_fortes e pontos_fracos, com citações literais do currículo."""
+Retorne o JSON com pontos_fortes e pontos_fracos, com citações literais do currículo.
+
+ESPECIFICIDADE OBRIGATÓRIA: cada ponto fraco que aponte uma experiência deve começar nomeando
+a empresa (ou cargo + período) — ex.: 'Na experiência na ACME (2023–2024): nenhum dos 3 bullets
+tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. Itens genéricos
+('as experiências não têm métricas') são proibidos."""
 
             response_qual = None
             try:

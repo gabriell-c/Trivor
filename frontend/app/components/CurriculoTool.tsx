@@ -1094,28 +1094,32 @@ export default function CurriculoTool() {
               </Card>
             )}
 
-            {/* ── Sub-sections (LLM) ── */}
-            <SemanticFitSection
-              file={selectedFile}
-              jobTitle={jobTitle}
-              area={area}
-              analysisId={analysisId}
-              autoRun={fitAutoRun}
-            />
-            <RecruiterSimSection
-              file={selectedFile}
-              jobTitle={jobTitle}
-              jobLevel={jobLevel}
-              area={area}
-              analysisId={analysisId}
-            />
-            <CoverLetterSection
-              file={selectedFile}
-              jobTitle={jobTitle}
-              jobLevel={jobLevel}
-              area={area}
-              analysisId={analysisId}
-            />
+            {/* ── Sub-sections (LLM) — só fazem sentido com descrição da vaga ── */}
+            {jobTitle.trim().length >= 40 && (
+              <>
+                <SemanticFitSection
+                  file={selectedFile}
+                  jobTitle={jobTitle}
+                  area={area}
+                  analysisId={analysisId}
+                  autoRun={fitAutoRun}
+                />
+                <RecruiterSimSection
+                  file={selectedFile}
+                  jobTitle={jobTitle}
+                  jobLevel={jobLevel}
+                  area={area}
+                  analysisId={analysisId}
+                />
+                <CoverLetterSection
+                  file={selectedFile}
+                  jobTitle={jobTitle}
+                  jobLevel={jobLevel}
+                  area={area}
+                  analysisId={analysisId}
+                />
+              </>
+            )}
             <CVDiffSection area={area} />
 
             {/* ── Palavras-chave ── */}
@@ -1763,7 +1767,7 @@ function SemanticFitSection({
         <p className="text-sm text-amber-200 leading-relaxed">
           {canRun
             ? 'Esta análise roda sozinha ao clicar em "Analisar Currículo" com a descrição da vaga preenchida.'
-            : 'Para liberar a análise, cole a descrição completa da vaga (mín. 40 caracteres) no campo "Descrição da vaga".'}
+            : 'Selecione um arquivo de currículo para liberar a análise.'}
         </p>
       )}
 
@@ -2003,8 +2007,7 @@ function RecruiterSimSection({
           </GhostBtn>
           {!canRun && (
             <p className="text-sm text-amber-200 mt-3 leading-relaxed">
-              Para liberar a simulação, cole a descrição completa da vaga (mín. 40 caracteres) no
-              campo "Descrição da vaga".
+              Selecione um arquivo de currículo para liberar a simulação.
             </p>
           )}
         </div>
@@ -2231,8 +2234,7 @@ function CoverLetterSection({
 
       {!canGenerate && !carta && !loading && (
         <p className="text-sm text-amber-200 mt-3 leading-relaxed">
-          Para liberar a geração, cole a descrição completa da vaga (mín. 40 caracteres) no campo
-          "Descrição da vaga".
+          Selecione um arquivo de currículo para liberar a geração.
         </p>
       )}
 

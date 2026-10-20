@@ -46,6 +46,11 @@ embutido no próprio item, neste formato exato:
 <descrição curta do ponto> (trecho: '<trecho literal copiado do CV>')
 ```
 
+- **ESPECIFICIDADE:** se o ponto se refere a uma experiência, COMECE o item nomeando a empresa
+  (ou cargo + período). Exemplo: `Na experiência na ACME (2023–2024): nenhum dos 3 bullets tem
+  resultado mensurável (trecho: 'Responsável pelo módulo de cobrança')`.
+  Item genérico ("as experiências não têm métricas", "faltam resultados") SEM nomear qual
+  experiência é proibido.
 - Copie o trecho EXATAMENTE como aparece no texto fornecido — NUNCA "corrija" a ortografia ao citar.
 - **SE você não encontrar um trecho do CV que sustente o item, OMITA a citação** e escreva o item
   SEM o "(trecho: ...)". Omitir a citação é SEMPRE melhor do que inventar uma.
