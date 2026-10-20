@@ -67,6 +67,12 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 - Pass 2: qualidade (XYZ, métricas, narrativa) usando o resumo do pass 1 como contexto — resultados mais estáveis e criticidades ancoradas em trechos citados do próprio CV.
 - **Especificidade obrigatória**: cada crítica nomeia o item concreto (empresa + cargo + período, bullet ou seção); a análise ATS lista, em ordem de impacto, o que falta para a nota chegar a 100. Trechos como "Next.js"/"React.js" não são flaggados como abreviação.
 
+### 10. 📨 Job Hunter (Candidaturas) — automação de envios
+- 5 bots de navegação automática (`gupy.py`, `indeed.py`, `infojobs.py`, `nerdin.py`, `solides.py`) que buscam vagas e enviam o CV nos portais; vivem em `apply/`.
+- Roteador de LLM local (Groq → Gemini → Mistral → local) decide o preenchimento de formulários.
+- Os bots gravam o histórico em `apply/relatorio/candidaturas.json`; a aba **Candidaturas** do Trivor lê esse arquivo e mostra resumo, portais e status (sucesso/parcial/falha) — sem escrever no diretório.
+- Setup: `pip install -r apply/requirements-apply.txt` + `playwright install`; copie `apply/config.example.yaml` → `apply/config.yaml` e preencha (o `config.yaml` real, sessões de login e relatórios ficam fora do git).
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas
@@ -99,11 +105,12 @@ curriculo/
 │   ├── export_utils.py      # Gerador de relatórios (Markdown, DOCX, PDF)
 │   └── market_export.py     # Pipeline de exportação de dados de mercado
 ├── frontend/                # Aplicação web Next.js
-│   ├── app/                 # Páginas (Dashboard, Currículo, LinkedIn, Mercado, Logs, Config)
+│   ├── app/                 # Páginas (Dashboard, Currículo, LinkedIn, Mercado, Candidaturas, Logs, Config)
 │   ├── components/          # Componentes reutilizáveis de UI
 │   ├── hooks/               # Custom React Hooks
 │   └── lib/                 # Utilitários de API e formatadores
 ├── extension/               # Extensão Manifest V3 para Google Chrome
+├── apply/                   # Job Hunter — bots de candidatura (code versionado; config/sessões/dados fora do git)
 ├── knowledge/               # Prompts e engenharia de contexto para IA
 ├── tests/                   # Suíte de testes automatizados (Pytest)
 ├── docker-compose.yml       # Orquestração de serviços com Docker

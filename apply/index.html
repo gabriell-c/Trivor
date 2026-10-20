@@ -1,0 +1,1354 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Job Hunter — Dashboard Profissional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        const isDark = stored ? stored === "dark" : prefersDark;
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      })();
+    </script>
+
+    <style>
+      * {
+        transition:
+          background-color 0.2s ease,
+          border-color 0.2s ease,
+          transform 0.2s ease;
+      }
+      body {
+        font-family: "Inter", sans-serif;
+      }
+
+      .switch {
+        font-size: 17px;
+        position: relative;
+        display: inline-block;
+        width: 4em;
+        height: 2.2em;
+        border-radius: 30px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #2a2a2a;
+        transition: 0.4s;
+        border-radius: 30px;
+        overflow: hidden;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 1.2em;
+        width: 1.2em;
+        border-radius: 20px;
+        left: 0.5em;
+        bottom: 0.5em;
+        transition: 0.4s;
+        transition-timing-function: cubic-bezier(0.81, -0.04, 0.38, 1.5);
+        box-shadow: inset 8px -4px 0px 0px #fff;
+      }
+
+      .switch input:checked + .slider {
+        background-color: #00a6ff;
+      }
+
+      .switch input:checked + .slider:before {
+        transform: translateX(1.8em);
+        box-shadow: inset 15px -4px 0px 15px #ffcf48;
+      }
+
+      .star {
+        background-color: #fff;
+        border-radius: 50%;
+        position: absolute;
+        width: 5px;
+        transition: all 0.4s;
+        height: 5px;
+      }
+
+      .star_1 {
+        left: 2.5em;
+        top: 0.5em;
+      }
+      .star_2 {
+        left: 2.2em;
+        top: 1.2em;
+      }
+      .star_3 {
+        left: 3em;
+        top: 0.9em;
+      }
+
+      .switch input:checked ~ .slider .star {
+        opacity: 0;
+      }
+
+      .cloud {
+        width: 3.5em;
+        position: absolute;
+        bottom: -1.4em;
+        left: -1.1em;
+        opacity: 0;
+        transition: all 0.4s;
+      }
+
+      .switch input:checked ~ .slider .cloud {
+        opacity: 1;
+      }
+
+      .status-badge {
+        @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all;
+      }
+
+      .table-row-hover {
+        @apply hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors;
+      }
+
+      .animate-pulse-slow {
+        animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.7;
+        }
+      }
+
+      .animate-spin-slow {
+        animation: spin 2s linear infinite;
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+
+  <body
+    class="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 text-slate-900 dark:text-slate-100 min-h-screen"
+  >
+    <!-- Header aprimorado -->
+    <header
+      class="sticky top-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 px-4 sm:px-6 lg:px-8 py-3 shadow-sm"
+    >
+      <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3 group">
+          <div
+            class="w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-600/30 group-hover:scale-105 transition-transform"
+          >
+            <i class="fas fa-bolt text-white text-lg"></i>
+          </div>
+          <div>
+            <span
+              class="text-xl font-bold tracking-tight bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent"
+            >
+              JOB<span class="text-violet-600 dark:text-violet-400"
+                >HUNTER</span
+              >
+            </span>
+            <p class="text-xs text-slate-500 dark:text-slate-400 -mt-1">
+              Dashboard de Candidaturas
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div
+            class="flex items-center gap-2 px-3 py-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50"
+          >
+            <i
+              class="far fa-clock text-xs text-slate-500 dark:text-slate-400"
+            ></i>
+            <span
+              class="text-xs font-medium text-slate-600 dark:text-slate-300"
+              id="lastUpdate"
+              >—</span
+            >
+          </div>
+
+          <!-- Botão de atualização manual -->
+          <button
+            onclick="manualRefresh()"
+            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg text-sm font-medium shadow-lg shadow-emerald-600/30 transition-all hover:scale-105"
+          >
+            <i class="fas fa-sync-alt" id="refreshIcon"></i>
+            Atualizar
+          </button>
+
+          <label class="switch">
+            <input type="checkbox" id="themeToggle" />
+            <span class="slider">
+              <div class="star star_1"></div>
+              <div class="star star_2"></div>
+              <div class="star star_3"></div>
+              <svg viewBox="0 0 16 16" class="cloud_1 cloud">
+                <path
+                  transform="matrix(.77976 0 0 .78395-299.99-418.63)"
+                  fill="#fff"
+                  d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925"
+                ></path>
+              </svg>
+            </span>
+          </label>
+
+          <button
+            onclick="loadFromFile()"
+            class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-lg text-sm font-medium shadow-lg shadow-violet-600/30 transition-all hover:scale-105"
+          >
+            <i class="fas fa-file-arrow-up"></i>
+            Carregar JSON
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <!-- Área de Upload Aprimorada -->
+      <div
+        id="fileZone"
+        onclick="document.getElementById('fileInput').click()"
+        ondragover="
+          event.preventDefault();
+          this.classList.add(
+            'border-violet-500',
+            'bg-violet-50/50',
+            'dark:bg-violet-900/10',
+            'scale-[1.02]',
+          );
+        "
+        ondragleave="
+          this.classList.remove(
+            'border-violet-500',
+            'bg-violet-50/50',
+            'dark:bg-violet-900/10',
+            'scale-[1.02]',
+          )
+        "
+        ondrop="handleDrop(event)"
+        class="mb-8 p-12 border-3 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl text-center cursor-pointer hover:border-violet-500 dark:hover:border-violet-400 transition-all group bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm"
+      >
+        <div class="space-y-6">
+          <div
+            class="text-7xl text-slate-400 dark:text-slate-600 group-hover:text-violet-500 dark:group-hover:text-violet-400 transition-all group-hover:scale-110"
+          >
+            <i class="fas fa-cloud-upload-alt"></i>
+          </div>
+          <div>
+            <p class="text-xl font-medium">
+              Clique para carregar o
+              <span class="text-violet-600 dark:text-violet-400 font-semibold"
+                >relatório.json</span
+              >
+            </p>
+            <p
+              class="text-sm text-slate-500 dark:text-slate-400 mt-3 flex items-center justify-center gap-2"
+            >
+              <i class="fas fa-mouse-pointer"></i>
+              ou arraste o arquivo aqui
+            </p>
+          </div>
+          <div
+            class="flex justify-center gap-4 text-xs text-slate-400 dark:text-slate-500"
+          >
+            <span
+              ><i class="fas fa-check-circle text-emerald-500 mr-1"></i>Formato
+              JSON</span
+            >
+            <span
+              ><i class="fas fa-layer-group text-violet-500 mr-1"></i>Suporta
+              múltiplas candidaturas</span
+            >
+          </div>
+        </div>
+        <input
+          type="file"
+          id="fileInput"
+          accept=".json"
+          onchange="handleFile(this.files[0])"
+          class="hidden"
+        />
+      </div>
+
+      <!-- Stats Cards Aprimorados -->
+      <div
+        id="statsGrid"
+        class="hidden grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8"
+      >
+        <!-- Card Total -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-violet-500 dark:hover:border-violet-400 transition-all group col-span-2 lg:col-span-1"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Total</span
+            >
+            <div
+              class="w-10 h-10 bg-violet-100 dark:bg-violet-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i
+                class="fas fa-chart-pie text-violet-600 dark:text-violet-400"
+              ></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-violet-600 dark:text-violet-400"
+            id="statTotal"
+          >
+            0
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            candidaturas únicas
+          </div>
+        </div>
+
+        <!-- Card Enviadas -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 transition-all group"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Enviadas</span
+            >
+            <div
+              class="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i
+                class="fas fa-check text-emerald-600 dark:text-emerald-400"
+              ></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-emerald-600 dark:text-emerald-400"
+            id="statEnviadas"
+          >
+            0
+          </div>
+          <div
+            class="text-xs text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1"
+          >
+            <span id="statEnviadasPct">0%</span>
+            <span>do total</span>
+          </div>
+        </div>
+
+        <!-- Card Erros -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-rose-500 dark:hover:border-rose-400 transition-all group"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Falhas</span
+            >
+            <div
+              class="w-10 h-10 bg-rose-100 dark:bg-rose-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i
+                class="fas fa-exclamation-triangle text-rose-600 dark:text-rose-400"
+              ></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-rose-600 dark:text-rose-400"
+            id="statErros"
+          >
+            0
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            com problemas
+          </div>
+        </div>
+
+        <!-- Card Pendentes -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-amber-500 dark:hover:border-amber-400 transition-all group"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Pendentes</span
+            >
+            <div
+              class="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i class="fas fa-clock text-amber-600 dark:text-amber-400"></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-amber-600 dark:text-amber-400"
+            id="statPendentes"
+          >
+            0
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            em andamento
+          </div>
+        </div>
+
+        <!-- Card Sites -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 transition-all group"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Sites</span
+            >
+            <div
+              class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i class="fas fa-globe text-blue-600 dark:text-blue-400"></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-blue-600 dark:text-blue-400"
+            id="statSites"
+          >
+            0
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            plataformas
+          </div>
+        </div>
+
+        <!-- Card Currículos -->
+        <div
+          class="stats-card bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:border-purple-500 dark:hover:border-purple-400 transition-all group"
+        >
+          <div class="flex items-center justify-between mb-3">
+            <span
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+              >Currículos</span
+            >
+            <div
+              class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+            >
+              <i
+                class="fas fa-file-pdf text-purple-600 dark:text-purple-400"
+              ></i>
+            </div>
+          </div>
+          <div
+            class="text-4xl font-bold text-purple-600 dark:text-purple-400"
+            id="statCurriculos"
+          >
+            0
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            versões usadas
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráficos Aprimorados -->
+      <div id="chartsRow" class="hidden space-y-6 mb-8">
+        <!-- Gráfico por Dia -->
+        <div
+          class="bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-lg"
+        >
+          <div class="flex items-center gap-3 mb-6">
+            <div
+              class="w-1 h-8 bg-gradient-to-b from-violet-500 to-indigo-500 rounded-full"
+            ></div>
+            <div>
+              <h3 class="font-semibold text-lg">Candidaturas por Dia</h3>
+              <p
+                class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2"
+              >
+                <i class="fas fa-calendar-alt"></i>
+                Distribuição temporal das aplicações
+              </p>
+            </div>
+          </div>
+          <div class="h-80"><canvas id="chartDia"></canvas></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Gráfico de Status -->
+          <div
+            class="bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-lg"
+          >
+            <div class="flex items-center gap-3 mb-6">
+              <div
+                class="w-1 h-8 bg-gradient-to-b from-emerald-500 to-teal-500 rounded-full"
+              ></div>
+              <div>
+                <h3 class="font-semibold text-lg">Status das Candidaturas</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Distribuição por situação
+                </p>
+              </div>
+            </div>
+            <div class="h-72"><canvas id="chartStatus"></canvas></div>
+          </div>
+
+          <!-- Gráfico por Site -->
+          <div
+            class="bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-lg"
+          >
+            <div class="flex items-center gap-3 mb-6">
+              <div
+                class="w-1 h-8 bg-gradient-to-b from-blue-500 to-cyan-500 rounded-full"
+              ></div>
+              <div>
+                <h3 class="font-semibold text-lg">Por Plataforma</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Sites mais utilizados
+                </p>
+              </div>
+            </div>
+            <div class="h-72"><canvas id="chartSite"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Gráfico por Currículo -->
+        <div
+          class="bg-white dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-lg"
+        >
+          <div class="flex items-center gap-3 mb-6">
+            <div
+              class="w-1 h-8 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full"
+            ></div>
+            <div>
+              <h3 class="font-semibold text-lg">Versões de Currículo</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Distribuição por tipo de currículo utilizado
+              </p>
+            </div>
+          </div>
+          <div class="h-80"><canvas id="chartCurriculo"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Tabela Aprimorada -->
+      <div
+        id="tableCard"
+        class="hidden bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xl"
+      >
+        <!-- Filtros e Busca -->
+        <div
+          class="p-6 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-slate-50/50 to-white dark:from-slate-900/50 dark:to-slate-800/50"
+        >
+          <div class="flex flex-col lg:flex-row lg:items-center gap-6">
+            <div class="flex items-center gap-3 min-w-[200px]">
+              <div
+                class="w-1 h-8 bg-gradient-to-b from-violet-500 to-indigo-500 rounded-full"
+              ></div>
+              <div>
+                <h3 class="font-semibold text-lg">Histórico Completo</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Todas as candidaturas registradas
+                </p>
+              </div>
+            </div>
+
+            <div class="flex-1 flex flex-col sm:flex-row gap-3">
+              <div class="relative flex-1">
+                <i
+                  class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"
+                ></i>
+                <input
+                  type="text"
+                  id="searchBox"
+                  placeholder="Buscar por vaga, empresa, site, status..."
+                  class="w-full pl-9 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all"
+                  oninput="applyFilters()"
+                />
+              </div>
+
+              <select
+                id="filterStatus"
+                onchange="applyFilters()"
+                class="px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all min-w-[150px]"
+              >
+                <option value="">Todos status</option>
+              </select>
+
+              <select
+                id="filterSite"
+                onchange="applyFilters()"
+                class="px-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all min-w-[150px]"
+              >
+                <option value="">Todos sites</option>
+              </select>
+            </div>
+
+            <div
+              class="flex items-center gap-3 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700"
+            >
+              <i class="fas fa-list-ul text-sm text-violet-500"></i>
+              <span
+                class="text-sm font-semibold text-slate-700 dark:text-slate-300"
+                id="resultsCount"
+                >0 resultados</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabela -->
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead>
+              <tr class="bg-slate-100 dark:bg-slate-900/50">
+                <th
+                  onclick="sortBy('vaga')"
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                >
+                  <div class="flex items-center gap-1">
+                    Vaga <i class="fas fa-sort text-[10px]"></i>
+                  </div>
+                </th>
+                <th
+                  onclick="sortBy('site')"
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                >
+                  <div class="flex items-center gap-1">
+                    Site <i class="fas fa-sort text-[10px]"></i>
+                  </div>
+                </th>
+                <th
+                  onclick="sortBy('status')"
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                >
+                  <div class="flex items-center gap-1">
+                    Status <i class="fas fa-sort text-[10px]"></i>
+                  </div>
+                </th>
+                <th
+                  onclick="sortBy('data')"
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                >
+                  <div class="flex items-center gap-1">
+                    Data <i class="fas fa-sort text-[10px]"></i>
+                  </div>
+                </th>
+                <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
+                >
+                  Horário
+                </th>
+                <th
+                  onclick="sortBy('curriculo')"
+                  class="px-6 py-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                >
+                  <div class="flex items-center gap-1">
+                    Currículo <i class="fas fa-sort text-[10px]"></i>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              id="tableBody"
+              class="divide-y divide-slate-200 dark:divide-slate-700"
+            ></tbody>
+          </table>
+        </div>
+
+        <!-- Paginação -->
+        <div
+          class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/30"
+        >
+          <span
+            class="text-sm text-slate-500 dark:text-slate-400"
+            id="pageInfo"
+          ></span>
+          <div class="flex gap-2" id="pageBtns"></div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // ==================== CONFIGURAÇÕES E VARIÁVEIS GLOBAIS ====================
+      let allData = []; // Array de candidaturas processadas
+      let filtered = []; // Array filtrado atual
+      let sortCol = "data";
+      let sortDir = -1; // -1 = descendente, 1 = ascendente
+      let page = 1;
+      const PAGE_SIZE = 15;
+      let charts = {};
+
+      // Mapeamento de status para normalização
+      const statusMap = {
+        enviado: "enviado",
+        ja_candidatado: "enviado",
+        erro: "erro",
+        incompleto: "pendente",
+        sem_botao: "pendente",
+        travado: "pendente",
+        descricao_ingles: "pendente",
+        formulario_ingles: "pendente",
+        captcha_nao_resolvido: "pendente",
+        url_inesperada: "pendente",
+        tecnologia_excluida: "excluido",
+        sessao_expirada: "pendente",
+        externo_rhgestor: "pendente",
+        preenchido: "pendente",
+        pulado: "pendente",
+      };
+
+      // Configurações visuais dos status
+      const statusConfig = {
+        enviado: {
+          color: "text-emerald-700 dark:text-emerald-300",
+          bg: "bg-emerald-100 dark:bg-emerald-900/30",
+          icon: "fa-check-circle",
+          label: "Enviado",
+        },
+        pendente: {
+          color: "text-amber-700 dark:text-amber-300",
+          bg: "bg-amber-100 dark:bg-amber-900/30",
+          icon: "fa-clock",
+          label: "Pendente",
+        },
+        erro: {
+          color: "text-rose-700 dark:text-rose-300",
+          bg: "bg-rose-100 dark:bg-rose-900/30",
+          icon: "fa-exclamation-circle",
+          label: "Erro",
+        },
+        excluido: {
+          color: "text-slate-700 dark:text-slate-300",
+          bg: "bg-slate-100 dark:bg-slate-800",
+          icon: "fa-ban",
+          label: "Excluído",
+        },
+      };
+
+      // ==================== TEMA ====================
+      function applyTheme(isDark) {
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+          localStorage.setItem("theme", "dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+          localStorage.setItem("theme", "light");
+        }
+        if (allData.length) setTimeout(renderCharts, 100);
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        const isDark = document.documentElement.classList.contains("dark");
+        const toggle = document.getElementById("themeToggle");
+        if (toggle) {
+          toggle.checked = !isDark;
+          toggle.addEventListener("change", function (e) {
+            applyTheme(!e.target.checked);
+          });
+        }
+      });
+
+      // ==================== PROCESSAMENTO DOS DADOS ====================
+      function handleFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            processData(JSON.parse(e.target.result));
+            document.getElementById("lastUpdate").innerHTML =
+              new Date().toLocaleTimeString("pt-BR") +
+              ' <i class="fas fa-check-circle text-emerald-500 ml-1"></i>';
+          } catch (error) {
+            alert("Erro ao ler JSON: " + error.message);
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      function handleDrop(e) {
+        e.preventDefault();
+        document
+          .getElementById("fileZone")
+          .classList.remove(
+            "border-violet-500",
+            "bg-violet-50/50",
+            "dark:bg-violet-900/10",
+            "scale-[1.02]",
+          );
+        const file = e.dataTransfer.files[0];
+        if (file && file.type === "application/json") handleFile(file);
+        else alert("Por favor, carregue um arquivo JSON válido.");
+      }
+
+      function loadFromFile() {
+        document.getElementById("fileInput").click();
+      }
+
+      function processData(jsonData) {
+        // Extrai candidaturas do formato { candidaturas: [...] } ou usa array direto
+        let rawCandidaturas = Array.isArray(jsonData)
+          ? jsonData
+          : jsonData.candidaturas || [];
+
+        // Processa cada candidatura
+        allData = rawCandidaturas.map((item) => {
+          let status = item.status || "erro";
+          let normalizedStatus = statusMap[status.toLowerCase()] || "pendente";
+
+          return {
+            vaga: item.vaga || "Vaga não especificada",
+            empresa: item.empresa || "",
+            link: item.link || "#",
+            local: item.local || "Local não informado",
+            site: item.site || "Outros",
+            status: normalizedStatus,
+            statusOriginal: status,
+            data: item.data || "00/00/0000",
+            horario: item.horario || "00:00:00",
+            curriculo: item.curriculo || "Não informado",
+            linkOriginal: item.link || "#",
+          };
+        });
+
+        // Remove duplicatas baseado no link
+        const uniqueLinks = new Set();
+        allData = allData.filter((item) => {
+          if (!item.link || item.link === "#") return true;
+          if (uniqueLinks.has(item.link)) return false;
+          uniqueLinks.add(item.link);
+          return true;
+        });
+
+        // Esconde área de upload e mostra dashboard
+        document.getElementById("statsGrid").style.display = "grid";
+        document.getElementById("chartsRow").style.display = "block";
+        document.getElementById("tableCard").style.display = "block";
+        document.getElementById("fileZone").style.display = "none";
+
+        // Popula filtros
+        updateFilters();
+
+        // Aplica filtros e renderiza
+        applyFilters();
+        renderStats();
+        renderCharts();
+
+        // Scroll suave para o dashboard
+        document
+          .getElementById("statsGrid")
+          .scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function updateFilters() {
+        const sites = [
+          ...new Set(allData.map((d) => d.site).filter(Boolean)),
+        ].sort();
+        const statuses = [...new Set(allData.map((d) => d.status))].sort();
+
+        const siteSelect = document.getElementById("filterSite");
+        siteSelect.innerHTML =
+          '<option value="">Todos sites</option>' +
+          sites.map((s) => `<option value="${s}">${s}</option>`).join("");
+
+        const statusSelect = document.getElementById("filterStatus");
+        statusSelect.innerHTML =
+          '<option value="">Todos status</option>' +
+          statuses
+            .map(
+              (s) =>
+                `<option value="${s}">${statusConfig[s]?.label || s}</option>`,
+            )
+            .join("");
+      }
+
+      function getStatusKey(status) {
+        return status || "pendente";
+      }
+
+      function applyFilters() {
+        const search =
+          document.getElementById("searchBox")?.value.toLowerCase() || "";
+        const status = document.getElementById("filterStatus")?.value || "";
+        const site = document.getElementById("filterSite")?.value || "";
+
+        filtered = allData.filter((d) => {
+          const matchSearch =
+            !search ||
+            (d.vaga || "").toLowerCase().includes(search) ||
+            (d.empresa || "").toLowerCase().includes(search) ||
+            (d.site || "").toLowerCase().includes(search) ||
+            (d.statusOriginal || "").toLowerCase().includes(search);
+
+          const matchStatus = !status || d.status === status;
+          const matchSite = !site || d.site === site;
+
+          return matchSearch && matchStatus && matchSite;
+        });
+
+        // Ordenação
+        filtered.sort((a, b) => {
+          let va, vb;
+          if (sortCol === "data") {
+            va = a.data.split("/").reverse().join("");
+            vb = b.data.split("/").reverse().join("");
+          } else {
+            va = (a[sortCol] || "").toString().toLowerCase();
+            vb = (b[sortCol] || "").toString().toLowerCase();
+          }
+          return sortDir * va.localeCompare(vb);
+        });
+
+        document.getElementById("resultsCount").textContent =
+          filtered.length + " resultado" + (filtered.length !== 1 ? "s" : "");
+        page = 1;
+        renderTable();
+      }
+
+      function sortBy(col) {
+        if (sortCol === col) sortDir *= -1;
+        else {
+          sortCol = col;
+          sortDir = -1;
+        }
+        applyFilters();
+      }
+
+      function renderTable() {
+        const start = (page - 1) * PAGE_SIZE;
+        const rows = filtered.slice(start, start + PAGE_SIZE);
+        const tbody = document.getElementById("tableBody");
+
+        if (!rows.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-16 text-center">
+                    <div class="flex flex-col items-center gap-4">
+                        <i class="fas fa-search text-5xl text-slate-300 dark:text-slate-600"></i>
+                        <p class="text-base text-slate-500 dark:text-slate-400">Nenhuma candidatura encontrada</p>
+                        <button onclick="clearFilters()" class="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 transition-colors">
+                            Limpar filtros
+                        </button>
+                    </div>
+                </td></tr>`;
+          renderPagination();
+          return;
+        }
+
+        tbody.innerHTML = rows
+          .map((d) => {
+            const config = statusConfig[d.status] || statusConfig.pendente;
+            const curriculo = d.curriculo
+              .split("/")
+              .pop()
+              .split("\\")
+              .pop()
+              .replace(".pdf", "")
+              .substring(0, 20);
+
+            return `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer" onclick="window.open('${d.link}', '_blank')">
+                    <td class="px-6 py-4">
+                        <div class="text-sm font-medium">${d.vaga}</div>
+                        ${d.empresa ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-1">${d.empresa}</div>` : ""}
+                        <div class="text-xs text-slate-400 dark:text-slate-500 mt-1">${d.local}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-mono border border-slate-200 dark:border-slate-700">
+                            ${d.site}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${config.bg} ${config.color} border border-${config.color.split(" ")[0].replace("text-", "")}/20">
+                            <i class="fas ${config.icon} text-xs"></i>
+                            ${config.label}
+                            <span class="text-[10px] opacity-75 ml-1">(${d.statusOriginal})</span>
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">${d.data}</td>
+                    <td class="px-6 py-4 text-sm text-slate-500 dark:text-slate-500">${d.horario}</td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-rose-50 dark:bg-rose-900/20 rounded-lg text-xs text-rose-600 dark:text-rose-400">
+                            <i class="far fa-file-pdf"></i>
+                            ${curriculo}
+                        </span>
+                    </td>
+                </tr>
+            `;
+          })
+          .join("");
+
+        renderPagination();
+      }
+
+      function clearFilters() {
+        document.getElementById("searchBox").value = "";
+        document.getElementById("filterStatus").value = "";
+        document.getElementById("filterSite").value = "";
+        applyFilters();
+      }
+
+      function renderPagination() {
+        const total = filtered.length;
+        const totalPages = Math.ceil(total / PAGE_SIZE);
+        const start = (page - 1) * PAGE_SIZE + 1;
+        const end = Math.min(page * PAGE_SIZE, total);
+
+        document.getElementById("pageInfo").textContent = total
+          ? `${start}–${end} de ${total}`
+          : "0 resultados";
+        const btns = document.getElementById("pageBtns");
+        btns.innerHTML = "";
+
+        if (page > 1) {
+          btns.innerHTML += `<button onclick="goPage(${page - 1})" class="w-8 h-8 flex items-center justify-center rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700">
+                    <i class="fas fa-chevron-left"></i>
+                </button>`;
+        }
+
+        for (
+          let i = Math.max(1, page - 2);
+          i <= Math.min(totalPages, page + 2);
+          i++
+        ) {
+          btns.innerHTML += `<button onclick="goPage(${i})" 
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-all ${
+                      i === page
+                        ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-600/30"
+                        : "hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                    }">
+                    ${i}
+                </button>`;
+        }
+
+        if (page < totalPages) {
+          btns.innerHTML += `<button onclick="goPage(${page + 1})" class="w-8 h-8 flex items-center justify-center rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200 dark:border-slate-700">
+                    <i class="fas fa-chevron-right"></i>
+                </button>`;
+        }
+      }
+
+      function goPage(p) {
+        page = p;
+        renderTable();
+        document
+          .querySelector(".overflow-x-auto")
+          .scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function renderStats() {
+        const total = allData.length;
+        const enviadas = allData.filter((d) => d.status === "enviado").length;
+        const erros = allData.filter((d) => d.status === "erro").length;
+        const pendentes = allData.filter((d) => d.status === "pendente").length;
+        const excluidos = allData.filter((d) => d.status === "excluido").length;
+        const sites = new Set(allData.map((d) => d.site).filter(Boolean)).size;
+        const curriculos = new Set(
+          allData.map((d) => d.curriculo).filter(Boolean),
+        ).size;
+
+        document.getElementById("statTotal").textContent = total;
+        document.getElementById("statEnviadas").textContent = enviadas;
+        document.getElementById("statEnviadasPct").textContent = total
+          ? Math.round((enviadas / total) * 100) + "%"
+          : "0%";
+        document.getElementById("statErros").textContent = erros;
+        document.getElementById("statPendentes").textContent =
+          pendentes + excluidos;
+        document.getElementById("statSites").textContent = sites;
+        document.getElementById("statCurriculos").textContent = curriculos;
+      }
+
+      function renderCharts() {
+        Object.values(charts).forEach((c) => c?.destroy());
+        charts = {};
+
+        const isDark = document.documentElement.classList.contains("dark");
+        const textColor = isDark ? "#94a3b8" : "#475569";
+        const gridColor = isDark ? "#334155" : "#e2e8f0";
+
+        // Gráfico por Dia
+        const porDia = {};
+        allData.forEach((d) => {
+          if (d.data && d.data !== "00/00/0000") {
+            porDia[d.data] = (porDia[d.data] || 0) + 1;
+          }
+        });
+        const diasOrdenados = Object.keys(porDia).sort((a, b) => {
+          const [da, ma, aa] = a.split("/").map(Number);
+          const [db, mb, ab] = b.split("/").map(Number);
+          return new Date(aa, ma - 1, da) - new Date(ab, mb - 1, db);
+        });
+
+        charts.dia = new Chart(document.getElementById("chartDia"), {
+          type: "bar",
+          data: {
+            labels: diasOrdenados,
+            datasets: [
+              {
+                label: "Candidaturas",
+                data: diasOrdenados.map((d) => porDia[d]),
+                backgroundColor: "rgba(139, 92, 246, 0.8)",
+                borderRadius: 8,
+                barPercentage: 0.6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { backgroundColor: isDark ? "#1e293b" : "#ffffff" },
+            },
+            scales: {
+              x: {
+                grid: { color: gridColor, display: false },
+                ticks: { color: textColor },
+              },
+              y: {
+                grid: { color: gridColor },
+                ticks: { color: textColor, stepSize: 1, beginAtZero: true },
+              },
+            },
+          },
+        });
+
+        // Gráfico de Status
+        const porStatus = {};
+        allData.forEach((d) => {
+          porStatus[d.status] = (porStatus[d.status] || 0) + 1;
+        });
+
+        charts.status = new Chart(document.getElementById("chartStatus"), {
+          type: "doughnut",
+          data: {
+            labels: Object.keys(porStatus).map(
+              (s) => statusConfig[s]?.label || s,
+            ),
+            datasets: [
+              {
+                data: Object.values(porStatus),
+                backgroundColor: ["#10b981", "#f59e0b", "#f43f5e", "#94a3b8"],
+                borderWidth: 0,
+                hoverOffset: 10,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: { color: textColor, padding: 16, usePointStyle: true },
+              },
+              tooltip: { backgroundColor: isDark ? "#1e293b" : "#ffffff" },
+            },
+          },
+        });
+
+        // Gráfico por Site (top 8)
+        const porSite = {};
+        allData.forEach((d) => {
+          porSite[d.site] = (porSite[d.site] || 0) + 1;
+        });
+        const sortedSites = Object.entries(porSite)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8);
+        const sitesLabels = sortedSites.map((s) => s[0]);
+        const sitesData = sortedSites.map((s) => s[1]);
+
+        charts.site = new Chart(document.getElementById("chartSite"), {
+          type: "doughnut",
+          data: {
+            labels: sitesLabels,
+            datasets: [
+              {
+                data: sitesData,
+                backgroundColor: [
+                  "#8b5cf6",
+                  "#a78bfa",
+                  "#c4b5fd",
+                  "#ddd6fe",
+                  "#ede9fe",
+                  "#f5f3ff",
+                  "#e0e7ff",
+                  "#c7d2fe",
+                ],
+                borderWidth: 0,
+                hoverOffset: 10,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: { color: textColor, padding: 16, usePointStyle: true },
+              },
+              tooltip: { backgroundColor: isDark ? "#1e293b" : "#ffffff" },
+            },
+          },
+        });
+
+        // Gráfico por Currículo
+        const porCurriculo = {};
+        allData.forEach((d) => {
+          let c =
+            d.curriculo
+              .split("/")
+              .pop()
+              .split("\\")
+              .pop()
+              .replace(".pdf", "") || "Desconhecido";
+          if (c.length > 20) c = c.substring(0, 17) + "...";
+          porCurriculo[c] = (porCurriculo[c] || 0) + 1;
+        });
+
+        charts.curriculo = new Chart(
+          document.getElementById("chartCurriculo"),
+          {
+            type: "bar",
+            data: {
+              labels: Object.keys(porCurriculo),
+              datasets: [
+                {
+                  data: Object.values(porCurriculo),
+                  backgroundColor: "rgba(139, 92, 246, 0.8)",
+                  borderRadius: 8,
+                  barPercentage: 0.6,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              indexAxis: "y",
+              plugins: {
+                legend: { display: false },
+                tooltip: { backgroundColor: isDark ? "#1e293b" : "#ffffff" },
+              },
+              scales: {
+                x: {
+                  grid: { color: gridColor },
+                  ticks: { color: textColor, stepSize: 1, beginAtZero: true },
+                },
+                y: {
+                  grid: { display: false },
+                  ticks: { color: textColor },
+                },
+              },
+            },
+          },
+        );
+      }
+
+      // ==================== ATUALIZAÇÃO MANUAL ====================
+      async function manualRefresh() {
+        const refreshIcon = document.getElementById("refreshIcon");
+        refreshIcon.className = "fas fa-sync-alt animate-spin-slow";
+
+        try {
+          const response = await fetch(
+            "relatorio/candidaturas.json?t=" + Date.now(),
+          );
+          if (!response.ok) throw new Error("Arquivo não encontrado");
+
+          const data = await response.json();
+          const candidaturas = data.candidaturas || [];
+
+          if (candidaturas.length !== allData.length) {
+            processData(data);
+            document.getElementById("lastUpdate").innerHTML =
+              new Date().toLocaleTimeString("pt-BR") +
+              ' <i class="fas fa-check-circle text-emerald-500 ml-1"></i>';
+          } else {
+            document.getElementById("lastUpdate").innerHTML =
+              new Date().toLocaleTimeString("pt-BR") +
+              ' <i class="fas fa-info-circle text-slate-500 ml-1"></i> (sem alterações)';
+          }
+        } catch (error) {
+          console.error("Erro na atualização:", error);
+          document.getElementById("lastUpdate").innerHTML =
+            new Date().toLocaleTimeString("pt-BR") +
+            ' <i class="fas fa-exclamation-triangle text-rose-500 ml-1"></i> (erro ao carregar)';
+
+          // Se não encontrar o arquivo, mostrar a área de upload
+          if (error.message === "Arquivo não encontrado") {
+            document.getElementById("statsGrid").style.display = "none";
+            document.getElementById("chartsRow").style.display = "none";
+            document.getElementById("tableCard").style.display = "none";
+            document.getElementById("fileZone").style.display = "block";
+          }
+        } finally {
+          refreshIcon.className = "fas fa-sync-alt";
+        }
+      }
+
+      // Função para verificar se já existe dados carregados
+      window.addEventListener("load", () => {
+        // Tenta carregar automaticamente se existir o arquivo
+        fetch("relatorio/candidaturas.json?t=" + Date.now())
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.candidaturas && data.candidaturas.length > 0) {
+              processData(data);
+            }
+          })
+          .catch(() => {
+            // Silently fail - usuário precisará carregar manualmente
+          });
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,100 @@
+# Exemplo de config.yaml para os bots do Job Hunter (apply/).
+# O config.yaml REAL (com seus dados) fica fora do git — veja .gitignore.
+# Copie este arquivo para config.yaml e preencha.
+candidato:
+  nome: "Seu Nome"
+  email: "voce@email.com"
+  telefone: "11999999999"
+  cidade_uf: "São Paulo - SP"
+  linkedin: "https://linkedin.com/in/voce"
+  github: "https://github.com/voce"
+  portfolio: "seu-portfolio.vercel.app"
+  nivel_ingles: "Basic"
+  disponibilidade_dias: "1"
+  possui_pj: false
+  pretensao_clt: "3000"
+  pretensao_pj_hora: "22"
+  pretensao_pj_mensal: "4500"
+  pretensao_estagio: "1600"
+  data_nascimento: "01/01/2000"
+
+endereco:
+  pais: "Brasil"
+  estado_nome: "São Paulo"
+  estado_uf: "SP"
+  cidade: "São Paulo"
+
+diversidade:
+  raca_cor: "Pardo"
+  genero: "Homem cisgênero"
+  orientacao_sexual: "Heterossexual"
+  pcd: false
+  indicacao: false
+
+localizacao:
+  aceita_remoto: true
+  aceita_hibrido: true
+  aceita_presencial: true
+  estados_aceitos: ["SP", "MG"]
+  aceita_mudanca: true
+
+busca:
+  nivel: ["estágio", "júnior"]
+  palavras_chave:
+    # ── Genérico TI ──────────────────────────────────────────
+    - "tecnologia da informação"
+    - "analista de ti"
+    - "assistente de ti"
+    # (adicione os demais termos que os bots devem buscar)
+  palavras_excluir:
+    - "sênior"
+    - "senior"
+
+# Arquivos de CV usados por perfil (caminho relativo a apply/)
+resumes:
+  fullstack: "resumes/fullstack.pdf"
+  backend_python: "resumes/fullstack.pdf"
+  frontend: "resumes/fullstack.pdf"
+  php: "resumes/fullstack.pdf"
+  dados: "resumes/dados.pdf"
+  suporte: "resumes/fullstack.pdf"
+  mapeamento:
+    # mapeia perfil → arquivo, ex.: "dev": "resumes/dev.pdf"
+    {}
+
+tecnologias:
+  dbt: "Acadêmico"
+
+# Roteador LLM local dos bots (Groq → Gemini → Mistral → local)
+groq:
+  model: "llama-3.3-70b-versatile"
+  temperatura: 0.4
+
+huggingface:
+  model: "meta-llama/Llama-3.3-70B-Instruct"
+
+nerdin:
+  url_busca: "https://nerdin.com.br/vagas.php"
+  url_login:  "https://nerdin.com.br/login_candidato_menu.php"
+
+infojobs:
+  url_login: "https://login.infojobs.com.br/Account/Login"
+  url_busca:  "https://www.infojobs.com.br/empregos.aspx"
+
+automacao:
+  delay_entre_acoes: 1.5
+  delay_entre_vagas: 8
+  max_candidaturas_por_dia: 2000
+  headless: false
+
+gupy:
+  url_login:    "https://login.gupy.io/candidates/signin"
+  url_portal:   "https://portal.gupy.io"
+  url_busca:    "https://portal.gupy.io/job-search/term={termo}"
+  session_file: "gupy_session.json"
+
+solides:
+  url_login:    "https://auth.vagas.solides.com.br/sign-in"
+  url_portal:   "https://vagas.solides.com.br"
+  url_busca:    "https://vagas.solides.com.br/vagas/todos/{termo}?page={pagina}"
+  session_file: "solides_session.json"

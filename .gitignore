@@ -54,6 +54,14 @@ debug*.md
 # Sensitive material (NÃO versionado)
 reference/
 
+# apply (Job Hunter) — PII, credenciais e dados pessoais nunca vão pro git
+# (.env e venv/ já estão cobertos pelos padrões acima)
+apply/config.yaml
+apply/*_session.json
+apply/*_session.pkl
+apply/relatorio/
+apply/resumes/
+
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
