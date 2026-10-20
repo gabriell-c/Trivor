@@ -12,6 +12,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from docling.document_converter import DocumentConverter
 from openai import OpenAI
 import httpx
+from starlette.concurrency import run_in_threadpool
+
+# Handlers são async: I/O síncrono (OpenAI SDK, docling, urlopen, pipeline de
+# mercado com sleeps) executado no event loop travaria TODA a aplicação
+# enquanto durar (ex.: um LLM de 30s congelava até o /health). O trabalho
+# bloqueante é delegado à thread pool via run_in_threadpool.
 
 # Carrega .env (raiz do projeto) antes de qualquer os.getenv de chave;
 # override=False: variáveis já definidas no sistema prevalecem sobre o .env
@@ -1055,7 +1061,7 @@ async def analyze_cv(
                 f.write(content)
 
             # Extrair texto com fallback chain (helper reutilizado pelo /api/market/cv-fit)
-            markdown_text, extractor_used, fallback_used = _extract_cv_text(temp_path, ext)
+            markdown_text, extractor_used, fallback_used = await run_in_threadpool(_extract_cv_text, temp_path, ext)
             if not markdown_text:
                 markdown_text = "Erro ao extrair texto do documento."
 
@@ -1076,7 +1082,7 @@ async def analyze_cv(
             # Detectar hyperlinks
             links_info = _detect_hyperlinks(markdown_text)
             if ext == '.pdf':
-                pdf_links = _extract_pdf_links(temp_path)
+                pdf_links = await run_in_threadpool(_extract_pdf_links, temp_path)
                 for url in pdf_links:
                     already = any(l['url'] == url for l in links_info)
                     if not already:
@@ -1293,7 +1299,7 @@ INFORMAÇÕES ADICIONAIS:
 Avalie APENAS o escopo deste passo (estrutura, seções, ortografia, erros comuns, ATS e checklist do guia). A crítica de qualidade (fórmula XYZ, métricas, narrativa) será feita no passo 2.""" + "\n\nESPECIFICIDADE OBRIGATÓRIA:\n- Nenhum problema pode ser genérico. Cite SEMPRE o item concreto: empresa + cargo + período para experiências ('na experiência na ACME (2023–2024), nenhum dos 3 bullets tem número mensurável'), bullet específico, seção específica. 'As experiências' sem nomear qual é proibido.\n- O campo analise_ats.explicacao deve listar, em ordem de impacto, os motivos concretos da perda de pontos que impedem score_ats de chegar a 100 (ex.: '-8: nenhuma métrica na experiência X; -5: falta a palavra-chave Y'). Se score_ats >= 90, explique em 1 linha o que ainda falta."
 
             # PASSO 1 — estrutura (nota base, seções, ortografia, erros comuns, ATS)
-            response_estrut = client.chat.completions.create(
+            response_estrut = await run_in_threadpool(client.chat.completions.create,
                 model=selected_model,
                 messages=[
                     {"role": "system", "content": sys_prompt_estrut},
@@ -1342,7 +1348,7 @@ tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. I
 
             response_qual = None
             try:
-                response_qual = client.chat.completions.create(
+                response_qual = await run_in_threadpool(client.chat.completions.create,
                     model=selected_model,
                     messages=[
                         {"role": "system", "content": sys_prompt_qual},
@@ -1687,7 +1693,7 @@ async def market_cv_fit(
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2033,7 +2039,7 @@ async def cv_semantic_fit(
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2066,7 +2072,7 @@ Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JS
 
     try:
         start_time = time.time()
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=selected_model,
             messages=[
                 {"role": "system", "content": sys_prompt},
@@ -2173,7 +2179,7 @@ async def cv_recruiter_sim(
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2208,7 +2214,7 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
 
     try:
         start_time = time.time()
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=selected_model,
             messages=[
                 {"role": "system", "content": sys_prompt},
@@ -2357,7 +2363,7 @@ async def cv_cover_letter(
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = _extract_cv_text(temp_path, ext)
+        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2392,7 +2398,7 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
 
     try:
         start_time = time.time()
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=selected_model,
             messages=[
                 {"role": "system", "content": sys_prompt},
@@ -2492,12 +2498,12 @@ async def cv_diff(
     content_novo, ext_novo = await _validar_upload(cv_file_novo, "novo")
     content_anterior, ext_anterior = await _validar_upload(cv_file_anterior, "anterior")
 
-    def _extrair(content: bytes, ext: str, prefixo: str, rotulo: str) -> tuple:
+    async def _extrair(content: bytes, ext: str, prefixo: str, rotulo: str) -> tuple:
         temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix=prefixo)
         try:
             with os.fdopen(temp_fd, 'wb') as f:
                 f.write(content)
-            texto, extractor_used, _ = _extract_cv_text(temp_path, ext)
+            texto, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -2505,8 +2511,8 @@ async def cv_diff(
             raise HTTPException(status_code=400, detail=f"Não foi possível extrair texto do arquivo {rotulo}. Tente outro PDF ou um .docx.")
         return texto, extractor_used
 
-    texto_novo, extractor_novo = _extrair(content_novo, ext_novo, 'cvdiffnovo_', "novo")
-    texto_anterior, extractor_anterior = _extrair(content_anterior, ext_anterior, 'cvdiffant_', "anterior")
+    texto_novo, extractor_novo = await _extrair(content_novo, ext_novo, 'cvdiffnovo_', "novo")
+    texto_anterior, extractor_anterior = await _extrair(content_anterior, ext_anterior, 'cvdiffant_', "anterior")
 
     # Diferença determinística não depende de LLM — calculada antes de tudo
     deterministico = _diff_cv_deterministic(texto_anterior, texto_novo)
@@ -2544,7 +2550,7 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
 
     try:
         start_time = time.time()
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=selected_model,
             messages=[
                 {"role": "system", "content": sys_prompt},
@@ -2637,7 +2643,7 @@ async def api_test_ia_connection(
     try:
         client = OpenAI(api_key=key, base_url=base_url,
                         timeout=httpx.Timeout(20, connect=10.0))
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=model,
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
@@ -2686,7 +2692,7 @@ async def analyze_ia(
         base_url = "https://api.openai.com/v1"
     try:
         client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
-        response = client.chat.completions.create(
+        response = await run_in_threadpool(client.chat.completions.create,
             model=selected_model,
             messages=[
                 {"role": "system", "content": "Você é um especialista em análise de currículos e mercado de trabalho."},
@@ -2765,7 +2771,7 @@ async def analyze_market(
 
     try:
         client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
-        report = run_market_analysis(
+        report = await run_in_threadpool(run_market_analysis,
             db_file=DB_FILE,
             client=client,
             selected_model=selected_model,
@@ -2930,7 +2936,8 @@ async def api_test_jsearch_key(
             },
             method='GET'
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        http_resp = await run_in_threadpool(urllib.request.urlopen, req, timeout=10)
+        with http_resp as resp:
             data = json.loads(resp.read().decode())
             jobs = data.get("data", {}).get("jobs", [])
             return {
@@ -3204,7 +3211,7 @@ async def analyze_linkedin(
             client = OpenAI(api_key=key, base_url=base_url, timeout=_LLM_TIMEOUT)
 
         start_time = time.time()
-        comp = client.chat.completions.create(**create_kwargs)
+        comp = await run_in_threadpool(client.chat.completions.create, **create_kwargs)
         response_time_ms = (time.time() - start_time) * 1000
 
         raw_content = comp.choices[0].message.content or ""
