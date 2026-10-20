@@ -161,6 +161,16 @@ export default function CandidaturasPage() {
     )
   }
 
+  if (!page) {
+    // estado inicial (fetch ainda a caminho) — skeleton curto no lugar da tabela
+    return (
+      <div className="w-full max-w-4xl space-y-5">
+        <PageHeader onRefresh={() => setReloadKey(k => k + 1)} loading={loading} />
+        <div className="h-64 rounded-2xl bg-slate-800/50 animate-pulse" />
+      </div>
+    )
+  }
+
   const ov = overview!
   const pg = page!
   const sites = ov.por_site ? Object.keys(ov.por_site) : []
