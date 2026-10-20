@@ -6,7 +6,7 @@ import Sidebar from './Layout'
 import ErrorBoundary from './ErrorBoundary'
 import { getGlobalStatus, useIaProviders } from '../hooks/useIaProviders'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
+type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin' | 'candidaturas'
 
 // Tool de CV real: CurriculoTool (5 features: fit determinístico, análise
 // semântica da vaga, simulação de recrutador, cover letter e diff de versões).
@@ -16,6 +16,7 @@ const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m
 const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 const LinkedinPage = dynamic(() => import('../linkedin/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 const DashboardPage = dynamic(() => import('../dashboard/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+const CandidaturasPage = dynamic(() => import('../candidaturas/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
 
 export default function AppShell() {
   const [mounted, setMounted] = useState(false)
@@ -93,6 +94,13 @@ export default function AppShell() {
             <motion.div key="linkedin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
               <div className="w-full max-w-4xl space-y-6">
               <LinkedinPage />
+              </div>
+            </motion.div>
+          )}
+          {activeTool === 'candidaturas' && (
+            <motion.div key="candidaturas" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
+              <div className="w-full max-w-4xl space-y-5">
+              <CandidaturasPage />
               </div>
             </motion.div>
           )}

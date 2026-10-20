@@ -40,6 +40,7 @@ import pypdfium2 as pdfium
 from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
 from market_export import generate_market_markdown_export, generate_market_docx_export, generate_market_pdf_export
 from market_service import run_market_analysis, init_market_db
+from apply_service import apply_overview, apply_applications, ApplyDataError, resolve_apply_dir
 from logging_service import init_logs_db, log_request, get_logs, get_logs_stats, clear_logs, LOGS_DB
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -3026,6 +3027,35 @@ async def api_delete_jsearch_key(
 # ---------------------------------------------------------------------------
 # Endpoints de Logs
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Integração apply (Job Hunter) — Nível 1: Trivor apenas EXIBE o histórico
+# dos bots de candidatura; o projeto apply continua gravando seus arquivos.
+# ---------------------------------------------------------------------------
+
+@app.get('/api/apply/overview')
+def api_apply_overview():
+    """Resumo do histórico de candidaturas. Handler síncrono de propósito:
+    leitura local rápida — FastAPI o roda na thread pool, fora do event loop."""
+    return apply_overview()
+
+@app.get('/api/apply/applications')
+def api_apply_applications(
+    site: str = '',
+    bucket: str = '',
+    q: str = '',
+    limit: int = 50,
+    offset: int = 0,
+):
+    if bucket and bucket not in ('sucesso', 'parcial', 'skip', 'falha'):
+        raise HTTPException(status_code=400, detail=f"Bucket inválido '{bucket}'. Use: sucesso, parcial, skip, falha.")
+    try:
+        return apply_applications(site=site, bucket=bucket, q=q, limit=limit, offset=offset)
+    except ApplyDataError as exc:
+        if resolve_apply_dir() is None:
+            raise HTTPException(status_code=404, detail="Projeto apply não encontrado. Defina APPLY_DIR no .env ou mova apply para ../apply.")
+        logger.warning(f"[APPLY] {exc}")
+        raise HTTPException(status_code=502, detail="Arquivo de candidaturas ilegível.")
 
 @app.get('/api/logs')
 async def api_get_logs(

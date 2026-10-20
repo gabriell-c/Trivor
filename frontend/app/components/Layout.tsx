@@ -14,9 +14,10 @@ import {
   XCircle,
   CircleDot,
   Users,
+  Send,
 } from 'lucide-react'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin'
+type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin' | 'candidaturas'
 
 interface SidebarProps {
   activeTool: Tool
@@ -32,6 +33,7 @@ const tools: { id: Tool; label: string; icon: React.ReactNode; description: stri
   { id: 'curriculo', label: 'Análise de Currículo', icon: <FileText className="w-5 h-5" />, description: 'Diagnóstico ATS e compatibilidade' },
   { id: 'linkedin', label: 'Análise de LinkedIn', icon: <Users className="w-5 h-5" />, description: 'Diagnóstico de perfil LinkedIn' },
   { id: 'mercado', label: 'Inteligência de Mercado', icon: <BarChart3 className="w-5 h-5" />, description: 'Análise de vagas e tendências' },
+  { id: 'candidaturas', label: 'Candidaturas', icon: <Send className="w-5 h-5" />, description: 'Histórico dos envios automáticos' },
   { id: 'api-settings', label: 'Config. IAs', icon: <Key className="w-5 h-5" />, description: 'Gerenciar chaves de API' },
   { id: 'logs', label: 'Logs', icon: <CircleDot className="w-5 h-5" />, description: 'Requisições e performance' },
 ]
