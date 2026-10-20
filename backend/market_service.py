@@ -49,6 +49,10 @@ _RATE_LIMIT_ALL_SLEEP = 15.0
 # Max retry attempts for rate-limited queries
 _MAX_RETRY = 2
 _RETRY_BASE_DELAY = 3.0
+# Retenção: market_reports guarda no máximo as N análises mais recentes.
+# Cada linha tem ~300KB de JSON (report_data) e a tabela era sem limite —
+# 55 relatórios = 8MB; o DELETE libera páginas que o SQLite reusa.
+_REPORTS_KEEP_LAST = 30
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
@@ -2256,6 +2260,16 @@ def _median(values: List[float]):
     return (s[mid - 1] + s[mid]) / 2
 
 
+def _apply_reports_retention(cursor) -> None:
+    """Mantém apenas as _REPORTS_KEEP_LAST análises mais recentes em market_reports.
+    A ordem é de inserção (rowid): relatórios mais novos entram por rowid crescente."""
+    cursor.execute(
+        "DELETE FROM market_reports WHERE rowid NOT IN "
+        "(SELECT rowid FROM market_reports ORDER BY rowid DESC LIMIT ?)",
+        (_REPORTS_KEEP_LAST,),
+    )
+
+
 def run_market_analysis(
     db_file: Path,
     client: OpenAI,
@@ -2530,12 +2544,15 @@ def run_market_analysis(
     # Persiste o relatório gerado
     report_id = str(uuid.uuid4())
     cursor.execute('''
-        INSERT INTO market_reports (id, job_title, target_stack, seniority, location, time_window, total_jobs, relevant_jobs, confidence_score, report_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO market_reports (id, job_title, target_stack, seniority, location, time_window, total_jobs, relevant_jobs, confidence_score, report_data, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         report_id, job_title, target_stack, seniority, location, time_window,
-        total_jobs, relevant_count, confidence, json.dumps(report_result)
+        total_jobs, relevant_count, confidence, json.dumps(report_result),
+        datetime.now().isoformat()
     ))
+    # Retenção: mantém apenas as _REPORTS_KEEP_LAST análises mais recentes
+    _apply_reports_retention(cursor)
     conn.commit()
     conn.close()
 

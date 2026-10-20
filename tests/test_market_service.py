@@ -345,5 +345,49 @@ class TestRunMarketAnalysis:
         assert "summary" in result
 
 
+# ============================================================================
+# _apply_reports_retention
+# ============================================================================
+
+class TestReportsRetention:
+    """market_reports era ilimitada (55 relatórios = 8MB de BLOB). A retenção
+    mantém só as _REPORTS_KEEP_LAST análises mais recentes, na ordem de
+    inserção (rowid)."""
+
+    @pytest.fixture
+    def db(self, tmp_path):
+        db_file = tmp_path / "market_test.db"
+        ms.init_market_db(db_file)
+        conn = sqlite3.connect(str(db_file))
+        yield conn
+        conn.close()
+
+    def _insert(self, conn, n):
+        cur = conn.cursor()
+        for i in range(n):
+            cur.execute(
+                "INSERT INTO market_reports (id, job_title, report_data, created_at) VALUES (?, ?, ?, ?)",
+                (f"r{i}", f"job{i}", "x" * 100, "2026-01-01T00:00:00"),
+            )
+        conn.commit()
+
+    def test_keeps_most_recent_rows(self, db, monkeypatch):
+        monkeypatch.setattr(ms, "_REPORTS_KEEP_LAST", 3)
+        self._insert(db, 5)
+        cur = db.cursor()
+        ms._apply_reports_retention(cur)
+        db.commit()
+        remaining = [r[0] for r in cur.execute("SELECT id FROM market_reports ORDER BY rowid")]
+        assert remaining == ["r2", "r3", "r4"]
+
+    def test_noop_when_under_cap(self, db, monkeypatch):
+        monkeypatch.setattr(ms, "_REPORTS_KEEP_LAST", 10)
+        self._insert(db, 3)
+        cur = db.cursor()
+        ms._apply_reports_retention(cur)
+        db.commit()
+        assert cur.execute("SELECT COUNT(*) FROM market_reports").fetchone()[0] == 3
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
