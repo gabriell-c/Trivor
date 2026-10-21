@@ -10,7 +10,11 @@ interface Perfil {
   nome: string; email: string; telefone: string; cidade_uf: string
   linkedin: string; github: string; portfolio: string
   nivel_ingles: string; dias: string
+  data_nascimento: string; possui_pj: boolean
+  pais: string; estado_nome: string; estado_uf: string; cidade_end: string
+  raca_cor: string; genero: string; orientacao_sexual: string; pcd: boolean
   aceita_remoto: boolean; aceita_hibrido: boolean; aceita_presencial: boolean
+  aceita_mudanca: boolean
   estados: string
   palavras_chave: string
   palavras_negativas: string
@@ -18,17 +22,51 @@ interface Perfil {
   pretensao_clt: string; pretensao_pj_hora: string; pretensao_pj_mensal: string; pretensao_estagio: string
 }
 
+/* Opções fixas que os bots esperam no config (Gupy casa por substring,
+ * Sólides mapeia p/ valores do select, Indeed por palavra-chave). */
+const UF_BR = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
+const RACAS = ['Pardo','Branco','Preto','Amarelo','Indígena']
+const GENEROS = ['Homem cisgênero','Mulher cisgênero','Homem transgênero','Mulher transgênero','Não-binário','Prefiro não responder']
+const ORIENTACOES = ['Heterossexual','Homossexual','Bissexual','Prefiro não responder']
+
+/* Valor já salvo fora da lista não é descartado: ele entra como opção extra,
+ * senão o <select> some com o dado (e o React avisa sobre option ausente). */
+function opcoes(lista: string[], atual: string): string[] {
+  const valor = atual.trim()
+  if (!valor || lista.some(x => x.toLowerCase() === valor.toLowerCase())) return ['', ...lista]
+  return ['', valor, ...lista]
+}
+
+/* Data de nascimento: o config guarda DD/MM/AAAA (Sólides faz strptime
+ * rígido nesse formato); o <input type="date"> só fala AAAA-MM-DD. */
+function isoParaDmy(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ''
+  const [ano, mes, dia] = iso.split('-')
+  return `${dia}/${mes}/${ano}`
+}
+function dmyParaIso(dmy: unknown): string {
+  const m = str(dmy).match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+
 function paraPerfil(cfg: any): Perfil {
   const c = cfg.candidato || {}
   const loc = cfg.localizacao || {}
   const busca = cfg.busca || {}
+  const end = cfg.endereco || {}
+  const div = cfg.diversidade || {}
   return {
     nome: str(c.nome), email: str(c.email), telefone: str(c.telefone),
     cidade_uf: str(c.cidade_uf), linkedin: str(c.linkedin), github: str(c.github),
     portfolio: str(c.portfolio), nivel_ingles: str(c.nivel_ingles),
-    dias: str(c.dias),
+    dias: str(c.disponibilidade_dias),
+    data_nascimento: dmyParaIso(c.data_nascimento), possui_pj: !!c.possui_pj,
+    pais: str(end.pais), estado_nome: str(end.estado_nome),
+    estado_uf: str(end.estado_uf), cidade_end: str(end.cidade),
+    raca_cor: str(div.raca_cor), genero: str(div.genero),
+    orientacao_sexual: str(div.orientacao_sexual), pcd: !!div.pcd,
     aceita_remoto: !!loc.aceita_remoto, aceita_hibrido: !!loc.aceita_hibrido,
-    aceita_presencial: !!loc.aceita_presencial,
+    aceita_presencial: !!loc.aceita_presencial, aceita_mudanca: !!loc.aceita_mudanca,
     estados: Array.isArray(loc.estados_aceitos) ? loc.estados_aceitos.join(', ') : '',
     palavras_chave: Array.isArray(busca.palavras_chave) ? busca.palavras_chave.join('\n') : '',
     palavras_negativas: Array.isArray(busca.palavras_excluir) ? busca.palavras_excluir.join('\n') : '',
@@ -69,7 +107,8 @@ export default function PerfilTab() {
     const cand = cfg.candidato || {}
     cand.nome = p.nome; cand.email = p.email; cand.telefone = p.telefone
     cand.cidade_uf = p.cidade_uf; cand.linkedin = p.linkedin; cand.github = p.github
-    cand.portfolio = p.portfolio; cand.nivel_ingles = p.nivel_ingles; cand.dias = p.dias
+    cand.portfolio = p.portfolio; cand.nivel_ingles = p.nivel_ingles; cand.disponibilidade_dias = p.dias
+    cand.data_nascimento = isoParaDmy(p.data_nascimento); cand.possui_pj = p.possui_pj
     cand.pretensao_clt = p.pretensao_clt
     cand.pretensao_pj_hora = p.pretensao_pj_hora
     cand.pretensao_pj_mensal = p.pretensao_pj_mensal
@@ -78,9 +117,17 @@ export default function PerfilTab() {
 
     const loc = cfg.localizacao || {}
     loc.aceita_remoto = p.aceita_remoto; loc.aceita_hibrido = p.aceita_hibrido
-    loc.aceita_presencial = p.aceita_presencial
+    loc.aceita_presencial = p.aceita_presencial; loc.aceita_mudanca = p.aceita_mudanca
     loc.estados_aceitos = p.estados.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     cfg.localizacao = loc
+
+    const end = cfg.endereco || {}
+    end.pais = p.pais; end.estado_nome = p.estado_nome; end.estado_uf = p.estado_uf; end.cidade = p.cidade_end
+    cfg.endereco = end
+
+    const div = cfg.diversidade || {}
+    div.raca_cor = p.raca_cor; div.genero = p.genero; div.orientacao_sexual = p.orientacao_sexual; div.pcd = p.pcd
+    cfg.diversidade = div
 
     const busca = cfg.busca || {}
     busca.palavras_chave = p.palavras_chave.split('\n').map(s => s.trim()).filter(Boolean)
@@ -130,9 +177,19 @@ export default function PerfilTab() {
         </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
           <Campo label="Nome"><input className={inputCls} value={p.nome} onChange={e => set('nome', e.target.value)} /></Campo>
-          <Campo label="E-mail"><input className={inputCls} value={p.email} onChange={e => set('email', e.target.value)} /></Campo>
-          <Campo label="Telefone"><input className={inputCls} value={p.telefone} onChange={e => set('telefone', e.target.value)} /></Campo>
-          <Campo label="Cidade / UF"><input className={inputCls} value={p.cidade_uf} onChange={e => set('cidade_uf', e.target.value)} /></Campo>
+          <Campo label="E-mail"><input type="email" className={inputCls} value={p.email} onChange={e => set('email', e.target.value)} placeholder="voce@exemplo.com" /></Campo>
+          <Campo label="Telefone (com DDD)"><input inputMode="tel" className={inputCls} value={p.telefone} onChange={e => set('telefone', e.target.value)} placeholder="(16) 99999-9999" /></Campo>
+          <Campo label="Cidade / UF"><input className={inputCls} value={p.cidade_uf} onChange={e => set('cidade_uf', e.target.value)} placeholder="Cidade - UF" /></Campo>
+          <Campo label="Data de nascimento">
+            <input type="date" className={inputCls} value={p.data_nascimento} onChange={e => set('data_nascimento', e.target.value)} />
+          </Campo>
+          <Campo label="Possui empresa aberta (PJ)">
+            <label className="flex items-center gap-2 h-9.5 text-sm text-slate-300 cursor-pointer">
+              <input type="checkbox" className="accent-indigo-500" checked={p.possui_pj}
+                onChange={e => set('possui_pj', e.target.checked)} />
+              Sim — o Nerdin responde a pergunta com isso
+            </label>
+          </Campo>
           <Campo label="LinkedIn"><input className={inputCls} value={p.linkedin} onChange={e => set('linkedin', e.target.value)} placeholder="https://linkedin.com/in/voce" /></Campo>
           <Campo label="GitHub"><input className={inputCls} value={p.github} onChange={e => set('github', e.target.value)} placeholder="https://github.com/voce" /></Campo>
           <Campo label="Portfólio"><input className={inputCls} value={p.portfolio} onChange={e => set('portfolio', e.target.value)} /></Campo>
@@ -141,7 +198,55 @@ export default function PerfilTab() {
               {['', 'Basic', 'Intermediate', 'Advanced', 'Fluent'].map(n => <option key={n} value={n}>{n || '—'}</option>)}
             </select>
           </Campo>
-          <Campo label="Disponibilidade (dias)"><input className={inputCls} value={p.dias} onChange={e => set('dias', e.target.value)} placeholder="ex.: 1" /></Campo>
+          <Campo label="Disponibilidade (dias)"><input type="number" min={0} max={7} className={inputCls} value={p.dias} onChange={e => set('dias', e.target.value)} placeholder="ex.: 1" /></Campo>
+        </div>
+        {!p.data_nascimento && (
+          <div className="mt-2 text-xs text-amber-300">
+            Sólides e Indeed precisam da data de nascimento (DD/MM/AAAA) para responder as perguntas — preencha para evitar falha no formulário.
+          </div>
+        )}
+      </div>
+
+      <div className={cardCls}>
+        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço</div>
+        <div className="mt-3 grid sm:grid-cols-2 gap-3">
+          <Campo label="País"><input className={inputCls} value={p.pais} onChange={e => set('pais', e.target.value)} placeholder="Brasil" /></Campo>
+          <Campo label="Estado (nome)"><input className={inputCls} value={p.estado_nome} onChange={e => set('estado_nome', e.target.value)} placeholder="São Paulo" /></Campo>
+          <Campo label="UF">
+            <select className={inputCls} value={p.estado_uf} onChange={e => set('estado_uf', e.target.value)}>
+              {opcoes(UF_BR, p.estado_uf).map(u => <option key={u} value={u}>{u || '—'}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Cidade"><input className={inputCls} value={p.cidade_end} onChange={e => set('cidade_end', e.target.value)} placeholder="Cidade" /></Campo>
+        </div>
+      </div>
+
+      <div className={cardCls}>
+        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Diversidade & inclusão</div>
+        <div className="text-[11px] text-slate-500 mt-1">os portais (Gupy, InfoJobs, Sólides, Indeed) perguntam isso — os bots respondem com estes dados</div>
+        <div className="mt-3 grid sm:grid-cols-2 gap-3">
+          <Campo label="Raça / cor">
+            <select className={inputCls} value={p.raca_cor} onChange={e => set('raca_cor', e.target.value)}>
+              {opcoes(RACAS, p.raca_cor).map(r => <option key={r} value={r}>{r || '—'}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Gênero">
+            <select className={inputCls} value={p.genero} onChange={e => set('genero', e.target.value)}>
+              {opcoes(GENEROS, p.genero).map(g => <option key={g} value={g}>{g || '—'}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Orientação sexual">
+            <select className={inputCls} value={p.orientacao_sexual} onChange={e => set('orientacao_sexual', e.target.value)}>
+              {opcoes(ORIENTACOES, p.orientacao_sexual).map(o => <option key={o} value={o}>{o || '—'}</option>)}
+            </select>
+          </Campo>
+          <Campo label="Pessoa com deficiência">
+            <label className="flex items-center gap-2 h-9.5 text-sm text-slate-300 cursor-pointer">
+              <input type="checkbox" className="accent-indigo-500" checked={p.pcd}
+                onChange={e => set('pcd', e.target.checked)} />
+              Sou PCD
+            </label>
+          </Campo>
         </div>
       </div>
 
@@ -156,6 +261,11 @@ export default function PerfilTab() {
                 {rotulo}
               </label>
             ))}
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input type="checkbox" className="accent-indigo-500" checked={p.aceita_mudanca}
+              onChange={e => set('aceita_mudanca', e.target.checked)} />
+            Aceita mudança de cidade/estado (o Indeed filtra vagas por isso)
+          </label>
         </div>
         <div className="mt-3">
           <Campo label="Estados aceitos (separe por vírgula)">
@@ -183,10 +293,10 @@ export default function PerfilTab() {
       <div className={cardCls}>
         <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Pretensões salariais</div>
         <div className="mt-3 grid sm:grid-cols-4 gap-3">
-          <Campo label="CLT (R$)"><input className={inputCls} value={p.pretensao_clt} onChange={e => set('pretensao_clt', e.target.value)} /></Campo>
-          <Campo label="PJ hora (R$)"><input className={inputCls} value={p.pretensao_pj_hora} onChange={e => set('pretensao_pj_hora', e.target.value)} /></Campo>
-          <Campo label="PJ mensal (R$)"><input className={inputCls} value={p.pretensao_pj_mensal} onChange={e => set('pretensao_pj_mensal', e.target.value)} /></Campo>
-          <Campo label="Estágio (R$)"><input className={inputCls} value={p.pretensao_estagio} onChange={e => set('pretensao_estagio', e.target.value)} /></Campo>
+          <Campo label="CLT (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_clt} onChange={e => set('pretensao_clt', e.target.value)} /></Campo>
+          <Campo label="PJ hora (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_pj_hora} onChange={e => set('pretensao_pj_hora', e.target.value)} /></Campo>
+          <Campo label="PJ mensal (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_pj_mensal} onChange={e => set('pretensao_pj_mensal', e.target.value)} /></Campo>
+          <Campo label="Estágio (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_estagio} onChange={e => set('pretensao_estagio', e.target.value)} /></Campo>
         </div>
       </div>
 
