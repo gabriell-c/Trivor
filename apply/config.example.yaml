@@ -50,6 +50,21 @@ busca:
     - "sênior"
     - "senior"
 
+# Provedores de IA configuráveis (a aba IA do Trivor grava este bloco).
+# tipo: "openai" = API compatível (Groq, OpenAI, Ollama, LM Studio, vLLM...)
+#       "anthropic" = API da Anthropic (base_url vazio usa api.anthropic.com)
+ia:
+  ativo: "groq"
+  providers:
+    - id: "groq"
+      nome: "Groq"
+      tipo: "openai"
+      base_url: "https://api.groq.com/openai/v1"
+      api_key: "gsk_sua_chave_aqui"
+      modelo: "llama-3.3-70b-versatile"
+      temperatura: 0.4
+      max_tokens: 500
+
 # Arquivos de CV usados por perfil (caminho relativo a apply/)
 resumes:
   fullstack: "resumes/fullstack.pdf"

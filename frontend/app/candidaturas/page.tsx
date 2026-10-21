@@ -1,20 +1,16 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { Send, RefreshCw, ExternalLink, Search, Inbox } from 'lucide-react'
-import { API_BASE_URL } from '../lib/api'
+import {
+  Send, RefreshCw, ExternalLink, Search, Inbox,
+  History, Play, Sparkles, User, FileText,
+} from 'lucide-react'
 import { friendlyError } from '../lib/errors'
-
-// Mesca a resposta de erro do backend (detail em PT-BR) antes de usar o fallback genérico
-async function applyFetch(path: string): Promise<any> {
-  const r = await fetch(`${API_BASE_URL}${path}`)
-  if (!r.ok) {
-    let detail = ''
-    try { detail = (await r.json()).detail || '' } catch { /* resposta não-JSON */ }
-    throw new Error(detail || friendlyError(new Error(`HTTP ${r.status}`), 'Falha ao falar com o backend.'))
-  }
-  return r.json()
-}
+import { applyFetch, inputCls } from './apply-api'
+import ExecutarTab from './executar-tab'
+import IATab from './ia-tab'
+import PerfilTab from './perfil-tab'
+import ResumesTab from './resumes-tab'
 
 /* ═══ Contratos do backend (/api/apply/*) ═══ */
 interface ApplyOverview {
@@ -45,6 +41,17 @@ interface ApplyPage {
   limit: number
   offset: number
 }
+
+/* ═══ Abas do painel ═══ */
+type TabId = 'historico' | 'executar' | 'ia' | 'perfil' | 'resumes'
+
+const TABS: { id: TabId; label: string; icon: typeof History }[] = [
+  { id: 'historico', label: 'Histórico', icon: History },
+  { id: 'executar', label: 'Executar', icon: Play },
+  { id: 'ia', label: 'IA', icon: Sparkles },
+  { id: 'perfil', label: 'Perfil', icon: User },
+  { id: 'resumes', label: 'Currículos', icon: FileText },
+]
 
 /* ═══ Aparência dos status ═══ */
 const BUCKET_META: Record<ApplyRecord['status_bucket'], { label: string; cls: string }> = {
@@ -85,7 +92,23 @@ function StatCard({ label, value, tone = 'slate', glow }: { label: string; value
   )
 }
 
+function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-800/70 bg-slate-900/60 p-1.5">
+      {TABS.map(t => (
+        <button key={t.id} onClick={() => onTab(t.id)}
+          className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl transition-colors ${tab === t.id
+            ? 'bg-indigo-500/20 text-indigo-200'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
+          <t.icon className="w-3.5 h-3.5" /> {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function CandidaturasPage() {
+  const [tab, setTab] = useState<TabId>('historico')
   const [overview, setOverview] = useState<ApplyOverview | null>(null)
   const [page, setPage] = useState<ApplyPage | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -129,12 +152,12 @@ export default function CandidaturasPage() {
 
   const loadMore = () => setLimit(l => l + 30)
 
-  /* ── estados especiais ── */
+  /* ── estados especiais que valem pra qualquer aba ── */
   if (err && !overview) {
     return (
       <div className="w-full max-w-4xl">
         <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-rose-200 flex items-start gap-3">
-          <Inbox className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <Inbox className="w-5 h-5 shrink-0 mt-0.5" />
           <div>
             <div className="font-semibold">Não foi possível carregar as candidaturas</div>
             <div className="text-sm mt-1 text-rose-300/90">{err}</div>
@@ -161,8 +184,8 @@ export default function CandidaturasPage() {
     )
   }
 
-  if (!page) {
-    // estado inicial (fetch ainda a caminho) — skeleton curto no lugar da tabela
+  if (!overview) {
+    // carregando o apply de primeira
     return (
       <div className="w-full max-w-4xl space-y-5">
         <PageHeader onRefresh={() => setReloadKey(k => k + 1)} loading={loading} />
@@ -171,122 +194,138 @@ export default function CandidaturasPage() {
     )
   }
 
-  const ov = overview!
-  const pg = page!
-  const sites = ov.por_site ? Object.keys(ov.por_site) : []
+  const ov = overview
+  const pg = page
 
   return (
     <div className="w-full max-w-4xl space-y-5">
       <PageHeader onRefresh={() => setReloadKey(k => k + 1)} loading={loading} />
+      <TabBar tab={tab} onTab={setTab} />
 
-      {/* Cards de resumo */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Candidaturas" value={String(ov.total)} tone="blue" glow />
-        <StatCard label="Enviadas" value={String(ov.por_bucket.sucesso)} tone="green" glow />
-        <StatCard label="Sem confirmação" value={String(ov.por_bucket.parcial)} tone="amber" />
-        <StatCard label="Falhas" value={String(ov.por_bucket.falha)} tone="red" />
-      </div>
+      {tab === 'historico' && (
+        <>
+          {/* Cards de resumo */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard label="Candidaturas" value={String(ov.total)} tone="blue" glow />
+            <StatCard label="Enviadas" value={String(ov.por_bucket.sucesso)} tone="green" glow />
+            <StatCard label="Sem confirmação" value={String(ov.por_bucket.parcial)} tone="amber" />
+            <StatCard label="Falhas" value={String(ov.por_bucket.falha)} tone="red" />
+          </div>
 
-      {/* Portais + período */}
-      <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 flex flex-wrap items-center gap-2">
-        {sites.map(s => (
-          <button key={s} onClick={() => setSite(site === s ? '' : s)}
-            className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-all ${site === s
-              ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200'
-              : 'border-slate-700/70 text-slate-300 hover:border-slate-500'}`}>
-            {s} · {ov.por_site[s]}
-          </button>
-        ))}
-        {(ov.periodo.primeiro || ov.periodo.ultimo) && (
-          <span className="ml-auto text-[11px] text-slate-500">
-            {ov.periodo.primeiro && `desde ${ov.periodo.primeiro}`}
-            {ov.periodo.primeiro && ov.periodo.ultimo && ' — '}
-            {ov.periodo.ultimo && `até ${ov.periodo.ultimo}`}
-          </span>
-        )}
-      </div>
+          {pg ? (
+            <>
+              {/* Portais + período */}
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 flex flex-wrap items-center gap-2">
+                {Object.keys(ov.por_site || {}).map(s => (
+                  <button key={s} onClick={() => setSite(site === s ? '' : s)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-all ${site === s
+                      ? 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200'
+                      : 'border-slate-700/70 text-slate-300 hover:border-slate-500'}`}>
+                    {s} · {ov.por_site[s]}
+                  </button>
+                ))}
+                {(ov.periodo.primeiro || ov.periodo.ultimo) && (
+                  <span className="ml-auto text-[11px] text-slate-500">
+                    {ov.periodo.primeiro && `desde ${ov.periodo.primeiro}`}
+                    {ov.periodo.primeiro && ov.periodo.ultimo && ' — '}
+                    {ov.periodo.ultimo && `até ${ov.periodo.ultimo}`}
+                  </span>
+                )}
+              </div>
 
-      {/* Filtros */}
-      <div className="flex flex-col sm:flex-row gap-2.5">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nome da vaga…"
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50 transition-colors" />
-        </div>
-        <select value={bucket} onChange={e => setBucket(e.target.value)}
-          className="px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-sm text-slate-300 focus:outline-none focus:border-indigo-500/50">
-          <option value="">Todos os status</option>
-          <option value="sucesso">Enviadas</option>
-          <option value="parcial">Sem confirmação</option>
-          <option value="skip">Já aplicadas</option>
-          <option value="falha">Falhas</option>
-        </select>
-      </div>
+              {/* Filtros */}
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nome da vaga…"
+                    className={`${inputCls} pl-10`} />
+                </div>
+                <select value={bucket} onChange={e => setBucket(e.target.value)}
+                  className={`px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-sm text-slate-300 focus:outline-none focus:border-indigo-500/50 w-full sm:w-auto`}>
+                  <option value="">Todos os status</option>
+                  <option value="sucesso">Enviadas</option>
+                  <option value="parcial">Sem confirmação</option>
+                  <option value="skip">Já aplicadas</option>
+                  <option value="falha">Falhas</option>
+                </select>
+              </div>
 
-      {/* Tabela */}
-      {pg.items.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
-          Nenhuma candidatura com esses filtros.
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800/70">
-                <th className="px-4 py-3 font-medium">Data</th>
-                <th className="px-4 py-3 font-medium">Portal</th>
-                <th className="px-4 py-3 font-medium">Vaga</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <AnimatePresence initial={!reduce}>
-                {pg.items.map((r, i) => {
-                  const meta = BUCKET_META[r.status_bucket] || BUCKET_META.falha
-                  return (
-                    <motion.tr key={`${r.link || r.vaga}-${i}`}
-                      initial={reduce ? false : { opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.15, delay: Math.min(i, 8) * 0.02 }}
-                      className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
-                        {r.data || '—'}{r.horario && <span className="ml-1.5 text-[11px] text-slate-600">{r.horario}</span>}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{r.site || '—'}</td>
-                      <td className="px-4 py-3 min-w-[180px]">
-                        {r.link ? (
-                          <a href={r.link} target="_blank" rel="noopener noreferrer"
-                            className="text-slate-200 font-medium hover:text-indigo-300 transition-colors inline-flex items-center gap-1.5 max-w-[320px]">
-                            <span className="truncate">{r.vaga}</span>
-                            <ExternalLink className="w-3 h-3 flex-shrink-0 text-slate-500" />
-                          </a>
-                        ) : (
-                          <span className="text-slate-200 font-medium">{r.vaga}</span>
-                        )}
-                        {r.local && <div className="text-[11px] text-slate-500 mt-0.5">{r.local}</div>}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span title={r.status}
-                          className={`inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
-                          {statusLabel(r.status)}
-                        </span>
-                      </td>
-                    </motion.tr>
-                  )
-                })}
-              </AnimatePresence>
-            </tbody>
-          </table>
-          {limit < pg.total && (
-            <div className="p-3 border-t border-slate-800/40 text-center">
-              <button onClick={loadMore}
-                className="text-xs font-medium text-indigo-300 hover:text-indigo-200 transition-colors">
-                Mostrar mais (restam {pg.total - limit})
-              </button>
-            </div>
+              {/* Tabela */}
+              {pg.items.length === 0 ? (
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
+                  Nenhuma candidatura com esses filtros.
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800/70">
+                        <th className="px-4 py-3 font-medium">Data</th>
+                        <th className="px-4 py-3 font-medium">Portal</th>
+                        <th className="px-4 py-3 font-medium">Vaga</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <AnimatePresence initial={!reduce}>
+                        {pg.items.map((r, i) => {
+                          const meta = BUCKET_META[r.status_bucket] || BUCKET_META.falha
+                          return (
+                            <motion.tr key={`${r.link || r.vaga}-${i}`}
+                              initial={reduce ? false : { opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 0.15, delay: Math.min(i, 8) * 0.02 }}
+                              className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
+                              <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                                {r.data || '—'}{r.horario && <span className="ml-1.5 text-[11px] text-slate-600">{r.horario}</span>}
+                              </td>
+                              <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{r.site || '—'}</td>
+                              <td className="px-4 py-3 min-w-45">
+                                {r.link ? (
+                                  <a href={r.link} target="_blank" rel="noopener noreferrer"
+                                    className="text-slate-200 font-medium hover:text-indigo-300 transition-colors inline-flex items-center gap-1.5 max-w-[320px]">
+                                    <span className="truncate">{r.vaga}</span>
+                                    <ExternalLink className="w-3 h-3 shrink-0 text-slate-500" />
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-200 font-medium">{r.vaga}</span>
+                                )}
+                                {r.local && <div className="text-[11px] text-slate-500 mt-0.5">{r.local}</div>}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span title={r.status}
+                                  className={`inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
+                                  {statusLabel(r.status)}
+                                </span>
+                              </td>
+                            </motion.tr>
+                          )
+                        })}
+                      </AnimatePresence>
+                    </tbody>
+                  </table>
+                  {limit < pg.total && (
+                    <div className="p-3 border-t border-slate-800/40 text-center">
+                      <button onClick={loadMore}
+                        className="text-xs font-medium text-indigo-300 hover:text-indigo-200 transition-colors">
+                        Mostrar mais (restam {pg.total - limit})
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            // fetch do histórico ainda a caminho
+            <div className="h-64 rounded-2xl bg-slate-800/50 animate-pulse" />
           )}
-        </div>
+        </>
       )}
+
+      {tab === 'executar' && <ExecutarTab />}
+      {tab === 'ia' && <IATab />}
+      {tab === 'perfil' && <PerfilTab />}
+      {tab === 'resumes' && <ResumesTab />}
     </div>
   )
 }
@@ -295,12 +334,14 @@ function PageHeader({ onRefresh, loading }: { onRefresh: () => void; loading: bo
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
           <Send className="w-5 h-5 text-white" />
         </div>
         <div>
           <h1 className="text-lg font-bold text-white tracking-tight">Candidaturas</h1>
-          <p className="text-xs text-slate-400">Histórico dos bots de envio automático (Job Hunter)</p>
+          <p className="text-xs text-slate-400">
+            Painel do Job Hunter: histórico, execução, IA, perfil e currículos
+          </p>
         </div>
       </div>
       <button onClick={onRefresh} disabled={loading}

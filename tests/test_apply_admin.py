@@ -1,0 +1,226 @@
+"""
+Testes do admin do Job Hunter (backend/apply_admin.py) — Nível 3.
+
+APPLY_DIR fake em tmp: round-trip do config.yaml, CRUD de provedores de IA
+(chaves sempre mascaradas pra fora), teste de conexão "pong" contra um
+servidor HTTP fake (OpenAI-compatível e Anthropic) e upload/exclusão de
+currículos. Nenhum provedor real é chamado.
+"""
+import json
+import os
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pytest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'backend'))
+
+import apply_admin as ad  # noqa: E402
+
+
+@pytest.fixture
+def fake_apply(tmp_path, monkeypatch):
+    apply_dir = tmp_path / 'apply'
+    (apply_dir / 'relatorio').mkdir(parents=True)
+    (apply_dir / 'relatorio' / 'candidaturas.json').write_text(
+        json.dumps({'candidaturas': [], 'ja_candidatado': []}), encoding='utf-8')
+    # ia_test importa apply/common/llm.py direto do arquivo — espelha o real
+    llm_real = os.path.join(ROOT, 'apply', 'common', 'llm.py')
+    (apply_dir / 'common').mkdir()
+    (apply_dir / 'common' / 'llm.py').write_text(open(llm_real, encoding='utf-8').read(), encoding='utf-8')
+    monkeypatch.setenv('APPLY_DIR', str(apply_dir))
+    return apply_dir
+
+
+# ── config ───────────────────────────────────────────────────────────────────
+
+def test_config_roundtrip(fake_apply):
+    assert ad.load_config() == {}  # ainda não existe
+    cfg = {'candidato': {'nome': 'Gabriel'}, 'busca': {'palavras_excluir': ['sênior']}}
+    ad.save_config(cfg)
+    assert ad.load_config() == cfg
+    assert (fake_apply / 'config.yaml').is_file()
+    assert not (fake_apply / 'config.yaml.tmp').exists()  # escrita atômica
+
+
+def test_save_config_rejeita_nao_dict(fake_apply):
+    with pytest.raises(ad.ApplyAdminError):
+        ad.save_config(['lista'])
+
+
+# ── IA ───────────────────────────────────────────────────────────────────────
+
+def _novo_provedor(**over):
+    p = {
+        'nome': 'Groq', 'tipo': 'openai', 'base_url': 'https://api.groq.com/openai/v1',
+        'api_key': 'gsk_abcdefghijklmnop', 'modelo': 'llama-3.3-70b-versatile',
+        'temperatura': 0.4, 'max_tokens': 500,
+    }
+    p.update(over)
+    return p
+
+
+def test_ia_crud_e_mascara(fake_apply):
+    # criar → vira ativo automaticamente; chave sai só mascarada
+    prov = ad.ia_add(_novo_provedor())
+    assert prov['id'] == 'groq'
+    assert prov['api_key_masked'].startswith('gsk_')
+    assert 'api_key' not in prov
+
+    lst = ad.ia_list()
+    assert lst['ativo'] == 'groq'
+    assert lst['providers'][0]['api_key_masked'] != 'gsk_abcdefghijklmnop'  # nunca em claro
+
+    # editar sem reenviar api_key → a salva é mantida
+    ad.ia_update('groq', {'modelo': 'llama-3.1-8b-instant'})
+    assert ad.load_config()['ia']['providers'][0]['api_key'] == 'gsk_abcdefghijklmnop'
+
+    # ativar o outro / excluir o ativo
+    ad.ia_add(_novo_provedor(nome='Claude', tipo='anthropic', id='claude',
+                              base_url='', api_key='sk-ant-123456789'))
+    assert ad.ia_list()['ativo'] == 'groq'  # ativo não muda sozinho
+    ad.ia_set_active('claude')
+    assert ad.ia_list()['ativo'] == 'claude'
+    ad.ia_delete('claude')
+    assert ad.ia_list()['ativo'] == 'groq'  # volta pro que sobrou
+
+
+def test_ia_validacoes(fake_apply):
+    with pytest.raises(ad.ApplyAdminError, match='modelo'):
+        ad.ia_add({'nome': 'x', 'tipo': 'openai', 'base_url': 'http://x', 'api_key': 'k'})
+    with pytest.raises(ad.ApplyAdminError, match='base_url'):
+        ad.ia_add({'nome': 'x', 'tipo': 'openai', 'api_key': 'k', 'modelo': 'm'})
+    with pytest.raises(ad.ApplyAdminError, match='api_key'):
+        ad.ia_add({'nome': 'x', 'tipo': 'openai', 'base_url': 'http://x', 'modelo': 'm'})
+    ad.ia_add(_novo_provedor())
+    with pytest.raises(ad.ApplyAdminError, match='existe um provedor'):
+        ad.ia_add(_novo_provedor(id='groq'))  # slug do nome 'Groq' já existe
+    with pytest.raises(ad.ApplyAdminError, match='não encontrado'):
+        ad.ia_update('inexistente', {'modelo': 'z'})
+
+
+# ── pong (teste de conexão) ──────────────────────────────────────────────────
+
+def _http_fake(responder):
+    """Servidor local 127.0.0.1:porta; responder(caminho, headers) → (status, payload)."""
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            ln = int(self.headers.get('Content-Length', 0))
+            self.rfile.read(ln)
+            status, payload = responder(self.path, dict(self.headers))
+            out = json.dumps(payload).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *args):
+            pass  # silêncio nos testes
+
+    srv = ThreadingHTTPServer(('127.0.0.1', 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f'http://127.0.0.1:{srv.server_address[1]}'
+
+
+def _hget(headers: dict, nome: str):
+    """headers vêm do http.server com caso de rede ("X-api-key"); procura
+    case-insensitive."""
+    for k, v in headers.items():
+        if k.lower() == nome.lower():
+            return v
+    return None
+
+
+def test_pong_openai(fake_apply):
+    def responder(path, headers):
+        # base_url do provider "openai" é a raiz /v1 (ex.: api.groq.com/openai/v1)
+        assert path == '/chat/completions'
+        if _hget(headers, 'Authorization') != 'Bearer k-ok':
+            return 401, {'error': 'chave inválida'}
+        return 200, {'choices': [{'message': {'content': 'pong'}}]}
+
+    srv, base = _http_fake(responder)
+    try:
+        r = ad.ia_test({'tipo': 'openai', 'base_url': base, 'api_key': 'k-ok', 'modelo': 'm'})
+        assert r['ok'] is True
+        assert 'pong' in r['resposta']
+        r = ad.ia_test({'tipo': 'openai', 'base_url': base, 'api_key': 'k-errada', 'modelo': 'm'})
+        assert r['ok'] is False
+        assert '401' in r['detalhe']
+    finally:
+        srv.shutdown()
+
+
+def test_pong_anthropic(fake_apply):
+    def responder(path, headers):
+        assert path == '/v1/messages'
+        assert _hget(headers, 'anthropic-version'), f'versão ausente: {list(headers)}'
+        if _hget(headers, 'x-api-key') != 'sk-ok':
+            return 401, {'type': 'error', 'message': 'chave inválida'}
+        return 200, {'content': [{'text': 'pong'}]}
+
+    srv, base = _http_fake(responder)
+    try:
+        r = ad.ia_test({'tipo': 'anthropic', 'base_url': base, 'api_key': 'sk-ok', 'modelo': 'claude-x'})
+        assert r['ok'] is True and 'pong' in r['resposta']
+    finally:
+        srv.shutdown()
+
+
+def test_pong_por_id_salvo(fake_apply):
+    def responder(path, headers):
+        return 200, {'choices': [{'message': {'content': 'pong'}}]}
+
+    srv, base = _http_fake(responder)
+    try:
+        p = ad.ia_add(_novo_provedor(id='groq', base_url=base, api_key='gsk_1234'))
+        assert p['id'] == 'groq'
+        r = ad.ia_test({'id': 'groq'})  # sem chave no payload → usa a salva
+        assert r['ok'] is True
+    finally:
+        srv.shutdown()
+
+
+def test_ia_test_sem_modelo(fake_apply):
+    with pytest.raises(ad.ApplyAdminError, match='modelo'):
+        ad.ia_test({'tipo': 'openai', 'api_key': 'k'})
+
+
+# ── currículos ───────────────────────────────────────────────────────────────
+
+def test_resumes_upload_lista_edita_exclui(fake_apply):
+    pdf = b'%PDF-1.4 fake'
+    up = ad.resume_upload(pdf, 'curr.pdf', 'CV Backend', 'Python + FastAPI', 'backend_python')
+    assert up['id'] == 'backend_python'
+
+    lst = ad.resumes_list()['resumes']
+    assert len(lst) == 1
+    assert lst[0]['nome'] == 'CV Backend'
+    assert lst[0]['existe'] is True
+    assert (fake_apply / 'resumes' / 'backend_python.pdf').read_bytes() == pdf
+
+    cfg = ad.load_config()
+    assert cfg['resumes']['backend_python'] == 'resumes/backend_python.pdf'
+
+    atualizado = ad.resume_update('backend_python', {'nome': 'CV Atualizado', 'descricao': 'x'})
+    assert atualizado['nome'] == 'CV Atualizado'
+
+    r = ad.resume_delete('backend_python')
+    assert r['deleted'] == 'backend_python'
+    assert ad.resumes_list()['resumes'] == []
+    assert not (fake_apply / 'resumes' / 'backend_python.pdf').exists()
+    assert 'backend_python' not in ad.load_config().get('resumes', {})
+
+
+def test_resume_upload_validacoes(fake_apply):
+    with pytest.raises(ad.ApplyAdminError, match='Formato'):
+        ad.resume_upload(b'x', 'planilha.xlsx', 'n', '', 'geral')
+    with pytest.raises(ad.ApplyAdminError, match='excede'):
+        ad.resume_upload(b'0' * (5 * 1024 * 1024 + 1), 'grande.pdf', 'n', '', 'geral')
+    with pytest.raises(ad.ApplyAdminError, match='não encontrado'):
+        ad.resume_delete('inexistente')
+    with pytest.raises(ad.ApplyAdminError, match='não encontrado'):
+        ad.resume_update('inexistente', {'nome': 'n'})

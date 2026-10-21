@@ -390,11 +390,23 @@ def _chamar_mistral(prompt: str, temperatura: float = 0.5,
 
 def _chamar_llm(prompt: str, config: dict, contexto: str = "",
                 temperatura: float = 0.5, max_tokens: int = 500) -> str | None:
-    """Roteador LLM: Groq → Gemini → Mistral → None (fallback local)."""
+    """Roteador LLM: provedores da UI (config → ia) → Groq → Gemini → Mistral → None."""
     sufixo = f" ({contexto})" if contexto else ""
 
     with _llm_state["lock"]:
         provedor = _llm_state["provedor"]
+
+    # ── 0. Provedores configurados pela UI do Trivor (config.yaml → ia) ─────
+    # Vencem a cadeia antiga: quem define base_url + api_key + modelo no
+    # painel escolhe o LLM. A cadeia .env abaixo segue como fallback.
+    from common import llm as llm_ui
+    for prov in llm_ui.providers_ativos(config):
+        try:
+            resultado = llm_ui.chat(prov, prompt, temperatura, max_tokens)
+            log(f"  [LLM {prov.get('nome', prov.get('id'))}] ✅{sufixo} ({len(resultado)} chars)")
+            return resultado
+        except Exception as exc:
+            log(f"  [LLM] ❌ Provedor {prov.get('id')} falhou{sufixo}: {exc}")
 
     # ── 1. Groq ───────────────────────────────────────────────────────────────
     if provedor == "groq":
@@ -1941,8 +1953,11 @@ def main():
 
     config = carregar_config()
 
-    if not GROQ_API_KEY:
-        print("❌ GROQ_API_KEY não configurada no .env!")
+    # IA configurável pela UI do Trivor (config.yaml → ia) ou via .env legado
+    from common import llm as _llm
+    tem_ia_ui = bool(_llm.providers_ativos(config))
+    if not GROQ_API_KEY and not tem_ia_ui:
+        print("❌ Sem IA configurada: crie um provedor na aba IA do Trivor (ou defina GROQ_API_KEY no .env)")
         return
     if not GEMINI_API_KEY:
         print("⚠️  GEMINI_API_KEY não configurada — Gemini desativado como fallback")
