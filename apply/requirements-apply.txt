@@ -4,6 +4,7 @@ attrs==25.4.0
 beautifulsoup4==4.14.3
 behave==1.2.6
 browser-cookie3==0.20.1
+camoufox==0.5.8
 certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.5
@@ -14,12 +15,14 @@ exceptiongroup==1.3.1
 execnet==2.1.2
 fasteners==0.20
 filelock==3.25.2
+fpgen==1.3.0
 greenlet==3.3.2
 groq==1.0.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
 idna==3.11
+indexed_zstd==1.7.2
 iniconfig==2.3.0
 Jinja2==3.1.6
 lz4==4.4.5
@@ -34,6 +37,7 @@ packaging==26.0
 parameterized==0.9.0
 parse==1.21.1
 parse_type==0.6.6
+patchright==1.64.1
 pdbp==1.8.2
 platformdirs==4.9.4
 playwright==1.58.0
@@ -54,12 +58,12 @@ pyreadline3==3.5.4
 PyRect==0.2.0
 PyScreeze==1.0.1
 PySocks==1.7.1
-pytest==9.0.2
 pytest-html==4.0.2
 pytest-metadata==3.1.1
 pytest-ordering==0.6
 pytest-rerunfailures==16.1
 pytest-xdist==3.8.0
+pytest==9.0.2
 python-dotenv==1.2.2
 pytweening==1.2.0
 pywin32==311
@@ -67,6 +71,7 @@ PyYAML==6.0.3
 requests==2.32.5
 rich==14.3.3
 sbvirtualdisplay==1.4.0
+scrapling==0.5
 selenium==4.41.0
 seleniumbase==4.47.3
 setuptools==82.0.1
@@ -76,8 +81,8 @@ sniffio==1.3.1
 sortedcontainers==2.4.0
 soupsieve==2.8.3
 tabcompleter==1.4.0
-trio==0.33.0
 trio-websocket==0.12.2
+trio==0.33.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.3
@@ -89,3 +94,12 @@ websockets==16.0
 wheel==0.46.3
 WMI==1.5.1
 wsproto==1.3.2
+zstandard==0.25.0
+# Camada de navegador compartilhada (apply/common/browser.py)
+# engines: camoufox, patchright, playwright, undetected-chromedriver
+#
+# PÓS-INSTALAÇÃO (obrigatório 1x na máquina nova): `patchright install chromium`
+# e `camoufox fetch`. Em OneDrive (caminho com "Área de Trabalho"), o pacote
+# indexed_zstd falha ao abrir fpgen/data/values.dat.zst (path não-ASCII) —
+# decomprima 1x para values.dat e o fpgen para de usar o indexed_zstd:
+#   venv/Scripts/python -c "import zstandard,pathlib; d=pathlib.Path('venv/Lib/site-packages/fpgen/data'); (d/'values.dat').write_bytes(zstandard.ZstdDecompressor().decompress((d/'values.dat.zst').read_bytes()))"

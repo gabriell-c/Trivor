@@ -61,6 +61,7 @@ apply/*_session.json
 apply/*_session.pkl
 apply/relatorio/
 apply/resumes/
+apply/sessions/
 
 # Node / Next.js
 frontend/node_modules/
