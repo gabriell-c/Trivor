@@ -243,7 +243,8 @@ def find_adaptive(page, css: str, fallback_text: str | None = None,
       3. `fallback_text` — texto visível, que o portal quase nunca renomeia.
 
     Ao achar, a spec em `spec_path` é atualizada (css + xpath + texto).
-    Devolve um handle clicável (playwright Locator / WebElement / None).
+    Devolve um ElementHandle (playwright) ou WebElement (selenium) — a mesma
+    superfície que `query_selector`/`query_selector_all` entregam — ou None.
     """
     has_playwright = hasattr(page, 'locator')
     spec = _load_spec(spec_path) if spec_path else None
@@ -253,10 +254,9 @@ def find_adaptive(page, css: str, fallback_text: str | None = None,
         if has_playwright:
             loc = page.locator(css)
             if loc.count() > 0:
-                hit = loc.first
                 if spec_path:
                     _save_spec(Path(spec_path), css, _scrapling_from_page(page, css), fallback_text)
-                return hit
+                return loc.first.element_handle()
         else:  # adaptador selenium: CSS direto
             el = page.query_selector(css)
             if el is not None:
@@ -270,10 +270,9 @@ def find_adaptive(page, css: str, fallback_text: str | None = None,
             loc2 = page.locator(f"xpath={spec['xpath']}")
             try:
                 if loc2.count() > 0:
-                    hit = loc2.first
                     if spec_path:
                         _save_spec(Path(spec_path), css, spec['xpath'], fallback_text)
-                    return hit
+                    return loc2.first.element_handle()
             except Exception:
                 pass
         else:  # adaptador selenium
@@ -290,7 +289,7 @@ def find_adaptive(page, css: str, fallback_text: str | None = None,
             try:
                 loc3 = page.get_by_text(txt)
                 if loc3.count() > 0:
-                    return loc3.first
+                    return loc3.first.element_handle()
             except Exception:
                 pass
     return None

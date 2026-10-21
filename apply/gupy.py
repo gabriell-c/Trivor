@@ -49,8 +49,8 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 from groq import Groq
-from playwright.sync_api import sync_playwright, Page, BrowserContext
-import undetected_chromedriver as uc
+from playwright.sync_api import Page
+from common.browser import Browser, BrowserUnavailable, find_adaptive, SESSIONS_DIR
 
 load_dotenv()
 
@@ -131,7 +131,10 @@ HABILIDADES_PERFIL = [
 #  CONFIGURAÇÃO
 # ══════════════════════════════════════════════════════════════════════════════
 
-SESSION_FILE  = "gupy_session.json"
+# A sessão vive no perfil persistente (apply/sessions/gupy/<engine>/) —
+# o antigo gupy_session.json (migração de cookies entre browsers) foi
+# descartado junto com ele. As specs de seletores estáveis também ficam lá.
+SPEC_DIR      = SESSIONS_DIR / "gupy" / "specs"
 RELATORIO_DIR = "relatorio"
 URL_LOGIN     = "https://login.gupy.io/candidates/signin"
 URL_PORTAL    = "https://portal.gupy.io"
@@ -606,89 +609,44 @@ def _fallback_local_habilidades(titulo: str, descricao: str,
 #  SESSÃO
 # ══════════════════════════════════════════════════════════════════════════════
 
-def sessao_existe() -> bool:
-    return Path(SESSION_FILE).exists()
+def fazer_login_manual(page, config: dict) -> None:
+    """Login manual no browser persistente da layer nova (camoufox/patchright).
 
-
-def salvar_sessao(context: BrowserContext):
-    context.storage_state(path=SESSION_FILE)
-    log(f"  💾 Sessão salva em {SESSION_FILE}")
-
-
-def fazer_login_manual(p, config: dict) -> BrowserContext:
-    """Usa undetected-chromedriver para burlar o Turnstile do Cloudflare."""
+    Se GUPY_EMAIL/GUPY_SENHA estiverem no .env, pré-preenche as credenciais
+    e a pessoa passa o desafio do Cloudflare (Turnstile) na tela. A sessão
+    fica no perfil apply/sessions/gupy/ — sem migração de cookies entre
+    browsers (o fluxo antigo com undetected-chromedriver + gupy_session.json
+    era em si um padrão de detecção: browser A loga, browser B continua)."""
     email = os.environ.get("GUPY_EMAIL", "")
     senha = os.environ.get("GUPY_SENHA", "")
 
-    log("\n🔐 Abrindo Chrome furtivo (anti-detecção)...")
-    driver = uc.Chrome(headless=False, version_main=145)
-    driver.maximize_window()
-
-    try:
-        driver.get(URL_LOGIN)
-        time.sleep(3)
-
-        try:
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-
-            campo = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "username"))
-            )
-            campo.clear()
-            campo.send_keys(email)
-            time.sleep(0.5)
-            campo_senha = driver.find_element(By.ID, "password-input")
-            campo_senha.clear()
-            campo_senha.send_keys(senha)
-            time.sleep(0.5)
-            driver.find_element(By.ID, "button-signin").click()
-            log("  ✓ Credenciais enviadas, aguardando login...")
-        except Exception as e:
-            log(f"  ⚠️  Erro ao preencher: {e}")
-            log("  👆 Preencha manualmente no browser")
-
-        for _ in range(60):
-            if "portal.gupy.io" in driver.current_url or "app.gupy.io" in driver.current_url:
-                break
-            time.sleep(1)
-        else:
-            input("  ▶  Portal não carregou. Pressione ENTER quando carregar... ")
-
-        log("  ✅ Logado! Salvando sessão...")
-        cookies = driver.get_cookies()
-        storage = {
-            "cookies": [{
-                "name":     c["name"],
-                "value":    c["value"],
-                "domain":   c.get("domain", ".gupy.io"),
-                "path":     c.get("path", "/"),
-                "expires":  c.get("expiry", -1),
-                "httpOnly": c.get("httpOnly", False),
-                "secure":   c.get("secure", False),
-                "sameSite": "Lax",
-            } for c in cookies],
-            "origins": []
-        }
-        with open(SESSION_FILE, "w", encoding="utf-8") as f:
-            json.dump(storage, f, ensure_ascii=False, indent=2)
-        log(f"  💾 {len(cookies)} cookies salvos")
-
-    finally:
-        driver.quit()
-
-    browser = p.chromium.launch(headless=False, args=["--start-maximized"])
-    context = browser.new_context(
-        storage_state=SESSION_FILE,
-        no_viewport=True,
-        locale="pt-BR",
-        timezone_id="America/Sao_Paulo",
-    )
-    page = context.new_page()
-    page.goto(URL_PORTAL, timeout=15000)
+    log("\n🔐 Abrindo a tela de login...")
+    page.goto(URL_LOGIN, timeout=30000)
     esperar(page, 2)
-    return context, browser, page
+
+    if email:
+        try:
+            campo = page.locator("#username")
+            campo.clear()
+            campo.fill(email)
+            esperar(page, 0.5)
+            page.locator("#password-input").fill(senha)
+            esperar(page, 0.5)
+            page.locator("#button-signin").click()
+            log("  ✓ Credenciais enviadas. Se aparecer desafio, complete manualmente no browser.")
+        except Exception as e:
+            log(f"  ⚠️  Não deu pra pré-preencher ({type(e).__name__}): digite as credenciais no browser.")
+    else:
+        log("  👆 Digite as credenciais manualmente no browser.")
+
+    for _ in range(120):
+        if "portal.gupy.io" in page.url or "app.gupy.io" in page.url:
+            break
+        time.sleep(1)
+    else:
+        input("  ▶  Portal não carregou. Pressione ENTER quando carregar... ")
+
+    log("✅ Logado! (sessão fica guardada em apply/sessions/gupy/)")
 
 
 def verificar_sessao_valida(page: Page) -> bool:
@@ -932,6 +890,11 @@ def buscar_vagas_gupy(page: Page, config: dict) -> list:
 
             while pagina <= max_pags:
                 cards = page.query_selector_all("a.sc-4d881605-1")
+                if not cards:
+                    # Portal renomeou a classe → relocaliza o 1º card pelo
+                    # seletor adaptativo (css → xpath estável salvo → texto)
+                    first = find_adaptive(page, "a.sc-4d881605-1", None, SPEC_DIR / "cards.json")
+                    cards = [first] if first else []
                 log(f"  📄 Página {pagina}: {len(cards)} vagas encontradas")
 
                 for card in cards:
@@ -1989,108 +1952,85 @@ def main():
     ja_candidatados = links_ja_candidatados_gupy()
     log(f"📋 {len(ja_candidatados)} vagas já candidatadas anteriormente")
 
-    with sync_playwright() as p:
+    b = Browser(profile="gupy", headless=False)
+    try:
+        b.start()
+    except BrowserUnavailable as e:
+        log("❌ Nenhum browser disponível — " + " | ".join(f"{n}: {r}" for n, r in e.tried))
+        return
+    page = b.page
+    log(f"🌐 Engine no uso: {b.engine} (fallback tentado: {[n for n, _ in b.tried] or 'nenhum'})")
 
-        if sessao_existe():
-            log("🔑 Sessão encontrada, carregando...")
-            browser = p.chromium.launch(
-                headless=False,
-                channel="chrome",
-                args=["--start-maximized"]
-            )
-            context = browser.new_context(
-                storage_state=SESSION_FILE,
-                no_viewport=True,
-                locale="pt-BR",
-                timezone_id="America/Sao_Paulo",
-            )
-            page = context.new_page()
-
-            if not verificar_sessao_valida(page):
-                log("⚠️  Sessão expirada! Removendo e fazendo login manual...")
-                Path(SESSION_FILE).unlink(missing_ok=True)
-                browser.close()
-                context, browser, page = fazer_login_manual(p, config)
-                page.goto(URL_PORTAL, timeout=15000)
-                esperar(page, 2)
-            else:
-                log("✅ Sessão válida!")
-        else:
-            log("🔐 Nenhuma sessão salva. Login manual necessário...")
-            context, browser, page = fazer_login_manual(p, config)
-            page.goto(URL_PORTAL, timeout=15000)
-            esperar(page, 2)
-
-        vagas       = buscar_vagas_gupy(page, config)
-        vagas_novas = [v for v in vagas if v["link"] not in ja_candidatados]
-
-        # Remove duplicatas
-        vistos      = set()
-        vagas_unicas = []
-        for v in vagas_novas:
-            if v["link"] not in vistos:
-                vistos.add(v["link"])
-                vagas_unicas.append(v)
-
-        max_dia      = config["automacao"].get("max_candidaturas_por_dia", 10)
-        vagas_unicas = vagas_unicas[:max_dia]
-
-        print(f"\n🎯 Vagas novas para candidatar: {len(vagas_unicas)}")
-        print("=" * 50)
-
-        if not vagas_unicas:
-            print("Nenhuma vaga nova encontrada.")
-            browser.close()
+    if not verificar_sessao_valida(page):
+        log("🔑 Sem sessão válida. Login manual necessário...")
+        fazer_login_manual(page, config)
+        page.goto(URL_PORTAL, timeout=15000)
+        esperar(page, 2)
+        if not verificar_sessao_valida(page):
+            log("❌ Login falhou. Encerrando.")
+            b.close()
             return
+    else:
+        log("✅ Sessão válida!")
 
-        candidaturas   = []
-        sessao_ok      = True
-        RELOGIN_CADA   = 50  # verifica sessão a cada N vagas
+    vagas       = buscar_vagas_gupy(page, config)
+    vagas_novas = [v for v in vagas if v["link"] not in ja_candidatados]
 
-        try:
-            for i, vaga in enumerate(vagas_unicas, 1):
-                print(f"\n[{i}/{len(vagas_unicas)}]")
+    # Remove duplicatas
+    vistos      = set()
+    vagas_unicas = []
+    for v in vagas_novas:
+        if v["link"] not in vistos:
+            vistos.add(v["link"])
+            vagas_unicas.append(v)
 
-                # ── Verifica sessão periodicamente e após sessao_expirada ────
-                if not sessao_ok or i % RELOGIN_CADA == 1:
-                    log("🔍 Verificando sessão...")
+    max_dia      = config["automacao"].get("max_candidaturas_por_dia", 10)
+    vagas_unicas = vagas_unicas[:max_dia]
+
+    print(f"\n🎯 Vagas novas para candidatar: {len(vagas_unicas)}")
+    print("=" * 50)
+
+    if not vagas_unicas:
+        print("Nenhuma vaga nova encontrada.")
+        b.close()
+        return
+
+    candidaturas   = []
+    sessao_ok      = True
+    RELOGIN_CADA   = 50  # verifica sessão a cada N vagas
+
+    try:
+        for i, vaga in enumerate(vagas_unicas, 1):
+            print(f"\n[{i}/{len(vagas_unicas)}]")
+
+            # ── Verifica sessão periodicamente e após sessao_expirada ────────
+            if not sessao_ok or i % RELOGIN_CADA == 1:
+                log("🔍 Verificando sessão...")
+                if not verificar_sessao_valida(page):
+                    log("🔒 Sessão expirada! Fazendo relogin automático...")
+                    fazer_login_manual(page, config)
+                    page.goto(URL_PORTAL, timeout=15000)
+                    esperar(page, 2)
                     if not verificar_sessao_valida(page):
-                        log("🔒 Sessão expirada! Fazendo relogin automático...")
-                        try:
-                            salvar_sessao(context)
-                        except Exception:
-                            pass
-                        browser.close()
-                        context, browser, page = fazer_login_manual(p, config)
-                        page.goto(URL_PORTAL, timeout=15000)
-                        esperar(page, 2)
-                        if not verificar_sessao_valida(page):
-                            log("❌ Relogin falhou. Encerrando.")
-                            break
-                        log("✅ Relogin bem-sucedido!")
-                    sessao_ok = True
+                        log("❌ Relogin falhou. Encerrando.")
+                        break
+                    log("✅ Relogin bem-sucedido!")
+                sessao_ok = True
 
-                resultado = candidatar_vaga_gupy(page, vaga, config)
-                candidaturas.append(resultado)
-                salvar_log(resultado)
+            resultado = candidatar_vaga_gupy(page, vaga, config)
+            candidaturas.append(resultado)
+            salvar_log(resultado)
 
-                # Se sessão expirou durante a candidatura, força verificação na próxima
-                if resultado.get("status") == "sessao_expirada":
-                    log("🔒 Sessão expirada durante candidatura — relogando...")
-                    sessao_ok = False
-                    continue
+            # Se sessão expirou durante a candidatura, força verificação na próxima
+            if resultado.get("status") == "sessao_expirada":
+                log("🔒 Sessão expirada durante candidatura — relogando...")
+                sessao_ok = False
+                continue
 
-                if i < len(vagas_unicas):
-                    delay_entre_vagas(config)
-        finally:
-            try:
-                salvar_sessao(context)
-            except Exception:
-                pass
-            try:
-                browser.close()
-            except Exception:
-                pass
+            if i < len(vagas_unicas):
+                delay_entre_vagas(config)
+    finally:
+        b.close()
 
     print("\n" + "=" * 50)
     enviadas = [c for c in candidaturas if c["status"] == "enviado"]
