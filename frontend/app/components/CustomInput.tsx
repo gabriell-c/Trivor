@@ -28,7 +28,8 @@ export function CustomInput({
 }: CustomInputProps) {
   const [showPassword, setShowPassword] = useState(false)
   const actualType = (type === 'password' && showPassword) ? 'text' : type
-  const inputId = id || useId()
+  const generatedId = useId()
+  const inputId = id || generatedId
 
   return (
     <div className={`relative ${className}`} id={inputId}>

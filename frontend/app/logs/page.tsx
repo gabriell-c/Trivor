@@ -164,7 +164,10 @@ export default function LogsPage() {
     }
   }, [debouncedFilter, errorOnly, offset])
 
+  // fetchLogs faz setLoading(true) síncrono (feedback de carregamento antes do await) —
+  // é refetch imperativo quando os filtros mudam, não sincronização de estado
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs()
   }, [fetchLogs])
 
@@ -462,6 +465,28 @@ function StatCard({
   )
 }
 
+// Resposta serializada da análise de CV (JSON salvo em log.response_summary)
+interface ParsedResponse {
+  nota?: number
+  score_ats?: number
+  resumo_executivo?: string
+  pontos_fortes?: string[]
+  pontos_fracos?: string[]
+  uso_tokens?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  api_info?: { model: string; request_id: string; response_time_ms: number }
+}
+// Corpo serializado da requisição (JSON salvo em log.request_body)
+interface ParsedRequest {
+  model?: string
+  area?: string
+  target_role?: string
+  filename?: string
+  file_size_bytes?: number
+  job_description_present?: boolean
+  job_description_len?: number
+  extractor_error?: string
+}
+
 /* ═══════════ Modal de detalhes ═══════════ */
 function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }) {
   const [showRawText, setShowRawText] = useState(false)
@@ -470,13 +495,13 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
   const isDocling = log.extractor === 'docling' || log.extractor === 'docling_parse'
   const isPypdfium = log.extractor === 'pypdfium2'
 
-  let parsedResponse: any = null
+  let parsedResponse: ParsedResponse | null = null
   let tokensInfo: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null =
     null
   let apiInfo: { model: string; request_id: string; response_time_ms: number } | null = null
   if (log.response_summary) {
     try {
-      parsedResponse = JSON.parse(log.response_summary)
+      parsedResponse = JSON.parse(log.response_summary) as ParsedResponse
       tokensInfo = parsedResponse.uso_tokens || null
       apiInfo = parsedResponse.api_info || null
     } catch {
@@ -484,10 +509,10 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
     }
   }
 
-  let parsedRequest: any = null
+  let parsedRequest: ParsedRequest | null = null
   if (log.request_body) {
     try {
-      parsedRequest = JSON.parse(log.request_body)
+      parsedRequest = JSON.parse(log.request_body) as ParsedRequest
     } catch {
       /* not JSON */
     }
@@ -772,13 +797,13 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
                       </p>
                     </div>
                   )}
-                  {parsedResponse.pontos_fortes?.length > 0 && (
+                  {(parsedResponse.pontos_fortes?.length ?? 0) > 0 && (
                     <div>
                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                         Pontos Fortes
                       </div>
                       <ul className="space-y-1.5">
-                        {parsedResponse.pontos_fortes.slice(0, 5).map((p: string, i: number) => (
+                        {parsedResponse.pontos_fortes?.slice(0, 5).map((p: string, i: number) => (
                           <li
                             key={i}
                             className="text-sm text-emerald-200 flex items-start gap-2 leading-relaxed"
@@ -790,13 +815,13 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
                       </ul>
                     </div>
                   )}
-                  {parsedResponse.pontos_fracos?.length > 0 && (
+                  {(parsedResponse.pontos_fracos?.length ?? 0) > 0 && (
                     <div>
                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                         Pontos de Atenção
                       </div>
                       <ul className="space-y-1.5">
-                        {parsedResponse.pontos_fracos.slice(0, 5).map((p: string, i: number) => (
+                        {parsedResponse.pontos_fracos?.slice(0, 5).map((p: string, i: number) => (
                           <li
                             key={i}
                             className="text-sm text-amber-200 flex items-start gap-2 leading-relaxed"

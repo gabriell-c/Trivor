@@ -5,7 +5,7 @@
 import { API_BASE_URL } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 
-async function handle(r: Response): Promise<any> {
+async function handle<T>(r: Response): Promise<T> {
   if (!r.ok) {
     let detail = ''
     try {
@@ -21,7 +21,7 @@ async function handle(r: Response): Promise<any> {
     }
     throw new Error(detail || friendlyError(new Error(`HTTP ${r.status}`), 'Falha ao falar com o backend.'))
   }
-  return r.json()
+  return (await r.json()) as T
 }
 
 /* Converte a falha de rede (backend fora do ar) na mensagem PT-BR do
@@ -34,25 +34,25 @@ function traduzFalhaDeRede<T>(p: Promise<T>): Promise<T> {
   })
 }
 
-export function applyFetch(path: string): Promise<any> {
-  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`).then(handle))
+export function applyFetch<T = unknown>(path: string): Promise<T> {
+  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`).then(r => handle<T>(r)))
 }
 
-export function applyMethod(
+export function applyMethod<T = unknown>(
   path: string,
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
-): Promise<any> {
+): Promise<T> {
   return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  }).then(handle))
+  }).then(r => handle<T>(r)))
 }
 
 /* multipart — só para upload de currículos (Content-Type vem do FormData) */
-export function applyUpload(path: string, form: FormData): Promise<any> {
-  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`, { method: 'POST', body: form }).then(handle))
+export function applyUpload<T = unknown>(path: string, form: FormData): Promise<T> {
+  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`, { method: 'POST', body: form }).then(r => handle<T>(r)))
 }
 
 /* ═══ Contratos do backend (/api/apply/*) ═══ */
@@ -80,6 +80,24 @@ export interface IaProvider {
 export interface IaState {
   ativo: string | null
   providers: IaProvider[]
+}
+
+export interface IaTestResult {
+  ok?: boolean
+  resposta?: string
+  detalhe?: string
+}
+
+/* Config do Job Hunter (config.yaml) — seções de valores livres que a aba
+ * Perfil edita; o backend persiste o YAML por inteiro (mesma forma do YAML). */
+export type ApplyConfigSection = Record<string, unknown>
+export interface ApplyConfig {
+  candidato?: ApplyConfigSection
+  localizacao?: ApplyConfigSection
+  endereco?: ApplyConfigSection
+  diversidade?: ApplyConfigSection
+  busca?: ApplyConfigSection
+  [key: string]: ApplyConfigSection | undefined
 }
 
 export interface ResumeItem {

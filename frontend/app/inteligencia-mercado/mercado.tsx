@@ -94,9 +94,9 @@ export default function MarketIntelligencePage() {
       formData.append('cv_file', fitFile)
       formData.append('limit', '15')
       const res = await fetch(`${API_BASE_URL}/api/market/cv-fit`, { method: 'POST', body: formData })
-      const data = await res.json().catch(() => null)
+      const data = (await res.json().catch(() => null)) as (MarketCvFitResult & { detail?: string }) | null
       if (!res.ok) {
-        const detail = (data as any)?.detail
+        const detail = data?.detail
         throw new Error(typeof detail === 'string' ? detail : `Falha ao calcular fit (HTTP ${res.status})`)
       }
       setFitResult(data as MarketCvFitResult)
@@ -372,12 +372,12 @@ export default function MarketIntelligencePage() {
       {activeTab === 'results' && R && R.statistics && (
         <div className="space-y-6">
           {/* Diagnóstico: se 0 vagas coletadas */}
-          {((R.summary as any).jsearch_status === 'no_jobs_found' || (R.summary as any).jsearch_message) && (
+          {(R.summary.jsearch_status === 'no_jobs_found' || R.summary.jsearch_message) && (
             <div className="flex items-start gap-3 px-4 py-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1">
                 <p className="font-semibold text-amber-200">Nenhuma vaga encontrada na busca</p>
-                <p className="text-amber-300/80">{(R.summary as any).jsearch_message}</p>
+                <p className="text-amber-300/80">{R.summary.jsearch_message}</p>
                 <p className="text-amber-400/70 mt-1">Dicas: verifique se as chaves da JSearch estão válidas e com créditos, amplie a janela temporal (ex: 90 dias) ou remova filtros de stack/senioridade.</p>
               </div>
             </div>
@@ -891,7 +891,7 @@ export default function MarketIntelligencePage() {
           </div>
           <div>
             <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
-            <p className="text-slate-500 text-xs mt-1">Configure os parâmetros e clique em "Analisar Mercado".</p>
+            <p className="text-slate-500 text-xs mt-1">Configure os parâmetros e clique em &ldquo;Analisar Mercado&rdquo;.</p>
           </div>
         </div>
       )}
@@ -978,7 +978,7 @@ export default function MarketIntelligencePage() {
                         <span className="text-lg font-black" style={{ color: scoreTone(job.score).stroke }}>
                           {Math.round(job.score)}
                         </span>
-                        <span className="text-[9px] text-slate-500 uppercase">fit</span>
+                        <span className="text-xs text-slate-500 uppercase">fit</span>
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">

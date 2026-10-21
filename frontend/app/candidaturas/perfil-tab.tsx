@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
-import { applyFetch, applyMethod, cardCls, btnPrimary, inputCls, labelCls } from './apply-api'
+import { applyFetch, applyMethod, cardCls, btnPrimary, inputCls, labelCls, type ApplyConfig } from './apply-api'
 
 /* A aba Perfil edita seções do config.yaml dos bots: dados do candidato,
  * localização, palavras de busca/negativas e pretensões. O backend grava o
@@ -49,12 +49,12 @@ function dmyParaIso(dmy: unknown): string {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
 }
 
-function paraPerfil(cfg: any): Perfil {
-  const c = cfg.candidato || {}
-  const loc = cfg.localizacao || {}
-  const busca = cfg.busca || {}
-  const end = cfg.endereco || {}
-  const div = cfg.diversidade || {}
+function paraPerfil(cfg: ApplyConfig): Perfil {
+  const c = cfg.candidato ?? {}
+  const loc = cfg.localizacao ?? {}
+  const busca = cfg.busca ?? {}
+  const end = cfg.endereco ?? {}
+  const div = cfg.diversidade ?? {}
   return {
     nome: str(c.nome), email: str(c.email), telefone: str(c.telefone),
     cidade_uf: str(c.cidade_uf), linkedin: str(c.linkedin), github: str(c.github),
@@ -67,10 +67,10 @@ function paraPerfil(cfg: any): Perfil {
     orientacao_sexual: str(div.orientacao_sexual), pcd: !!div.pcd,
     aceita_remoto: !!loc.aceita_remoto, aceita_hibrido: !!loc.aceita_hibrido,
     aceita_presencial: !!loc.aceita_presencial, aceita_mudanca: !!loc.aceita_mudanca,
-    estados: Array.isArray(loc.estados_aceitos) ? loc.estados_aceitos.join(', ') : '',
-    palavras_chave: Array.isArray(busca.palavras_chave) ? busca.palavras_chave.join('\n') : '',
-    palavras_negativas: Array.isArray(busca.palavras_excluir) ? busca.palavras_excluir.join('\n') : '',
-    nivel: Array.isArray(busca.nivel) ? busca.nivel.join(', ') : '',
+    estados: Array.isArray(loc.estados_aceitos) ? (loc.estados_aceitos as string[]).join(', ') : '',
+    palavras_chave: Array.isArray(busca.palavras_chave) ? (busca.palavras_chave as string[]).join('\n') : '',
+    palavras_negativas: Array.isArray(busca.palavras_excluir) ? (busca.palavras_excluir as string[]).join('\n') : '',
+    nivel: Array.isArray(busca.nivel) ? (busca.nivel as string[]).join(', ') : '',
     pretensao_clt: str(c.pretensao_clt), pretensao_pj_hora: str(c.pretensao_pj_hora),
     pretensao_pj_mensal: str(c.pretensao_pj_mensal), pretensao_estagio: str(c.pretensao_estagio),
   }
@@ -81,7 +81,7 @@ function str(v: unknown): string {
 }
 
 export default function PerfilTab() {
-  const [cfg, setCfg] = useState<any | null>(null)
+  const [cfg, setCfg] = useState<ApplyConfig | null>(null)
   const [p, setP] = useState<Perfil | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
@@ -89,7 +89,7 @@ export default function PerfilTab() {
   const [erro, setErro] = useState<string | null>(null)
 
   const carregar = () => {
-    applyFetch('/api/apply/config')
+    applyFetch<ApplyConfig>('/api/apply/config')
       .then(c => {
         setCfg(c)
         setP(paraPerfil(c))
@@ -104,44 +104,50 @@ export default function PerfilTab() {
     if (!cfg || !p) return
     setSalvando(true)
     setSalvo(false)
-    const cand = cfg.candidato || {}
-    cand.nome = p.nome; cand.email = p.email; cand.telefone = p.telefone
-    cand.cidade_uf = p.cidade_uf; cand.linkedin = p.linkedin; cand.github = p.github
-    cand.portfolio = p.portfolio; cand.nivel_ingles = p.nivel_ingles; cand.disponibilidade_dias = p.dias
-    cand.data_nascimento = isoParaDmy(p.data_nascimento); cand.possui_pj = p.possui_pj
-    cand.pretensao_clt = p.pretensao_clt
-    cand.pretensao_pj_hora = p.pretensao_pj_hora
-    cand.pretensao_pj_mensal = p.pretensao_pj_mensal
-    cand.pretensao_estagio = p.pretensao_estagio
-    cfg.candidato = cand
 
-    const loc = cfg.localizacao || {}
-    loc.aceita_remoto = p.aceita_remoto; loc.aceita_hibrido = p.aceita_hibrido
-    loc.aceita_presencial = p.aceita_presencial; loc.aceita_mudanca = p.aceita_mudanca
-    loc.estados_aceitos = p.estados.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-    cfg.localizacao = loc
-
-    const end = cfg.endereco || {}
-    end.pais = p.pais; end.estado_nome = p.estado_nome; end.estado_uf = p.estado_uf; end.cidade = p.cidade_end
-    cfg.endereco = end
-
-    const div = cfg.diversidade || {}
-    div.raca_cor = p.raca_cor; div.genero = p.genero; div.orientacao_sexual = p.orientacao_sexual; div.pcd = p.pcd
-    cfg.diversidade = div
-
-    const busca = cfg.busca || {}
-    busca.palavras_chave = p.palavras_chave.split('\n').map(s => s.trim()).filter(Boolean)
-    busca.palavras_excluir = p.palavras_negativas.split('\n').map(s => s.trim()).filter(Boolean)
-    busca.nivel = p.nivel.split(',').map(s => s.trim()).filter(Boolean)
-    cfg.busca = busca
+    // Monta um novo objeto em vez de mutar o cfg (valor de estado).
+    const novoCfg: ApplyConfig = {
+      ...cfg,
+      candidato: {
+        ...(cfg.candidato ?? {}),
+        nome: p.nome, email: p.email, telefone: p.telefone,
+        cidade_uf: p.cidade_uf, linkedin: p.linkedin, github: p.github,
+        portfolio: p.portfolio, nivel_ingles: p.nivel_ingles,
+        disponibilidade_dias: p.dias,
+        data_nascimento: isoParaDmy(p.data_nascimento), possui_pj: p.possui_pj,
+        pretensao_clt: p.pretensao_clt, pretensao_pj_hora: p.pretensao_pj_hora,
+        pretensao_pj_mensal: p.pretensao_pj_mensal, pretensao_estagio: p.pretensao_estagio,
+      },
+      localizacao: {
+        ...(cfg.localizacao ?? {}),
+        aceita_remoto: p.aceita_remoto, aceita_hibrido: p.aceita_hibrido,
+        aceita_presencial: p.aceita_presencial, aceita_mudanca: p.aceita_mudanca,
+        estados_aceitos: p.estados.split(",").map(x => x.trim().toUpperCase()).filter(Boolean),
+      },
+      endereco: {
+        ...(cfg.endereco ?? {}),
+        pais: p.pais, estado_nome: p.estado_nome, estado_uf: p.estado_uf, cidade: p.cidade_end,
+      },
+      diversidade: {
+        ...(cfg.diversidade ?? {}),
+        raca_cor: p.raca_cor, genero: p.genero,
+        orientacao_sexual: p.orientacao_sexual, pcd: p.pcd,
+      },
+      busca: {
+        ...(cfg.busca ?? {}),
+        palavras_chave: p.palavras_chave.split("\n").map(x => x.trim()).filter(Boolean),
+        palavras_excluir: p.palavras_negativas.split("\n").map(x => x.trim()).filter(Boolean),
+        nivel: p.nivel.split(",").map(x => x.trim()).filter(Boolean),
+      },
+    }
 
     try {
-      await applyMethod('/api/apply/config', 'PUT', cfg)
+      await applyMethod<unknown>("/api/apply/config", "PUT", novoCfg)
       setSalvo(true)
       setSujo(false)
       setErro(null)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao salvar.')
+      setErro(e instanceof Error ? e.message : "Falha ao salvar.")
     } finally {
       setSalvando(false)
     }

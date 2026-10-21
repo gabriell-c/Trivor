@@ -17,6 +17,13 @@ const EASE = [0.16, 1, 0.3, 1] as const
 // acima disso o provedor responde, mas a pílula vira "Lento" (âmbar).
 const SLOW_THRESHOLD_MS = 3000
 
+// Resposta do endpoint de teste de conexão (/api/test-connection)
+interface TestConnData {
+  latency_ms?: number
+  message?: string
+  detail?: string
+}
+
 /* ═══════════ Theme — cores sólidas, sem gradiente ═══════════ */
 const PROVIDER_THEME = {
   openai: {
@@ -122,6 +129,8 @@ function Select({
   const btnRef = useRef<HTMLButtonElement>(null)
   const ddRef = useRef<HTMLDivElement>(null)
 
+  // mounted: evita divergência de hidratação SSR (posição do dropdown só existe no cliente)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), [])
 
   const recalc = useCallback(() => {
@@ -241,12 +250,16 @@ function AnimatedNumber({ value, duration = 500 }: { value: number; duration?: n
   const [display, setDisplay] = useState(value)
   const ref = useRef(value)
   const reduce = useReducedMotion()
+
+  // Movimento reduzido: sem animação — sincroniza o display direto no render (estado derivado)
+  const [prevVal, setPrevVal] = useState(value)
+  if (reduce && prevVal !== value) {
+    setPrevVal(value)
+    setDisplay(value)
+  }
+
   useEffect(() => {
-    if (reduce) {
-      setDisplay(value)
-      ref.current = value
-      return
-    }
+    if (reduce) return
     const from = ref.current
     if (from === value) return
     let start: number | null = null
@@ -671,23 +684,25 @@ export default function ApiSettingsPage() {
     body.set('model_name', p.modelName)
     try {
       const res = await fetch(`${API_BASE_URL}/api/test-connection`, { method: 'POST', body })
-      const data = await res.json().catch(() => ({} as any))
+      const data = await res.json().catch((): TestConnData => ({}))
       if (res.ok) {
-        const slow = data.latency_ms != null && data.latency_ms >= SLOW_THRESHOLD_MS
+        const latency = data.latency_ms
+        const slow = latency != null && latency >= SLOW_THRESHOLD_MS
         const detail = data.message || 'Conexão OK'
-        updateStatus(p.id, slow ? 'slow' : 'connected', detail, data.latency_ms)
+        updateStatus(p.id, slow ? 'slow' : 'connected', detail, latency)
         if (slow) {
-          pushToast('warning', `Respondeu, mas demorou: ${detail} em ${fmtLatency(data.latency_ms)}`)
+          pushToast('warning', `Respondeu, mas demorou: ${detail} em ${fmtLatency(latency)}`)
         } else {
-          pushToast('success', data.latency_ms != null ? `${detail} em ${fmtLatency(data.latency_ms)}` : detail)
+          pushToast('success', latency != null ? `${detail} em ${fmtLatency(latency)}` : detail)
         }
       } else {
         updateStatus(p.id, 'error', data.detail || 'Erro na conexão')
         pushToast('error', data.detail || 'Erro na conexão')
       }
-    } catch (e: any) {
-      updateStatus(p.id, 'error', e.message || 'Erro na conexão')
-      pushToast('error', e.message || 'Falha ao contatar o backend')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ''
+      updateStatus(p.id, 'error', msg || 'Erro na conexão')
+      pushToast('error', msg || 'Falha ao contatar o backend')
     } finally {
       setTestingId(null)
     }
@@ -724,7 +739,9 @@ export default function ApiSettingsPage() {
     }
   }, [])
 
+  // fetch de dados na montagem: setKeys/setKeysLoading só rodam após o await
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadKeys()
   }, [loadKeys])
 

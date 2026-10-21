@@ -27,8 +27,8 @@ export default function ResumesTab() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const recarregar = () =>
-    applyFetch('/api/apply/resumes')
-      .then((d: { resumes: ResumeItem[] }) => setItems(d.resumes || []))
+    applyFetch<{ resumes?: ResumeItem[] }>('/api/apply/resumes')
+      .then(d => setItems(d.resumes ?? []))
       .catch(e => setErro(e instanceof Error ? e.message : 'Falha ao listar currículos.'))
   useEffect(() => { recarregar() }, [])
 

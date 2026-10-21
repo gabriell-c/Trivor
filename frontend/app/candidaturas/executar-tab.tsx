@@ -16,12 +16,18 @@ export default function ExecutarTab() {
   const preRef = useRef<HTMLPreElement>(null)
   const anyRunning = !!runs && Object.values(runs).some(r => r.running)
 
+  /* um bot começou a rodar e não é o escolhido → o painel de log acompanha
+   * o bot em execução. É derivado no render (não setState dentro de effect,
+   * que causaria render em cascata). */
+  const runningBot = runs ? Object.values(runs).find(r => r.running) : undefined
+  const focus = runningBot && !runs?.[focusBot]?.running ? runningBot.bot : focusBot
+
   /* status de todos os bots — mais rápido de poll enquanto algo roda */
   useEffect(() => {
     let vivo = true
     const tick = async () => {
       try {
-        const d = await applyFetch('/api/apply/runs')
+        const d = await applyFetch<Record<string, BotRun>>('/api/apply/runs')
         if (vivo) setRuns(d)
       } catch {
         // backend offline nesse tick — mantém o último estado conhecido
@@ -37,7 +43,7 @@ export default function ExecutarTab() {
     let vivo = true
     const tick = async () => {
       try {
-        const d = await applyFetch(`/api/apply/log/${focusBot}?lines=400`)
+        const d = await applyFetch<{ lines?: string[] }>(`/api/apply/log/${focus}?lines=400`)
         if (vivo) setLog(d.lines || [])
       } catch {
         // mantém o log último conhecido
@@ -46,18 +52,11 @@ export default function ExecutarTab() {
     tick()
     const id = setInterval(tick, anyRunning ? 3000 : 8000)
     return () => { vivo = false; clearInterval(id) }
-  }, [focusBot, anyRunning])
+  }, [focus, anyRunning])
 
   useEffect(() => {
     if (autoScroll && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
   }, [log, autoScroll])
-
-  /* um bot começou a rodar e não é o destacado → para ele (o log é dele) */
-  useEffect(() => {
-    if (!runs) return
-    const roda = Object.values(runs).find(r => r.running)
-    if (roda && !runs[focusBot]?.running) setFocusBot(roda.bot)
-  }, [runs, focusBot])
 
   const agir = async (bot: string, acao: 'start' | 'stop') => {
     setBusy(acao === 'start' ? `iniciar-${bot}` : `parar-${bot}`)
@@ -68,7 +67,7 @@ export default function ExecutarTab() {
       setMsg({ kind: 'ok', text: acao === 'start'
         ? `${bot} iniciado — acompanhe o log abaixo (o navegador abre nesta máquina).`
         : `${bot} parado.` })
-      setRuns(await applyFetch('/api/apply/runs'))
+      setRuns(await applyFetch<Record<string, BotRun>>('/api/apply/runs'))
     } catch (e) {
       setMsg({ kind: 'err', text: `${bot}: ${e instanceof Error ? e.message : 'falha'}` })
     } finally {
@@ -102,7 +101,7 @@ export default function ExecutarTab() {
           {BOT_NAMES.map(name => {
             const run = runs?.[name]
             const isRunning = !!run?.running
-            const destacado = focusBot === name
+            const destacado = focus === name
             const ocupado = busy === `iniciar-${name}` || busy === `parar-${name}`
             return (
               <div key={name}
@@ -152,9 +151,9 @@ export default function ExecutarTab() {
           <div className="flex items-center gap-2">
             <FileTerminal className="w-4 h-4 text-indigo-300" />
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-              Log em tempo real · {focusBot}
+              Log em tempo real · {focus}
             </span>
-            {runs?.[focusBot]?.running && (
+            {runs?.[focus]?.running && (
               <span className="flex items-center gap-1.5 text-[11px] text-emerald-300">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> rodando
               </span>

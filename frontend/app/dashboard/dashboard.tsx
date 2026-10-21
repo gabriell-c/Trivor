@@ -150,12 +150,12 @@ function StatCard({
 }
 
 /* ---------------- volume chart ---------------- */
-function VolumeChart({ logs }: { logs: LogEntry[] }) {
+function VolumeChart({ logs, nowMs }: { logs: LogEntry[]; nowMs: number }) {
   const buckets = useMemo(() => {
-    const now = Date.now()
     const arr: { label: string; total: number; errors: number }[] = []
+    if (!nowMs) return arr
     for (let i = 23; i >= 0; i--) {
-      const end = now - i * 3600_000
+      const end = nowMs - i * 3600_000
       const start = end - 3600_000
       const slice = logs.filter((l) => {
         const t = new Date(l.timestamp).getTime()
@@ -168,7 +168,7 @@ function VolumeChart({ logs }: { logs: LogEntry[] }) {
       })
     }
     return arr
-  }, [logs])
+  }, [logs, nowMs])
 
   const max = Math.max(...buckets.map((b) => b.total), 1)
   const hasData = buckets.some((b) => b.total > 0)
@@ -685,7 +685,10 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // feedback de carregamento: fetchData faz setInitialLoading/setRefreshing e
+  // setError síncronos (antes do await) — é refetch imperativo, não sincronização de estado
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(true)
   }, [fetchData])
 
@@ -703,16 +706,17 @@ export default function DashboardPage() {
     total > 0 ? Math.max(0, Math.min(100, Math.round((successes / total) * 100))) : null
 
   // sparkline source: últimos 24 buckets de volume derivado dos logs
+  const nowMs = lastUpdated?.getTime() ?? 0
   const spark = useMemo(() => {
-    const now = Date.now()
     const buckets = new Array(24).fill(0)
+    if (!nowMs) return buckets
     logs.forEach((l) => {
       const t = new Date(l.timestamp).getTime()
-      const diffH = Math.floor((now - t) / 3600_000)
+      const diffH = Math.floor((nowMs - t) / 3600_000)
       if (diffH >= 0 && diffH < 24) buckets[23 - diffH]++
     })
     return buckets
-  }, [logs])
+  }, [logs, nowMs])
 
   const showFullError = !initialLoading && !stats && !!error
   const showInlineError = !initialLoading && !!stats && !!error
@@ -881,7 +885,7 @@ export default function DashboardPage() {
             transition={{ duration: 0.4, delay: 0.2, ease: EASE }}
             className="grid grid-cols-1 lg:grid-cols-2 gap-4"
           >
-            <VolumeChart logs={logs} />
+            <VolumeChart logs={logs} nowMs={lastUpdated?.getTime() ?? 0} />
             <StatusDistribution logs={logs} />
           </motion.div>
 

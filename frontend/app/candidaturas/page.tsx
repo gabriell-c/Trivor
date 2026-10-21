@@ -151,14 +151,14 @@ export default function CandidaturasPage() {
     setErr(null)
     try {
       const [ov, list] = await Promise.all([
-        applyFetch('/api/apply/overview'),
-        applyFetch(
+        applyFetch<ApplyOverview>('/api/apply/overview'),
+        applyFetch<ApplyPage>(
           `/api/apply/applications?limit=${limit}&site=${encodeURIComponent(site)}&bucket=${encodeURIComponent(bucket)}&q=${encodeURIComponent(qDebounced)}`
         ),
       ])
-      setOverview(ov as ApplyOverview)
+      setOverview(ov)
       if (ov.available) {
-        setPage(list as ApplyPage)
+        setPage(list)
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Falha ao carregar')
@@ -167,6 +167,9 @@ export default function CandidaturasPage() {
     }
   }, [limit, site, bucket, qDebounced, reloadKey])
 
+  // load() faz setLoading/setErro síncronos (feedback de carregamento antes do await) —
+  // é refetch imperativo quando os filtros mudam, não sincronização de estado
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load() }, [load])
 
   const loadMore = () => setLimit(l => l + 30)

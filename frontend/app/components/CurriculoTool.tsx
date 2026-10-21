@@ -10,6 +10,7 @@ import {
 import type {
   AnalysisResult, AnaliseSecao, ErroComum, FitSemantico, RecrutadorSim,
   CoverLetter, CVDiffResult, DiffCV, DiffCVItem, DiffCVDeterministico,
+  ChecklistValidacao,
 } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 import { friendlyError, isAbortError } from '../lib/errors'
@@ -1169,7 +1170,7 @@ export default function CurriculoTool() {
                   }`}
                 />
                 <div className="space-y-2.5">
-                  {res.erros_ortograficos.map((err: any, i: number) => (
+                  {res.erros_ortograficos.map((err, i) => (
                     <motion.div
                       key={i}
                       initial={{ opacity: 0, y: 6 }}
@@ -1441,7 +1442,7 @@ function KeywordGroup({
   )
 }
 
-function ChecklistItems({ data }: { data: any }) {
+function ChecklistItems({ data }: { data: ChecklistValidacao }) {
   const items: React.ReactNode[] = []
 
   if (data.nome_arquivo) {
@@ -1457,7 +1458,7 @@ function ChecklistItems({ data }: { data: any }) {
   }
 
   if (data.numero_paginas !== undefined) {
-    const ok = data.numero_paginas_valido
+    const ok = data.numero_paginas_valido === true
     items.push(
       <ChecklistRow
         key="paginas"
@@ -1495,7 +1496,7 @@ function ChecklistItems({ data }: { data: any }) {
         title="Dados Sensíveis Detectados"
         description={
           <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
-            {data.dados_sensiveis.map((d: any, i: number) => (
+            {data.dados_sensiveis.map((d, i) => (
               <li key={i}>• {d.descricao}</li>
             ))}
           </ul>
@@ -1513,7 +1514,7 @@ function ChecklistItems({ data }: { data: any }) {
         title="Abreviações Encontradas"
         description={
           <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
-            {data.abreviacoes.map((a: any, i: number) => (
+            {data.abreviacoes.map((a, i) => (
               <li key={i}>
                 • {a.descricao}
                 {a.sugestao && <span className="text-emerald-400"> → {a.sugestao}</span>}
@@ -1581,7 +1582,7 @@ function ChecklistItems({ data }: { data: any }) {
         title="Motivo de Saída Detectado"
         description={
           <ul className="text-xs text-slate-400 mt-1 space-y-0.5">
-            {data.motivo_saida.map((m: any, i: number) => (
+            {data.motivo_saida.map((m, i) => (
               <li key={i}>• {m.descricao}</li>
             ))}
           </ul>
@@ -1709,11 +1710,11 @@ function SemanticFitSection({
     }
   }, [file, jobTitle, area])
 
+  // Auto-execução quando a análise muda. O reset de fit/error/copiedIdx já
+  // acontece no render (prevId, acima); `run` é imperativo (loading + fetch).
   useEffect(() => {
-    setFit(null)
-    setError(null)
-    setCopiedIdx(null)
-    if (autoRun) run()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (autoRun) void run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId])
 
@@ -1810,9 +1811,9 @@ function SemanticFitSection({
                     <p key={i} className="text-xs text-slate-400 leading-relaxed">
                       <span className="text-emerald-300 font-semibold">{req.termo}:</span>{' '}
                       {req.alias_encontrado && req.alias_encontrado !== req.termo ? (
-                        <>encontrado como "{req.alias_encontrado}" — </>
+                        <>encontrado como “{req.alias_encontrado}” — </>
                       ) : null}
-                      "{req.evidencia}"
+                      “{req.evidencia}”
                     </p>
                   ))}
                 </div>
@@ -1836,7 +1837,7 @@ function SemanticFitSection({
                     </p>
                     {sug.texto_atual && (
                       <p className="text-xs text-slate-400 mb-1.5">
-                        Hoje: <span className="line-through">"{sug.texto_atual}"</span>
+                        Hoje: <span className="line-through">“{sug.texto_atual}”</span>
                       </p>
                     )}
                     <div className="flex items-start justify-between gap-3">
@@ -1915,6 +1916,14 @@ function RecruiterSimSection({
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Quando a análise de origem muda, a simulação fica obsoleta — reset no render
+  const [prevId, setPrevId] = useState(analysisId)
+  if (prevId !== analysisId) {
+    setPrevId(analysisId)
+    setSim(null)
+    setError(null)
+  }
+
   const canRun = !!file && jobTitle.trim().length >= 40
 
   const run = useCallback(async () => {
@@ -1955,12 +1964,6 @@ function RecruiterSimSection({
       if (abortRef.current === controller) setLoading(false)
     }
   }, [file, jobTitle, jobLevel, area])
-
-  useEffect(() => {
-    setSim(null)
-    setError(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisId])
 
   useEffect(() => () => {
     abortRef.current?.abort()
@@ -2116,6 +2119,16 @@ function CoverLetterSection({
   const [format, setFormat] = useState<'completa' | 'curta'>('completa')
   const abortRef = useRef<AbortController | null>(null)
 
+  // Quando a análise de origem muda, a carta fica obsoleta — reset no render
+  const [prevId, setPrevId] = useState(analysisId)
+  if (prevId !== analysisId) {
+    setPrevId(analysisId)
+    setCarta(null)
+    setError(null)
+    setCopied(false)
+    setFormat('completa')
+  }
+
   const canGenerate = !!file && jobTitle.trim().length >= 40
 
   const generate = useCallback(
@@ -2161,14 +2174,6 @@ function CoverLetterSection({
     },
     [file, jobTitle, jobLevel]
   )
-
-  useEffect(() => {
-    setCarta(null)
-    setError(null)
-    setCopied(false)
-    setFormat('completa')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisId])
 
   useEffect(() => () => {
     abortRef.current?.abort()
@@ -2404,12 +2409,12 @@ function renderDiffItems(items: DiffCVItem[], tone: 'melhora' | 'piorou') {
             <p className="text-sm text-slate-200 leading-relaxed">{item.item}</p>
             {item.evidencia_nova && (
               <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                No CV novo: "{item.evidencia_nova}"
+                No CV novo: “{item.evidencia_nova}”
               </p>
             )}
             {item.evidencia_antiga && (
               <p className="text-xs text-slate-400 leading-relaxed">
-                Na versão antiga: "{item.evidencia_antiga}"
+                Na versão antiga: “{item.evidencia_antiga}”
               </p>
             )}
           </div>

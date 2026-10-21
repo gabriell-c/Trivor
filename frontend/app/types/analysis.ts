@@ -336,6 +336,9 @@ export interface MarketReportSummary {
   rejected_reasons_sample?: { title: string; reason: string }[]
   confidence_score: string
   confidence_reason: string
+  // Diagnostics de busca JSearch (presentes quando a análise usou o minerador)
+  jsearch_status?: string
+  jsearch_message?: string
 }
 
 export interface MarketReportStatistics {

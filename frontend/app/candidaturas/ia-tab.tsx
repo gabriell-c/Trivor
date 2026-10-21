@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import {
   applyFetch, applyMethod,
-  type IaProvider, type IaState, cardCls, btnPrimary, btnDanger, inputCls, labelCls,
+  type IaProvider, type IaState, type IaTestResult, cardCls, btnPrimary, btnDanger, inputCls, labelCls,
 } from './apply-api'
 
 interface IaForm {
@@ -41,7 +41,7 @@ export default function IATab() {
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const recarregar = () => applyFetch('/api/apply/ia').then(setIa).catch(e => setErro(msgErr(e)))
+  const recarregar = () => applyFetch<IaState>('/api/apply/ia').then(setIa).catch(e => setErro(msgErr(e)))
   useEffect(() => { recarregar() }, [])
 
   const editar = (p: IaProvider) => {
@@ -119,7 +119,7 @@ export default function IATab() {
       api_key: form.api_key.trim(), modelo: form.modelo.trim(),
     }
     try {
-      const r = await applyMethod('/api/apply/ia/test', 'POST', corpo)
+      const r = await applyMethod<IaTestResult>('/api/apply/ia/test', 'POST', corpo)
       setTeste(r.ok
         ? { ok: true, texto: `Pong recebido: "${(r.resposta || '').slice(0, 120)}"` }
         : { ok: false, texto: r.detalhe || 'Falha sem detalhe.' })
