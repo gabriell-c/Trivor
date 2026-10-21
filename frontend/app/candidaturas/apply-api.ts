@@ -24,8 +24,18 @@ async function handle(r: Response): Promise<any> {
   return r.json()
 }
 
+/* Converte a falha de rede (backend fora do ar) na mensagem PT-BR do
+ * friendlyError — sem isso o TypeError cru ("Failed to fetch") vaza
+ * pros caixas de erro da UI. Erros já tratados por `handle` passam intactos. */
+function traduzFalhaDeRede<T>(p: Promise<T>): Promise<T> {
+  return p.catch(err => {
+    if (err instanceof TypeError) throw new Error(friendlyError(err))
+    throw err
+  })
+}
+
 export function applyFetch(path: string): Promise<any> {
-  return fetch(`${API_BASE_URL}${path}`).then(handle)
+  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`).then(handle))
 }
 
 export function applyMethod(
@@ -33,16 +43,16 @@ export function applyMethod(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
 ): Promise<any> {
-  return fetch(`${API_BASE_URL}${path}`, {
+  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  }).then(handle)
+  }).then(handle))
 }
 
 /* multipart — só para upload de currículos (Content-Type vem do FormData) */
 export function applyUpload(path: string, form: FormData): Promise<any> {
-  return fetch(`${API_BASE_URL}${path}`, { method: 'POST', body: form }).then(handle)
+  return traduzFalhaDeRede(fetch(`${API_BASE_URL}${path}`, { method: 'POST', body: form }).then(handle))
 }
 
 /* ═══ Contratos do backend (/api/apply/*) ═══ */

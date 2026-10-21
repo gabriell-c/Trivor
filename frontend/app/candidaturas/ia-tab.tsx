@@ -221,7 +221,7 @@ export default function IATab() {
             </select>
           </Campo>
           {form.tipo === 'openai' && (
-            <Campo label="URL base (deixe vazio p/ OpenAI)">
+            <Campo label="URL base (ex.: https://api.openai.com/v1)">
               <input className={inputCls} value={form.base_url}
                 onChange={e => setForm({ ...form, base_url: e.target.value })}
                 placeholder="https://api.groq.com/openai/v1" list="baseUrls" />

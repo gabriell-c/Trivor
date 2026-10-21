@@ -61,6 +61,21 @@ def _anthropic_chat(prov: dict, prompt: str, temperature: float, max_tokens: int
     return data['content'][0]['text'].strip()
 
 
+def _resumo_err(exc: Exception, prov: dict, tentativas: int) -> str:
+    """Traduz a exceção final em PT-BR — o detalhe vai direto pra UI."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code} do provedor nas {tentativas} tentativas"
+    if isinstance(exc, urllib.error.URLError):
+        base = (prov.get('base_url') or prov.get('nome') or 'servidor').rstrip('/')
+        motivo = str(getattr(exc, 'reason', exc)).lower()
+        if 'timeout' in motivo or 'timed out' in motivo:
+            return f'tempo esgotado ao falar com {base}'
+        return f'sem conexão com {base} — o serviço está no ar e a URL base está correta?'
+    if isinstance(exc, LLMError):
+        return str(exc)
+    return f"{type(exc).__name__}: {exc}"
+
+
 def chat(prov: dict, prompt: str, temperature: float = 0.5,
          max_tokens: int = 500, tentativas: int = 3) -> str:
     """Chama o provedor `prov` (dict do bloco ia) com retries e backoff.
@@ -90,7 +105,8 @@ def chat(prov: dict, prompt: str, temperature: float = 0.5,
             if tentativa < tentativas - 1:
                 time.sleep(2 ** tentativa + random.uniform(0, 1))
     raise LLMError(f"Provedor '{prov.get('id', prov.get('nome', '?'))}' falhou após "
-                   f"{tentativas} tentativas: {ultimo}")
+                   f"{tentativas} {'tentativa' if tentativas == 1 else 'tentativas'}: "
+                   f"{_resumo_err(ultimo, prov, tentativas)}")
 
 
 def ping(prov: dict) -> dict:

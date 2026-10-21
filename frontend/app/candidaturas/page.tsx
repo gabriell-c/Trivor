@@ -62,8 +62,27 @@ const BUCKET_META: Record<ApplyRecord['status_bucket'], { label: string; cls: st
 }
 
 // O apply embute texto de erro no status ("erro: Page.goto: ...") — mostra curto, completo no tooltip
+const STATUS_LABELS: Record<string, string> = {
+  enviado: 'Enviado',
+  preenchido_sem_confirmacao: 'Preenchido (sem confirmação)',
+  ja_candidatado: 'Já aplicado antes',
+  botao_nao_encontrado: 'Botão não encontrado',
+  sem_botao: 'Sem botão de envio',
+  descricao_ingles: 'Descrição em inglês',
+  tecnologia_excluida: 'Tecnologia excluída',
+  travado: 'Travado',
+  externo_rhgestor: 'Portal externo (RH Gestor)',
+  url_inesperada: 'URL inesperada',
+  sessao_expirada: 'Sessão expirada',
+  captcha_nao_resolvido: 'Captcha não resolvido',
+  formulario_ingles: 'Formulário em inglês',
+  incompleto: 'Incompleto',
+}
+
 function statusLabel(status: string): string {
   if (status.startsWith('erro:')) return 'Erro de navegação'
+  const m = STATUS_LABELS[status]
+  if (m) return m
   if (status.length > 40) return status.slice(0, 40) + '…'
   return status
 }
