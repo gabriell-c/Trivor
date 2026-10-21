@@ -76,3 +76,6 @@ frontend/yarn-error.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Screenshots/relatórios locais do Playwright MCP (contém PII — nunca commitar)
+.playwright-mcp/
