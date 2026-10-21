@@ -105,7 +105,7 @@ curriculo/
 │   ├── export_utils.py      # Gerador de relatórios (Markdown, DOCX, PDF)
 │   └── market_export.py     # Pipeline de exportação de dados de mercado
 ├── frontend/                # Aplicação web Next.js
-│   ├── app/                 # Páginas (Dashboard, Currículo, LinkedIn, Mercado, Candidaturas, Logs, Config)
+│   ├── app/                 # Rotas /<slug> (dashboard, analise-curriculo, analise-linkedin, inteligencia-mercado, candidaturas, config-ias, logs)
 │   ├── components/          # Componentes reutilizáveis de UI
 │   ├── hooks/               # Custom React Hooks
 │   └── lib/                 # Utilitários de API e formatadores
@@ -173,6 +173,18 @@ npm install
 npm run dev
 ```
 > A aplicação web estará acessível em `http://localhost:3000`.
+>
+> **Rotas** — cada ferramenta é uma página real com slug próprio (a sidebar navega por URL):
+>
+> | Rota | Página |
+> |---|---|
+> | `/` e `/dashboard` | Dashboard — visão geral e histórico |
+> | `/analise-curriculo` | Análise de Currículo — diagnóstico ATS e compatibilidade |
+> | `/analise-linkedin` | Análise de LinkedIn — diagnóstico do perfil |
+> | `/inteligencia-mercado` | Inteligência de Mercado — vagas e tendências |
+> | `/candidaturas` | Job Hunter — histórico, execução, IA, perfil e currículos |
+> | `/config-ias` | Config. IAs — chaves de API dos provedores |
+> | `/logs` | Logs — requisições e performance |
 
 ---
 

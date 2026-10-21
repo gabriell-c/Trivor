@@ -19,10 +19,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  /* `children` é a página da rota atual (/dashboard, /analise-curriculo,
+   * /analise-linkedin, /inteligencia-mercado, /candidaturas, /config-ias,
+   * /logs) — o AppShell a envolve com a sidebar; a URL é a fonte da verdade. */
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className="bg-[#070a12] text-white antialiased min-h-screen" suppressHydrationWarning>
-        <AppShell />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   )

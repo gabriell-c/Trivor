@@ -1,27 +1,28 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
 import Sidebar from './Layout'
 import ErrorBoundary from './ErrorBoundary'
 import { getGlobalStatus, useIaProviders } from '../hooks/useIaProviders'
 
-type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin' | 'candidaturas'
+/* Casca do app: sidebar + área de conteúdo. O conteúdo é o `children` — a
+ * página da rota /<slug> atual (cada tool é uma página real de URL). A
+ * sidebar destaca o item ativo pela URL; aqui sobrou só o estado de
+ * colapso e a animação de troca de rota. */
 
-// Tool de CV real: CurriculoTool (5 features: fit determinístico, análise
-// semântica da vaga, simulação de recrutador, cover letter e diff de versões).
-const CurriculoTool = dynamic(() => import('../components/CurriculoTool').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const MarketPage = dynamic(() => import('../market/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const ApiSettingsPage = dynamic(() => import('../api-settings/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const LogsPage = dynamic(() => import('../logs/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const LinkedinPage = dynamic(() => import('../linkedin/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const DashboardPage = dynamic(() => import('../dashboard/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
-const CandidaturasPage = dynamic(() => import('../candidaturas/page').then(m => m.default), { ssr: false, loading: () => <div className="w-full max-w-4xl h-64 bg-slate-800/50 rounded-2xl animate-pulse" /> })
+/* Largura do container por rota (Config. IAs é mais estreita, Candidaturas
+ * tem o espaçamento próprio; as demais usam a padrão). */
+function paginaCls(pathname: string): string {
+  if (pathname === '/config-ias') return 'w-full max-w-3xl'
+  if (pathname === '/candidaturas') return 'w-full max-w-4xl space-y-5'
+  return 'w-full max-w-4xl space-y-6'
+}
 
-export default function AppShell() {
+export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const [activeTool, setActiveTool] = useState<Tool>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
+  const pathname = usePathname() || '/'
   const { providers } = useIaProviders()
   const globalStatus = getGlobalStatus(providers)
 
@@ -47,7 +48,7 @@ export default function AppShell() {
   return (
     <ErrorBoundary>
     <div className="relative min-h-screen flex bg-[#070a12]">
-      <Sidebar activeTool={activeTool} onToolChange={setActiveTool} globalStatus={globalStatus} providerCount={providers.length} collapsed={collapsed} onCollapsedChange={setCollapsed} />
+      <Sidebar globalStatus={globalStatus} providerCount={providers.length} collapsed={collapsed} onCollapsedChange={setCollapsed} />
 
       <motion.main initial={false} animate={{ marginLeft: collapsed ? 72 : 260 }} transition={{ duration: 0.25, ease: 'easeInOut' }}
         className="flex-1 min-h-screen flex flex-col p-4 md:p-8 overflow-x-hidden relative">
@@ -55,55 +56,12 @@ export default function AppShell() {
         <div className="absolute bottom-10 right-10 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <AnimatePresence mode="wait">
-          {activeTool === 'curriculo' && (
-            <motion.div key="curriculo" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl space-y-6">
-              <CurriculoTool />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'mercado' && (
-            <motion.div key="mercado" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl">
-              <MarketPage />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'api-settings' && (
-            <motion.div key="api-settings" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-3xl">
-              <ApiSettingsPage />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl space-y-6">
-              <DashboardPage />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'logs' && (
-            <motion.div key="logs" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl">
-              <LogsPage />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'linkedin' && (
-            <motion.div key="linkedin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl space-y-6">
-              <LinkedinPage />
-              </div>
-            </motion.div>
-          )}
-          {activeTool === 'candidaturas' && (
-            <motion.div key="candidaturas" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex-1 flex flex-col justify-center items-center z-10">
-              <div className="w-full max-w-4xl space-y-5">
-              <CandidaturasPage />
-              </div>
-            </motion.div>
-          )}
+          <motion.div key={pathname} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }}
+            className="flex-1 flex flex-col justify-center items-center z-10">
+            <div className={paginaCls(pathname)}>
+              {children}
+            </div>
+          </motion.div>
         </AnimatePresence>
       </motion.main>
     </div>

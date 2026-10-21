@@ -1,5 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText,
@@ -19,31 +21,32 @@ import {
 
 type Tool = 'curriculo' | 'mercado' | 'dashboard' | 'api-settings' | 'logs' | 'linkedin' | 'candidaturas'
 
+/* Cada tool é uma página real em /<slug> — a sidebar navega por URL
+ * (next/link) e destaca o item ativo pela rota atual (usePathname). */
 interface SidebarProps {
-  activeTool: Tool
-  onToolChange: (tool: Tool) => void
   globalStatus?: 'green' | 'yellow' | 'red' | 'none'
   providerCount?: number
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
 }
 
-const tools: { id: Tool; label: string; icon: React.ReactNode; description: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, description: 'Visão geral e histórico' },
-  { id: 'curriculo', label: 'Análise de Currículo', icon: <FileText className="w-5 h-5" />, description: 'Diagnóstico ATS e compatibilidade' },
-  { id: 'linkedin', label: 'Análise de LinkedIn', icon: <Users className="w-5 h-5" />, description: 'Diagnóstico de perfil LinkedIn' },
-  { id: 'mercado', label: 'Inteligência de Mercado', icon: <BarChart3 className="w-5 h-5" />, description: 'Análise de vagas e tendências' },
-  { id: 'candidaturas', label: 'Candidaturas', icon: <Send className="w-5 h-5" />, description: 'Histórico dos envios automáticos' },
-  { id: 'api-settings', label: 'Config. IAs', icon: <Key className="w-5 h-5" />, description: 'Gerenciar chaves de API' },
-  { id: 'logs', label: 'Logs', icon: <CircleDot className="w-5 h-5" />, description: 'Requisições e performance' },
+const tools: { id: Tool; href: string; label: string; icon: React.ReactNode; description: string }[] = [
+  { id: 'dashboard', href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, description: 'Visão geral e histórico' },
+  { id: 'curriculo', href: '/analise-curriculo', label: 'Análise de Currículo', icon: <FileText className="w-5 h-5" />, description: 'Diagnóstico ATS e compatibilidade' },
+  { id: 'linkedin', href: '/analise-linkedin', label: 'Análise de LinkedIn', icon: <Users className="w-5 h-5" />, description: 'Diagnóstico de perfil LinkedIn' },
+  { id: 'mercado', href: '/inteligencia-mercado', label: 'Inteligência de Mercado', icon: <BarChart3 className="w-5 h-5" />, description: 'Análise de vagas e tendências' },
+  { id: 'candidaturas', href: '/candidaturas', label: 'Candidaturas', icon: <Send className="w-5 h-5" />, description: 'Histórico dos envios automáticos' },
+  { id: 'api-settings', href: '/config-ias', label: 'Config. IAs', icon: <Key className="w-5 h-5" />, description: 'Gerenciar chaves de API' },
+  { id: 'logs', href: '/logs', label: 'Logs', icon: <CircleDot className="w-5 h-5" />, description: 'Requisições e performance' },
 ]
 
-export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none', providerCount = 0, collapsed: collapsedProp = false, onCollapsedChange }: SidebarProps) {
+export default function Sidebar({ globalStatus = 'none', providerCount = 0, collapsed: collapsedProp = false, onCollapsedChange }: SidebarProps) {
   // Usar estado controlado quando props forem fornecidas
   const [collapsedInternal, setCollapsedInternal] = useState(false)
   const isControlled = onCollapsedChange !== undefined
   const collapsed = isControlled ? collapsedProp : collapsedInternal
   const setCollapsed = isControlled ? onCollapsedChange : setCollapsedInternal
+  const pathname = usePathname() || '/'
 
   const toggleCollapsed = () => {
     setCollapsed(!collapsed)
@@ -83,9 +86,10 @@ export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none
 
         <nav className="flex-1 py-4 px-3 space-y-1.5">
           {tools.map(tool => {
-            const isActive = activeTool === tool.id
+            // "/" é a home (Dashboard), então o item fica ativo nas duas rotas
+            const isActive = pathname === tool.href || (tool.id === 'dashboard' && pathname === '/')
             return (
-              <button key={tool.id} onClick={() => onToolChange(tool.id)}
+              <Link key={tool.id} href={tool.href}
                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-150 ${isActive ? 'bg-indigo-600/20 border border-indigo-500/30 text-indigo-300' : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'} ${collapsed ? 'justify-center px-0' : ''}`}>
                 <span className={`flex-shrink-0 ${isActive ? 'text-indigo-400' : ''}`}>{tool.icon}</span>
                 {isActive && globalStatus !== 'none' && (
@@ -102,7 +106,7 @@ export default function Sidebar({ activeTool, onToolChange, globalStatus = 'none
                 {!collapsed && tool.id === 'api-settings' && providerCount > 0 && (
                   <span className="ml-auto text-[10px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full">{providerCount}</span>
                 )}
-              </button>
+              </Link>
             )
           })}
         </nav>
