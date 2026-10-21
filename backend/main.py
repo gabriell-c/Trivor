@@ -1018,16 +1018,22 @@ async def log_requests(request, call_next):
     if request.url.path == "/api/cv/analyze":
         return response
     try:
-        log_request(
-            endpoint=request.url.path,
-            method=request.method,
-            status_code=response.status_code,
-            duration_ms=duration_ms,
-            model="",
-            api_key_preview="",
+        # SQLite é síncrono: roda em thread pool para não bloquear o event
+        # loop no INSERT de todo request.
+        await run_in_threadpool(
+            lambda: log_request(
+                endpoint=request.url.path,
+                method=request.method,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+                model="",
+                api_key_preview="",
+            )
         )
     except Exception:
-        pass
+        # Falha no log não derruba o request — mas nunca engolida em silêncio:
+        # deixa rastro com stack.
+        logger.exception("[LOGS] Falha ao registrar request de %s", request.url.path)
     return response
 
 
@@ -1669,6 +1675,21 @@ tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. I
 # Fit CV × Vagas do Mercado — ranking determinístico (sem LLM, sem chave)
 # ---------------------------------------------------------------------------
 
+def _list_relevant_market_jobs() -> list:
+    """Leitura síncrona da base de vagas (SQLite).
+
+    Chamar via run_in_threadpool a partir de endpoints async para não
+    bloquear o event loop."""
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        return conn.execute(
+            "SELECT id, title, company, location, modality, source_url, requirements, nice_to_have "
+            "FROM market_jobs WHERE is_relevant = 1"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
 @app.post('/api/market/cv-fit')
 @limiter.limit("10/minute")
 async def market_cv_fit(
@@ -1703,14 +1724,7 @@ async def market_cv_fit(
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-    conn = sqlite3.connect(DB_FILE)
-    try:
-        rows = conn.execute(
-            "SELECT id, title, company, location, modality, source_url, requirements, nice_to_have "
-            "FROM market_jobs WHERE is_relevant = 1"
-        ).fetchall()
-    finally:
-        conn.close()
+    rows = await run_in_threadpool(_list_relevant_market_jobs)
 
     if not rows:
         raise HTTPException(status_code=400, detail="Base de mercado vazia. Rode uma análise de mercado primeiro (aba Mercado).")
@@ -2899,27 +2913,35 @@ async def export_market_analysis(
 # Endpoints de Logs
 # ---------------------------------------------------------------------------
 
+def _list_jsearch_key_rows() -> list:
+    """Leitura síncrona dos registros de chaves JSearch (SQLite) —
+    chamar via run_in_threadpool."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [
+            dict(r)
+            for r in conn.execute(
+                'SELECT id, key_hash, key_prefix, description, rate_limit_total, rate_limit_remaining, '
+                'status, last_error, last_tested, created_at FROM jsearch_keys ORDER BY rowid'
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
 @app.get('/api/jsearch/keys')
 async def api_get_jsearch_keys():
     """Retorna os registros de chaves JSearch (status e uso).
     Nunca retorna a chave em si — apenas preview/descrição (o texto puro não
     é mais persistido; a busca usa as chaves informadas no form + JSEARCH_API_KEY do ambiente)."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute(
-        'SELECT id, key_hash, key_prefix, description, rate_limit_total, rate_limit_remaining, '
-        'status, last_error, last_tested, created_at FROM jsearch_keys ORDER BY rowid'
-    )
-    rows = cursor.fetchall()
+    rows = await run_in_threadpool(_list_jsearch_key_rows)
     keys = []
-    for r in rows:
-        key_data = dict(r)
+    for key_data in rows:
         # Calcula usado com base no remaining
         used = max(0, key_data['rate_limit_total'] - key_data['rate_limit_remaining']) if key_data['rate_limit_remaining'] is not None else None
         key_data['used'] = used
         keys.append(key_data)
-    conn.close()
     return {"keys": keys}
 
 @app.post('/api/jsearch/test')
@@ -2954,6 +2976,28 @@ async def api_test_jsearch_key(
     except Exception as e:
         return {"valid": False, "error": str(e)}
 
+def _save_jsearch_key_record(key_hash: str, key_prefix: str, description: str, created_at: str) -> dict:
+    """Upsert síncrono do registro de chave JSearch (SQLite) —
+    chamar via run_in_threadpool. Retorna {"success": ..., "id"|"error": ...}."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO jsearch_keys (key_hash, key_prefix, description, created_at, status) "
+            "VALUES (?, ?, ?, ?, 'ok') "
+            "ON CONFLICT(key_hash) DO UPDATE SET "
+            "key_prefix = excluded.key_prefix, description = excluded.description",
+            (key_hash, key_prefix, description, created_at)
+        )
+        conn.commit()
+        row = cursor.execute("SELECT id FROM jsearch_keys WHERE key_hash = ?", (key_hash,)).fetchone()
+        return {"success": True, "id": row[0] if row else None}
+    except sqlite3.Error as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
 @app.post('/api/jsearch/save-key')
 async def api_save_jsearch_key(
     api_key: str = Form(...),
@@ -2966,22 +3010,29 @@ async def api_save_jsearch_key(
     from datetime import datetime
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
     key_prefix = (api_key[:8] + "…" + api_key[-4:]) if len(api_key) > 12 else _mask_key_preview(api_key)
+    try:
+        result = await run_in_threadpool(
+            _save_jsearch_key_record, key_hash, key_prefix, description, datetime.now().isoformat()
+        )
+    except sqlite3.Error as e:
+        logger.error(f"[JSEARCH] Falha ao salvar chave: {e}")
+        return {"success": False, "error": str(e)}
+    if not result["success"]:
+        logger.error(f"[JSEARCH] Falha ao salvar chave: {result['error']}")
+    return result
+
+
+def _update_jsearch_key_description(key_id: int, description: str) -> bool:
+    """Atualiza descrição de um registro (SQLite) — chamar via run_in_threadpool."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO jsearch_keys (key_hash, key_prefix, description, created_at, status) "
-            "VALUES (?, ?, ?, ?, 'ok') "
-            "ON CONFLICT(key_hash) DO UPDATE SET "
-            "key_prefix = excluded.key_prefix, description = excluded.description",
-            (key_hash, key_prefix, description, datetime.now().isoformat())
+            "UPDATE jsearch_keys SET description = ? WHERE id = ?",
+            (description, key_id),
         )
         conn.commit()
-        row = cursor.execute("SELECT id FROM jsearch_keys WHERE key_hash = ?", (key_hash,)).fetchone()
-        return {"success": True, "id": row[0] if row else None}
-    except sqlite3.Error as e:
-        logger.error(f"[JSEARCH] Falha ao salvar chave: {e}")
-        return {"success": False, "error": str(e)}
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -2996,34 +3047,33 @@ async def api_update_jsearch_key(
     O parâmetro api_key permanece no contrato por compatibilidade com a UI,
     mas é IGNORADO: o texto puro da chave não é mais persistido — para trocar
     a chave em si, use save-key com a nova chave (upsert por hash)."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE jsearch_keys SET description = ? WHERE id = ?",
-            (description, key_id),
-        )
-        conn.commit()
-        return {"success": cursor.rowcount > 0}
+        ok = await run_in_threadpool(_update_jsearch_key_description, key_id, description)
+        return {"success": ok}
     except sqlite3.Error as e:
         logger.error(f"[JSEARCH] Falha ao atualizar chave: {e}")
         return {"success": False, "error": str(e)}
+
+def _delete_jsearch_key(key_id: int) -> int:
+    """Remove um registro de chave (SQLite) — chamar via run_in_threadpool.
+    Retorna rowcount."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM jsearch_keys WHERE id = ?", (key_id,))
+        conn.commit()
+        return cursor.rowcount
     finally:
         conn.close()
+
 
 @app.delete('/api/jsearch/delete-key')
 async def api_delete_jsearch_key(
     key_id: int = Form(...)
 ):
     """Remove uma chave JSearch do DB."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM jsearch_keys WHERE id = ?", (key_id,))
-        conn.commit()
-        return {"success": cursor.rowcount > 0}
-    finally:
-        conn.close()
+    rowcount = await run_in_threadpool(_delete_jsearch_key, key_id)
+    return {"success": rowcount > 0}
 
 
 # ---------------------------------------------------------------------------
@@ -3249,32 +3299,34 @@ async def api_get_logs(
     error_only: bool = False,
 ):
     """Retorna logs paginados + stats."""
-    logs = get_logs(limit=limit, offset=offset, endpoint=endpoint, error_only=error_only)
-    stats = get_logs_stats()
+    logs = await run_in_threadpool(
+        lambda: get_logs(limit=limit, offset=offset, endpoint=endpoint, error_only=error_only)
+    )
+    stats = await run_in_threadpool(get_logs_stats)
     return {"logs": logs, "stats": stats}
 
 @app.get('/api/logs/stats')
 async def api_get_logs_stats_route():
     """Retorna estatísticas dos logs."""
-    return get_logs_stats()
+    return await run_in_threadpool(get_logs_stats)
 
 @app.post('/api/logs/clear')
 async def api_clear_logs():
     """Limpa os logs."""
-    clear_logs()
+    await run_in_threadpool(clear_logs)
     return {"success": True}
 
 @app.delete('/api/logs')
 async def api_delete_logs():
     """Limpa todos os logs (fallback DELETE)."""
-    clear_logs()
+    await run_in_threadpool(clear_logs)
     return {"success": True}
 
 @app.post('/api/logs/cleanup')
 async def api_cleanup_logs(days: int = 90):
     """Remove logs antigos (padrão 90 dias)."""
     from logging_service import cleanup_logs
-    removed = cleanup_logs(days)
+    removed = await run_in_threadpool(cleanup_logs, days)
     return {"success": True, "removed": removed}
 
 
@@ -3291,14 +3343,21 @@ async def health():
     checks = {}
     overall_status = "healthy"
 
-    # Verificar banco de dados
-    try:
+    # Verificar banco de dados — SQLite síncrono roda em thread pool
+    def _check_logs_db() -> dict:
         conn = sqlite3.connect(LOGS_DB)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM api_logs")
-        log_count = cursor.fetchone()[0]
-        conn.close()
-        checks["database"] = {"status": "ok", "logs_count": log_count}
+        try:
+            return {"status": "ok", "logs_count": conn.execute("SELECT COUNT(*) FROM api_logs").fetchone()[0]}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+        finally:
+            conn.close()
+
+    try:
+        result = await run_in_threadpool(_check_logs_db)
+        checks["database"] = result
+        if result["status"] != "ok":
+            overall_status = "degraded"
     except Exception as e:
         checks["database"] = {"status": "error", "message": str(e)}
         overall_status = "degraded"
