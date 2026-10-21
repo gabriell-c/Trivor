@@ -92,6 +92,12 @@ export default function ExecutarTab() {
             {msg.text}
           </div>
         )}
+        {runs === null ? (
+          // carregando o status dos bots
+          <div className="mt-3 space-y-2">
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-14 rounded-xl bg-slate-800/40 animate-pulse" />)}
+          </div>
+        ) : (
         <div className="mt-3 space-y-2">
           {BOT_NAMES.map(name => {
             const run = runs?.[name]
@@ -137,6 +143,7 @@ export default function ExecutarTab() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* log em tempo real do bot em destaque */}

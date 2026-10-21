@@ -108,6 +108,14 @@ def _buscar(ia: dict, pid: str) -> dict:
     raise ApplyAdminError(f"Provedor '{pid}' não encontrado.")
 
 
+def _num(valor, caster, rotulo: str):
+    """Converte com mensagem clara — nunca 500 com traceback no usuário."""
+    try:
+        return caster(valor)
+    except (TypeError, ValueError):
+        raise ApplyAdminError(f"'{rotulo}' precisa ser um número (recebido: {valor!r}).")
+
+
 def ia_add(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise ApplyAdminError("Payload inválido: esperado o corpo do provedor.")
@@ -124,8 +132,8 @@ def ia_add(payload: dict) -> dict:
         'base_url': (payload.get('base_url') or '').strip(),
         'api_key': str(payload.get('api_key') or ''),
         'modelo': str(payload['modelo']),
-        'temperatura': float(payload.get('temperatura', 0.5)),
-        'max_tokens': int(payload.get('max_tokens', 500)),
+        'temperatura': _num(payload.get('temperatura', 0.5), float, 'temperatura'),
+        'max_tokens': _num(payload.get('max_tokens', 500), int, 'max_tokens'),
     }
     if not prov['api_key']:
         raise ApplyAdminError("O campo 'api_key' é obrigatório ao criar.")
@@ -150,8 +158,8 @@ def ia_update(pid: str, payload: dict) -> dict:
         'tipo': payload.get('tipo', prov.get('tipo', 'openai')),
         'base_url': str(base_url).strip(),
         'modelo': str(payload.get('modelo', prov.get('modelo', ''))),
-        'temperatura': float(payload.get('temperatura', prov.get('temperatura', 0.5))),
-        'max_tokens': int(payload.get('max_tokens', prov.get('max_tokens', 500))),
+        'temperatura': _num(payload.get('temperatura', prov.get('temperatura', 0.5)), float, 'temperatura'),
+        'max_tokens': _num(payload.get('max_tokens', prov.get('max_tokens', 500)), int, 'max_tokens'),
     }
     # api_key: ausente ou vazio no payload → mantém a salva (a UI só envia
     # a nova quando o usuário digita um novo valor).
@@ -255,8 +263,18 @@ def resume_upload(data: bytes, filename: str, nome: str, descricao: str,
     if len(data) > _RESUME_MAX:
         raise ApplyAdminError(f"Arquivo excede 5MB ({len(data) // 1024}KB).")
     cfg = load_config()
-    rid = re.sub(r'[^a-z0-9_]+', '_', perfil.strip().lower()) or f'resume_{len(cfg.get("resumes") or {}) + 1}'
-    # id de perfil já usado com outro arquivo → mantém o perfil, troca o arquivo
+    existentes = {k: v for k, v in (cfg.get('resumes') or {}).items() if k != 'mapeamento'}
+    rid = re.sub(r'[^a-z0-9_]+', '_', perfil.strip().lower())
+    if rid:
+        # id de perfil já usado com outro arquivo → mantém o perfil, troca o arquivo
+        pass
+    else:
+        base = f'resume_{len(existentes) + 1}'
+        rid, i = base, 2
+        # perfil vazio: nunca atropelar um id existente com outro arquivo
+        while rid in existentes:
+            rid = f'{base}_{i}'
+            i += 1
     up_dir = _apply_dir() / 'resumes'
     up_dir.mkdir(parents=True, exist_ok=True)
     destino = up_dir / f'{rid}{ext}'

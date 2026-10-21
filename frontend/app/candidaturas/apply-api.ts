@@ -8,7 +8,17 @@ import { friendlyError } from '../lib/errors'
 async function handle(r: Response): Promise<any> {
   if (!r.ok) {
     let detail = ''
-    try { detail = (await r.json()).detail || '' } catch { /* resposta não-JSON */ }
+    try {
+      const j = await r.json()
+      // FastAPI costuma mandar `detail` string (nossas rotas) ou array de
+      // erros de validação (422) — só usamos texto legível
+      detail = typeof j?.detail === 'string' ? j.detail : ''
+    } catch { /* resposta não-JSON */ }
+    if (!detail) {
+      detail = r.status === 422
+        ? 'Requisito incompleto (faltou campo obrigatório — ex.: arquivo do upload).'
+        : ''
+    }
     throw new Error(detail || friendlyError(new Error(`HTTP ${r.status}`), 'Falha ao falar com o backend.'))
   }
   return r.json()

@@ -47,6 +47,7 @@ export default function PerfilTab() {
   const [p, setP] = useState<Perfil | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
+  const [sujo, setSujo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
   const carregar = () => {
@@ -54,6 +55,7 @@ export default function PerfilTab() {
       .then(c => {
         setCfg(c)
         setP(paraPerfil(c))
+        setSujo(false)
         setErro(null)
       })
       .catch(e => setErro(e instanceof Error ? e.message : 'Falha ao carregar a config.'))
@@ -89,6 +91,7 @@ export default function PerfilTab() {
     try {
       await applyMethod('/api/apply/config', 'PUT', cfg)
       setSalvo(true)
+      setSujo(false)
       setErro(null)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao salvar.')
@@ -111,7 +114,10 @@ export default function PerfilTab() {
     return <div className={cardCls}><div className="h-48 animate-pulse rounded-xl bg-slate-800/50" /></div>
   }
 
-  const set = (k: keyof Perfil, v: string | boolean) => setP(prev => (prev ? { ...prev, [k]: v } : prev))
+  const set = (k: keyof Perfil, v: string | boolean) => {
+    setP(prev => (prev ? { ...prev, [k]: v } : prev))
+    setSujo(true)
+  }
 
   return (
     <div className="space-y-4">
@@ -184,12 +190,20 @@ export default function PerfilTab() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={salvar} disabled={salvando} className={btnPrimary}>
           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           Salvar perfil
         </button>
+        {sujo && (
+          <button onClick={() => { setSujo(false); setSalvo(false); carregar() }}
+            disabled={salvando}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800/50 transition-colors">
+            Descartar alterações
+          </button>
+        )}
         {salvo && <span className="text-xs text-emerald-300">Salvo — os próximos bots já usam esses dados.</span>}
+        {sujo && !salvo && <span className="text-xs text-amber-300">Alterações não salvas</span>}
         {erro && p && <span className="text-xs text-rose-300">{erro}</span>}
       </div>
     </div>

@@ -167,6 +167,9 @@ export default function ResumesTab() {
         {erro && <div className="mt-2 text-xs text-rose-300">{erro}</div>}
         {okMsg && <div className="mt-2 text-xs text-emerald-300">{okMsg}</div>}
         <div className="mt-3 space-y-2">
+          {items === null && !erro && (
+            <div className="h-14 rounded-xl bg-slate-800/40 animate-pulse" />
+          )}
           {(items || []).map(item => {
             const ed = editando?.id === item.id
             return (

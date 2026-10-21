@@ -138,6 +138,12 @@ export default function IATab() {
           Provedores configurados
         </div>
         {erro && !ia && <ErroBox text={erro} onRetry={recarregar} />}
+        {!erro && ia === null && (
+          <div className="mt-3 space-y-2">
+            <div className="h-14 rounded-xl bg-slate-800/40 animate-pulse" />
+            <div className="h-14 rounded-xl bg-slate-800/40 animate-pulse" />
+          </div>
+        )}
         {ia && ia.providers.length === 0 && (
           <div className="mt-3 text-sm text-slate-400">
             Nenhum provedor. Preencha o formulário abaixo (aceita qualquer API compatível com OpenAI — Groq, OpenAI, Ollama, LM Studio, vLLM — ou a Anthropic).
@@ -184,7 +190,7 @@ export default function IATab() {
                   </button>
                 </div>
                 {teste && testeDe === p.id && (
-                  <div className={`mt-2 text-xs rounded-xl px-3 py-2 border font-mono ${teste.ok
+                  <div className={`mt-2 text-xs rounded-xl px-3 py-2 border font-mono wrap-break-word max-h-40 overflow-y-auto ${teste.ok
                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                     : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}`}>
                     {teste.ok ? '✅ ' : '❌ '}{teste.texto}
@@ -263,7 +269,7 @@ export default function IATab() {
           )}
         </div>
         {teste && (
-          <div className={`mt-3 text-xs rounded-xl px-3 py-2 border font-mono ${teste.ok
+          <div className={`mt-3 text-xs rounded-xl px-3 py-2 border font-mono wrap-break-word max-h-40 overflow-y-auto ${teste.ok
             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
             : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}`}>
             {teste.ok ? '✅ ' : '❌ '}{teste.texto}
