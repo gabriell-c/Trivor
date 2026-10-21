@@ -125,6 +125,14 @@ class TestEngines:
             b.page.click('#go')
             assert b.page.locator('#out').inner_text() == 'fui'
 
+    def test_camoufox_platform_consistent_with_host(self):
+        # Fingerprint de Firefox "Linux" rodando em Windows é sinal de bot
+        # (portal faz cross-check platform × canvas/WebGL). A layer deve
+        # escolher a plataforma da máquina hospedeira.
+        expected = {'win32': 'Win32', 'darwin': 'MacIntel', 'linux': 'Linux x86_64'}[sys.platform]
+        with _with_engine('camoufox') as b:
+            assert b.page.evaluate('navigator.platform') == expected
+
     @pytest.mark.parametrize('engine', ['camoufox', 'patchright'])
     def test_session_persists_between_runs(self, engine, srv):
         _clean_profile('pytest_persist')

@@ -21,6 +21,12 @@ Nas 3 primeiras engines, `b.page` É um playwright.sync_api.Page — o código
 de preenchimento existente migra sem reescrever. Na engine `undetected`,
 `b.page` é um _SeleniumPage (subconjunto documentado, fluxos de login).
 
+Stealth: camoufox/patchright passam na suíte Intoli (bot.sannysoft.com).
+Custo conhecido das engines chromium em `headless=True`: o UA expõe
+"Headless" e o WebGL cai pro SwiftShader — para portais com detecção
+agressiva, preferir camoufox (Firefox com fingerprint coerente com a
+plataforma hospedeira) ou rodar com `headless=False`.
+
 Sessões: com `profile="gupy"`, cada engine usa um user_data_dir persistente
 em apply/sessions/<profile>/<engine>/ — cookies/localStorage sobrevivem entre
 runs, substituindo gupy_session.json / solides_session.json / indeed_session.pkl.
@@ -91,9 +97,13 @@ class Browser:
         self._pw.stop()
 
     def _start_camoufox(self) -> None:
+        import sys
         from camoufox.sync_api import Camoufox
+        # `os` coerente com a máquina hospedeira: fingerprint de Firefox Linux
+        # rodando em Windows é sinal de bot (cross-check de platform).
+        host_os = {'win32': 'windows', 'darwin': 'macos', 'linux': 'linux'}.get(sys.platform)
         cf = Camoufox(headless=self.headless, user_data_dir=self._profile_dir('firefox'),
-                      persistent_context=True)
+                      persistent_context=True, os=host_os)
         ctx = cf.__enter__()  # BrowserContext; __exit__ faz o teardown completo
         self.page = ctx.new_page()
         self.page.set_default_timeout(self.timeout_ms)
