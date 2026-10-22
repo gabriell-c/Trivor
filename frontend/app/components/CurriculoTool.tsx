@@ -305,6 +305,131 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
   formatacao_inconsistente: 'Formatação inconsistente',
 }
 
+/* ═══════════ Helper puro ═══════════ */
+function formatTokens(num?: number) {
+  if (num === undefined || num === null) return '0'
+  if (num >= 1000) {
+    const formattedNum = num.toLocaleString('pt-BR')
+    const kValue = (num / 1000).toFixed(1).replace('.', ',')
+    return `${formattedNum} (${kValue}k)`
+  }
+  return num.toString()
+}
+
+/* ═══════════ Análise por Seção ═══════════ */
+function AnaliseSecoes({ data }: { data: Record<string, AnaliseSecao> }) {
+  return Object.entries(data).map(([key, value], idx) => {
+    const label = SECTION_LABELS[key] || key
+    return (
+      <motion.div
+        key={key}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: Math.min(idx * 0.04, 0.3), ease: EASE }}
+        className="rounded-xl bg-slate-950 border border-slate-700 p-4"
+      >
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-bold text-white">{label}</h3>
+            {value.presente === false && (
+              <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-400">
+                Não presente
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-mono font-semibold text-slate-300 tabular-nums">
+              {value.score}/100
+            </span>
+            {value.status && <StatusPill status={value.status} />}
+          </div>
+        </div>
+
+        {key === 'experiencia' &&
+          (value.has_xyz !== undefined ||
+            value.has_metrics !== undefined ||
+            value.bullet_points !== undefined) && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {value.has_xyz && (
+                <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-200 border border-emerald-400/30">
+                  ✓ Fórmula XYZ
+                </span>
+              )}
+              {value.has_metrics === false && (
+                <span className="text-xs px-2 py-1 rounded-md bg-rose-500/15 text-rose-200 border border-rose-400/30">
+                  ✗ Sem métricas
+                </span>
+              )}
+              {value.bullet_points === false && (
+                <span className="text-xs px-2 py-1 rounded-md bg-rose-500/15 text-rose-200 border border-rose-400/30">
+                  ✗ Parágrafos em vez de bullets
+                </span>
+              )}
+              {value.bullet_points === true && (
+                <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-200 border border-emerald-400/30">
+                  ✓ Bullet points
+                </span>
+              )}
+            </div>
+          )}
+
+        {value.problema && (
+          <div className="mb-2.5">
+            <p className="text-xs font-bold text-rose-300 mb-1 flex items-center gap-1.5">
+              <AlertCircle className="w-3 h-3" />
+              Problema detectado
+            </p>
+            <p className="text-sm text-slate-300 leading-relaxed">{value.problema}</p>
+          </div>
+        )}
+        {value.como_corrigir && (
+          <div>
+            <p className="text-xs font-bold text-emerald-300 mb-1 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3 h-3" />
+              Como corrigir
+            </p>
+            <p className="text-sm text-slate-300 leading-relaxed">{value.como_corrigir}</p>
+          </div>
+        )}
+      </motion.div>
+    )
+  })
+}
+
+/* ═══════════ Erros Comuns ═══════════ */
+function ErrosComuns({ erros }: { erros: ErroComum[] }) {
+  if (erros.length === 0) return null
+  return (
+    <div className="space-y-2.5">
+      {erros.map((erro, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.25), ease: EASE }}
+          className="rounded-xl bg-slate-950 border border-slate-700 p-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-200 mb-1">
+                {ERROR_TYPE_LABELS[erro.tipo] || erro.tipo}
+              </p>
+              <p className="text-sm text-slate-300 leading-relaxed">{erro.descricao}</p>
+              {erro.exemplo && (
+                <div className="mt-2 p-3 rounded-lg bg-slate-900 border border-slate-800">
+                  <p className="text-xs font-semibold text-slate-400 mb-1">Exemplo no currículo:</p>
+                  <p className="text-sm text-slate-200 font-mono break-words">{erro.exemplo}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
 /* ═══════════ Main page ═══════════ */
 export default function CurriculoTool() {
   const [res, setRes] = useState<AnalysisResult | null>(null)
@@ -360,16 +485,6 @@ export default function CurriculoTool() {
     }
   }
 
-  const formatTokens = (num?: number) => {
-    if (num === undefined || num === null) return '0'
-    if (num >= 1000) {
-      const formattedNum = num.toLocaleString('pt-BR')
-      const kValue = (num / 1000).toFixed(1).replace('.', ',')
-      return `${formattedNum} (${kValue}k)`
-    }
-    return num.toString()
-  }
-
   const analyzeCV = async (file: File) => {
     setLoading(true)
     setError(null)
@@ -403,121 +518,6 @@ export default function CurriculoTool() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const getScoreColor = (score: number = 0) => scoreTone(score)
-
-  const renderAnaliseSecoes = (data?: Record<string, AnaliseSecao>) => {
-    if (!data) return null
-    return Object.entries(data).map(([key, value], idx) => {
-      const label = SECTION_LABELS[key] || key
-      return (
-        <motion.div
-          key={key}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: Math.min(idx * 0.04, 0.3), ease: EASE }}
-          className="rounded-xl bg-slate-950 border border-slate-700 p-4"
-        >
-          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-white">{label}</h3>
-              {value.presente === false && (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-400">
-                  Não presente
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-mono font-semibold text-slate-300 tabular-nums">
-                {value.score}/100
-              </span>
-              {value.status && <StatusPill status={value.status} />}
-            </div>
-          </div>
-
-          {key === 'experiencia' &&
-            (value.has_xyz !== undefined ||
-              value.has_metrics !== undefined ||
-              value.bullet_points !== undefined) && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {value.has_xyz && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-200 border border-emerald-400/30">
-                    ✓ Fórmula XYZ
-                  </span>
-                )}
-                {value.has_metrics === false && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-rose-500/15 text-rose-200 border border-rose-400/30">
-                    ✗ Sem métricas
-                  </span>
-                )}
-                {value.bullet_points === false && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-rose-500/15 text-rose-200 border border-rose-400/30">
-                    ✗ Parágrafos em vez de bullets
-                  </span>
-                )}
-                {value.bullet_points === true && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-200 border border-emerald-400/30">
-                    ✓ Bullet points
-                  </span>
-                )}
-              </div>
-            )}
-
-          {value.problema && (
-            <div className="mb-2.5">
-              <p className="text-xs font-bold text-rose-300 mb-1 flex items-center gap-1.5">
-                <AlertCircle className="w-3 h-3" />
-                Problema detectado
-              </p>
-              <p className="text-sm text-slate-300 leading-relaxed">{value.problema}</p>
-            </div>
-          )}
-          {value.como_corrigir && (
-            <div>
-              <p className="text-xs font-bold text-emerald-300 mb-1 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3 h-3" />
-                Como corrigir
-              </p>
-              <p className="text-sm text-slate-300 leading-relaxed">{value.como_corrigir}</p>
-            </div>
-          )}
-        </motion.div>
-      )
-    })
-  }
-
-  const renderErrosComuns = (erros?: ErroComum[]) => {
-    if (!erros || erros.length === 0) return null
-    return (
-      <div className="space-y-2.5">
-        {erros.map((erro, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.25), ease: EASE }}
-            className="rounded-xl bg-slate-950 border border-slate-700 p-4"
-          >
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-amber-200 mb-1">
-                  {ERROR_TYPE_LABELS[erro.tipo] || erro.tipo}
-                </p>
-                <p className="text-sm text-slate-300 leading-relaxed">{erro.descricao}</p>
-                {erro.exemplo && (
-                  <div className="mt-2 p-3 rounded-lg bg-slate-900 border border-slate-800">
-                    <p className="text-xs font-semibold text-slate-400 mb-1">Exemplo no currículo:</p>
-                    <p className="text-sm text-slate-200 font-mono break-words">{erro.exemplo}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    )
   }
 
   return (
@@ -1047,7 +1047,7 @@ export default function CurriculoTool() {
                       <div className="flex flex-col items-center justify-center w-20 h-20 rounded-2xl bg-slate-950 border border-slate-700 shrink-0">
                         <span
                           className="text-2xl font-bold tabular-nums"
-                          style={{ color: getScoreColor(res.fit_com_vaga.nota).stroke }}
+                          style={{ color: scoreTone(res.fit_com_vaga.nota).stroke }}
                         >
                           {Math.round(res.fit_com_vaga.nota)}
                         </span>
@@ -1223,7 +1223,7 @@ export default function CurriculoTool() {
                       : 'padrões problemáticos'
                   }`}
                 />
-                {renderErrosComuns(res.erros_comuns_detectados)}
+                <ErrosComuns erros={res.erros_comuns_detectados} />
               </Card>
             )}
 
@@ -1311,7 +1311,7 @@ export default function CurriculoTool() {
                   title="Análise por Seção"
                   subtitle={`${Object.keys(res.analise_secoes).length} seções avaliadas`}
                 />
-                <div className="space-y-2.5">{renderAnaliseSecoes(res.analise_secoes)}</div>
+                <div className="space-y-2.5"><AnaliseSecoes data={res.analise_secoes} /></div>
               </Card>
             )}
 
