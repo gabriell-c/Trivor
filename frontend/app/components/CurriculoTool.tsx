@@ -18,6 +18,7 @@ import { scoreTone } from '../lib/score'
 import { CustomSelect } from './CustomSelect'
 import { Dropzone } from './Dropzone'
 import { getBestProvider } from '../hooks/useIaProviders'
+import { useExport } from '../hooks/useExport'
 
 const EASE = [0.16, 1, 0.3, 1] as const
 
@@ -440,50 +441,19 @@ export default function CurriculoTool() {
   const [activeStep, setActiveStep] = useState<1 | 2>(1)
   const [jobLevel, setJobLevel] = useState('Sem nível específico')
   const [jobTitle, setJobTitle] = useState('')
-  const [showJobDesc, setShowJobDesc] = useState(false)
   const [area, setArea] = useState('')
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [exporting, setExporting] = useState<string | null>(null)
-  const [exportError, setExportError] = useState<string | null>(null)
-  const [exportFormat, setExportFormat] = useState<'json' | 'md' | 'docx' | 'pdf'>('pdf')
 
   const [analysisId, setAnalysisId] = useState(0)
   const [fitAutoRun, setFitAutoRun] = useState(false)
 
-  const handleExport = async () => {
-    if (!res) return
-    setExporting(exportFormat)
-    setExportError(null)
-    try {
-      const formData = new FormData()
-      formData.set('format', exportFormat)
-      formData.set('filename', fileName || 'Curriculo.pdf')
-      formData.set('job_target', `${jobTitle || 'Geral'} (${jobLevel})`)
-      formData.set('data_json', JSON.stringify(res))
-
-      const response = await fetch(`${API_BASE_URL}/api/export`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) throw new Error('Falha ao gerar arquivo de exportação.')
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Diagnostico_CV_${fileName?.replace('.pdf', '') || 'Analise'}.${exportFormat}`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (err) {
-      setExportError(friendlyError(err, 'Erro ao baixar o arquivo.'))
-    } finally {
-      setExporting(null)
-    }
-  }
+  const { exporting, exportError, exportFormat, setExportFormat, handleExport } = useExport(
+    res,
+    fileName,
+    jobTitle,
+    jobLevel,
+  )
 
   const analyzeCV = async (file: File) => {
     setLoading(true)
@@ -618,124 +588,18 @@ export default function CurriculoTool() {
             transition={{ duration: 0.3, ease: EASE }}
             className="space-y-5"
           >
-            {/* Upload */}
-            <Card className="p-6 md:p-8">
-              <SectionHead
-                icon={<Upload className="w-5 h-5 text-indigo-300" />}
-                tone="indigo"
-                title="Upload do Currículo"
-                subtitle="PDF, DOCX ou DOC — até 10MB"
-              />
-              <Dropzone onFileSelect={setSelectedFile} accept=".pdf,.docx,.doc" />
-              <AnimatePresence>
-                {selectedFile && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-3 flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-400/30">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-emerald-100 truncate">
-                          {selectedFile.name}
-                        </p>
-                        <p className="text-xs text-emerald-200/80 mt-0.5">
-                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB · pronto para análise
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Card>
-
-            {/* Config */}
-            <Card className="p-6 md:p-8">
-              <SectionHead
-                icon={<Target className="w-5 h-5 text-indigo-300" />}
-                tone="indigo"
-                title="Configuração da Análise"
-                subtitle="Personalize o diagnóstico para o seu objetivo"
-              />
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-200 mb-2">
-                    Sua Área de Atuação <span className="text-rose-400">*</span>
-                  </label>
-                  <Input
-                    value={area}
-                    onChange={(e) => setArea(e.target.value)}
-                    placeholder="Ex: Administrativo, Tecnologia, Vendas..."
-                  />
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowJobDesc((v) => !v)}
-                    className="flex items-center justify-between w-full text-sm font-medium text-slate-200 hover:text-white transition-colors"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      Descrição da vaga
-                      <span className="text-slate-500 font-normal">(opcional)</span>
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
-                        showJobDesc ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {showJobDesc && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.25, ease: EASE }}
-                        className="overflow-hidden"
-                      >
-                        <textarea
-                          value={jobTitle}
-                          onChange={(e) => setJobTitle(e.target.value)}
-                          placeholder="Cole a descrição completa da vaga (com a seção de requisitos) — com isso calculamos o Fit do seu CV com a vaga."
-                          className="w-full mt-2 h-32 px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-base text-white placeholder:text-slate-500 outline-none transition-all duration-200 hover:border-slate-600 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/25 resize-none leading-relaxed"
-                        />
-                        <p className="text-xs text-slate-400 mt-1.5">
-                          {jobTitle.trim().length >= 40
-                            ? `✓ Descrição completa (${jobTitle.trim().length} chars) — Fit será calculado`
-                            : `Cole ao menos 40 caracteres (${jobTitle.trim().length}/40)`}
-                        </p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-200 mb-2">
-                    Nível desejado
-                  </label>
-                  <CustomSelect
-                    value={jobLevel}
-                    onChange={setJobLevel}
-                    options={[
-                      { value: 'Sem nível específico', label: 'Sem nível específico' },
-                      { value: 'Estágio', label: 'Estágio' },
-                      { value: 'Júnior', label: 'Júnior' },
-                      { value: 'Pleno', label: 'Pleno' },
-                      { value: 'Sênior', label: 'Sênior' },
-                      { value: 'Lead', label: 'Lead' },
-                      { value: 'Manager', label: 'Manager' },
-                    ]}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            {/* Analyze */}
-            <PrimaryBtn
-              onClick={() => {
+            <StepOneForm
+              selectedFile={selectedFile}
+              onFileSelect={setSelectedFile}
+              area={area}
+              onArea={setArea}
+              jobTitle={jobTitle}
+              onJobTitle={setJobTitle}
+              jobLevel={jobLevel}
+              onJobLevel={setJobLevel}
+              loading={loading}
+              error={error}
+              onAnalyze={() => {
                 if (!selectedFile) return
                 if (!area) {
                   setError('Selecione sua área de atuação para continuar.')
@@ -743,38 +607,7 @@ export default function CurriculoTool() {
                 }
                 analyzeCV(selectedFile)
               }}
-              disabled={loading || !selectedFile || !area}
-              loading={loading}
-              className="w-full"
-            >
-              {loading ? (
-                'Analisando currículo...'
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Analisar Currículo
-                </>
-              )}
-            </PrimaryBtn>
-
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-400/30">
-                    <XCircle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-rose-200">Erro na análise</p>
-                      <p className="text-sm text-rose-300/90 mt-0.5 leading-relaxed">{error}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -2570,5 +2403,192 @@ function CVDiffSection({ area }: { area: string }) {
         </div>
       )}
     </Card>
+  )
+}
+
+/* ═══════════ Step 1 — upload + configuração ═══════════
+   Form do passo de envio: só estado local é a expansão do
+   textarea (showJobDesc); os dados sobem via props para o main,
+   que precisa de jobTitle/jobLevel para o gating do Step 2. */
+function StepOneForm({
+  selectedFile,
+  onFileSelect,
+  area,
+  onArea,
+  jobTitle,
+  onJobTitle,
+  jobLevel,
+  onJobLevel,
+  loading,
+  error,
+  onAnalyze,
+}: {
+  selectedFile: File | null
+  onFileSelect: (file: File) => void
+  area: string
+  onArea: (value: string) => void
+  jobTitle: string
+  onJobTitle: (value: string) => void
+  jobLevel: string
+  onJobLevel: (value: string) => void
+  loading: boolean
+  error: string | null
+  onAnalyze: () => void
+}) {
+  const [showJobDesc, setShowJobDesc] = useState(false)
+
+  return (
+    <>
+      {/* Upload */}
+      <Card className="p-6 md:p-8">
+        <SectionHead
+          icon={<Upload className="w-5 h-5 text-indigo-300" />}
+          tone="indigo"
+          title="Upload do Currículo"
+          subtitle="PDF, DOCX ou DOC — até 10MB"
+        />
+        <Dropzone onFileSelect={onFileSelect} accept=".pdf,.docx,.doc" />
+        <AnimatePresence>
+          {selectedFile && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-400/30">
+                <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-emerald-100 truncate">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-xs text-emerald-200/80 mt-0.5">
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB · pronto para análise
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+
+      {/* Config */}
+      <Card className="p-6 md:p-8">
+        <SectionHead
+          icon={<Target className="w-5 h-5 text-indigo-300" />}
+          tone="indigo"
+          title="Configuração da Análise"
+          subtitle="Personalize o diagnóstico para o seu objetivo"
+        />
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              Sua Área de Atuação <span className="text-rose-400">*</span>
+            </label>
+            <Input
+              value={area}
+              onChange={(e) => onArea(e.target.value)}
+              placeholder="Ex: Administrativo, Tecnologia, Vendas..."
+            />
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowJobDesc((v) => !v)}
+              className="flex items-center justify-between w-full text-sm font-medium text-slate-200 hover:text-white transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                Descrição da vaga
+                <span className="text-slate-500 font-normal">(opcional)</span>
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+                  showJobDesc ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+            <AnimatePresence initial={false}>
+              {showJobDesc && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: EASE }}
+                  className="overflow-hidden"
+                >
+                  <textarea
+                    value={jobTitle}
+                    onChange={(e) => onJobTitle(e.target.value)}
+                    placeholder="Cole a descrição completa da vaga (com a seção de requisitos) — com isso calculamos o Fit do seu CV com a vaga."
+                    className="w-full mt-2 h-32 px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-base text-white placeholder:text-slate-500 outline-none transition-all duration-200 hover:border-slate-600 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/25 resize-none leading-relaxed"
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    {jobTitle.trim().length >= 40
+                      ? `✓ Descrição completa (${jobTitle.trim().length} chars) — Fit será calculado`
+                      : `Cole ao menos 40 caracteres (${jobTitle.trim().length}/40)`}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              Nível desejado
+            </label>
+            <CustomSelect
+              value={jobLevel}
+              onChange={onJobLevel}
+              options={[
+                { value: 'Sem nível específico', label: 'Sem nível específico' },
+                { value: 'Estágio', label: 'Estágio' },
+                { value: 'Júnior', label: 'Júnior' },
+                { value: 'Pleno', label: 'Pleno' },
+                { value: 'Sênior', label: 'Sênior' },
+                { value: 'Lead', label: 'Lead' },
+                { value: 'Manager', label: 'Manager' },
+              ]}
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Analyze */}
+      <PrimaryBtn
+        onClick={onAnalyze}
+        disabled={loading || !selectedFile || !area}
+        loading={loading}
+        className="w-full"
+      >
+        {loading ? (
+          'Analisando currículo...'
+        ) : (
+          <>
+            <Sparkles className="w-4 h-4" />
+            Analisar Currículo
+          </>
+        )}
+      </PrimaryBtn>
+
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-400/30">
+              <XCircle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-rose-200">Erro na análise</p>
+                <p className="text-sm text-rose-300/90 mt-0.5 leading-relaxed">{error}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
