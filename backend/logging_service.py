@@ -98,7 +98,10 @@ def get_logs(
         where += " AND status_code >= 400"
 
     c.execute(
-        f"""SELECT * FROM api_logs {where}
+        f"""SELECT id, timestamp, endpoint, method, status_code, duration_ms,
+                   model, api_key_preview, request_body, response_summary,
+                   error, extracted_text, llm_prompt
+            FROM api_logs {where}
             ORDER BY timestamp DESC LIMIT ? OFFSET ?""",
         (*params, limit, offset),
     )
