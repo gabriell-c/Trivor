@@ -5,8 +5,10 @@
   --color-foreground: #f8fafc;
   --color-border: #1e293b;
   /* Poppins (carregada via next/font no layout.tsx) como fonte principal;
-     utilitário font-sans do Tailwind v4 passa a usá-la. */
+     utilitários font-sans e font-mono do Tailwind v4 passam a usá-la —
+     Poppins em todo o app (decisão do projeto). */
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-poppins), ui-monospace, monospace;
 }
 
 @layer base {
