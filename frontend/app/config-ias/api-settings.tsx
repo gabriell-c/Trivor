@@ -1045,7 +1045,7 @@ export default function ApiSettingsPage() {
                       </div>
                       {p.lastTestedAt ? (
                         <div
-                          className={`text-[11px] truncate ${
+                          className={`text-[13px] truncate ${
                             p.status === 'error'
                               ? 'text-rose-300/90'
                               : p.status === 'slow'

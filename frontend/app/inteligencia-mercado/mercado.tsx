@@ -250,7 +250,7 @@ export default function MarketIntelligencePage() {
               activeTab === tab.id ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 border border-purple-500' : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/60'
             }`}>
             {tab.icon} {tab.label}
-            {tab.id === 'results' && R && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-purple-500/30 text-[10px]">{R.summary.relevant_jobs_analyzed}</span>}
+            {tab.id === 'results' && R && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-purple-500/30 text-[12px]">{R.summary.relevant_jobs_analyzed}</span>}
           </button>
         )))}
       </div>
@@ -276,7 +276,7 @@ export default function MarketIntelligencePage() {
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2">Palavras-chave Negativas (excluir vagas)</label>
             <TagInput value={negativeKeywords} onChange={setNegativeKeywords} placeholder="Ex: java, intern, estágio (Enter ou vírgula)" className="w-full" />
-            <p className="text-[10px] text-slate-600 mt-1">Vagas que contiverem essas palavras serão excluídas da análise.</p>
+            <p className="text-[12px] text-slate-600 mt-1">Vagas que contiverem essas palavras serão excluídas da análise.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -310,7 +310,7 @@ export default function MarketIntelligencePage() {
                   🌍 Internacional
                 </button>
               </div>
-              <p className="text-[10px] text-slate-600 mt-1">
+              <p className="text-[12px] text-slate-600 mt-1">
                 {isInternational ? 'Vagas em inglês, dólar/euro, exterior.' : 'Vagas em português, real, Brasil.'}
               </p>
             </div>
@@ -421,28 +421,28 @@ export default function MarketIntelligencePage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Vagas Analisadas</p>
+              <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Vagas Analisadas</p>
               <p className="text-2xl font-black text-white mt-1">{R.summary.relevant_jobs_analyzed}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{R.summary.pre_filtered_count} passaram filtro → {R.summary.total_jobs_scanned} coletadas</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">{R.summary.pre_filtered_count} passaram filtro → {R.summary.total_jobs_scanned} coletadas</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Confiança</p>
+              <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Confiança</p>
               <p className={`text-2xl font-black mt-1 ${R.summary.confidence_score === 'Alta' ? 'text-emerald-400' : R.summary.confidence_score === 'Média' ? 'text-amber-400' : 'text-rose-400'}`}>{R.summary.confidence_score}</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Exp. Média (Anos)</p>
+              <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Exp. Média (Anos)</p>
               <p className="text-2xl font-black text-purple-300 mt-1">{R.statistics.exp_years_median}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">Mediana</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">Mediana</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Pré-filtradas</p>
+              <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Pré-filtradas</p>
               <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.pre_filtered_count}</p>
-              <p className="text-[10px] text-slate-600 mt-0.5">analisadas pela IA</p>
+              <p className="text-[12px] text-slate-600 mt-0.5">analisadas pela IA</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Descartadas</p>
+              <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Descartadas</p>
               <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.discarded_jobs}</p>
-              <p className="text-[10px] text-slate-600 mt-0.5">pela IA</p>
+              <p className="text-[12px] text-slate-600 mt-0.5">pela IA</p>
             </div>
 
             {/* Rejection reasons removed from summary tab */}
@@ -534,12 +534,12 @@ export default function MarketIntelligencePage() {
                 {Object.entries(R.statistics.exp_years_distribution).map(([label, count]) => (
                   <div key={label} className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 text-center">
                     <p className="text-lg font-black text-orange-300">{count}</p>
-                    <p className="text-[10px] text-slate-500">{label}</p>
+                    <p className="text-[12px] text-slate-500">{label}</p>
                   </div>
                 ))}
               </div>
               <div className="mt-4 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-center">
-                <p className="text-[10px] text-purple-400 uppercase font-semibold">Mediana</p>
+                <p className="text-[12px] text-purple-400 uppercase font-semibold">Mediana</p>
                 <p className="text-xl font-black text-white">{R.statistics.exp_years_median} anos</p>
               </div>
             </div>
@@ -578,7 +578,7 @@ export default function MarketIntelligencePage() {
                   ? R.statistics.top_certifications.slice(certPage * STAT_PAGE_SIZE, (certPage + 1) * STAT_PAGE_SIZE).map(c => (
                     <div key={c.name} className="flex items-center justify-between p-2 rounded-xl bg-slate-950/60">
                       <span className="text-xs text-slate-300">{c.name}</span>
-                      <span className="text-[10px] text-slate-500">{c.count}x</span>
+                      <span className="text-[12px] text-slate-500">{c.count}x</span>
                     </div>
                   ))
                   : <p className="text-xs text-slate-500">Nenhuma certificação extraída.</p>
@@ -610,12 +610,12 @@ export default function MarketIntelligencePage() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-300">{l.name}</span>
                       {l.top_level && l.top_level !== 'Não especificado' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/20">
+                        <span className="text-[12px] px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/20">
                           {l.top_level}
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] text-slate-500">{l.count}x</span>
+                    <span className="text-[12px] text-slate-500">{l.count}x</span>
                   </div>
                 ))
                 : <p className="text-xs text-slate-500">Nenhum idioma extraído.</p>
@@ -717,12 +717,12 @@ export default function MarketIntelligencePage() {
                             : <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
                           }
                           {job.rejection_reason && (
-                            <span className="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 flex-shrink-0" title={job.rejection_reason}>
+                            <span className="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[12px] text-rose-400 flex-shrink-0" title={job.rejection_reason}>
                               {job.rejection_reason}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
+                        <div className="flex items-center gap-3 text-[13px] text-slate-500 flex-wrap">
                           <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{job.company}</span>
                           <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
@@ -730,10 +730,10 @@ export default function MarketIntelligencePage() {
                         </div>
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {job.requirements.slice(0, 4).map(t => (
-                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
+                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[12px] text-emerald-400">{t}</span>
                           ))}
                           {job.nice_to_have.slice(0, 2).map(t => (
-                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
+                            <span key={t} className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400">{t}</span>
                           ))}
                         </div>
                       </div>
@@ -765,26 +765,26 @@ export default function MarketIntelligencePage() {
                               <div className="p-4 space-y-4">
                                 {/* Description */}
                                 <div>
-                                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Descrição Completa</p>
+                                  <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider mb-1">Descrição Completa</p>
                                   <p className="text-xs text-slate-400 leading-relaxed">{job.raw_description}</p>
                                 </div>
 
                                 {/* Techs */}
                                 <div className="grid grid-cols-2 gap-4">
                                   <div>
-                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Habilidades Exigidas</p>
+                                    <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider mb-1">Habilidades Exigidas</p>
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.requirements.length > 0 ? job.requirements.map(t => (
-                                        <span key={t} className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">{t}</span>
-                                      )) : <span className="text-[10px] text-slate-600">—</span>}
+                                        <span key={t} className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[12px] text-emerald-400">{t}</span>
+                                      )) : <span className="text-[12px] text-slate-600">—</span>}
                                     </div>
                                   </div>
                                   <div>
-                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Diferenciais</p>
+                                    <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider mb-1">Diferenciais</p>
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.nice_to_have.length > 0 ? job.nice_to_have.map(t => (
-                                        <span key={t} className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">{t}</span>
-                                      )) : <span className="text-[10px] text-slate-600">—</span>}
+                                        <span key={t} className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400">{t}</span>
+                                      )) : <span className="text-[12px] text-slate-600">—</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -792,11 +792,11 @@ export default function MarketIntelligencePage() {
                                 {/* Details grid */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   <div className="p-2 rounded-xl bg-slate-900/60">
-                                    <p className="text-[10px] text-slate-500">Nível</p>
+                                    <p className="text-[12px] text-slate-500">Nível</p>
                                     <p className="text-xs text-white font-semibold">{job.role_level || '—'}</p>
                                   </div>
                                   <div className="p-2 rounded-xl bg-slate-900/60">
-                                    <p className="text-[10px] text-slate-500">Experiência</p>
+                                    <p className="text-[12px] text-slate-500">Experiência</p>
                                     <p className="text-xs text-white font-semibold">
                                       {job.exp_years_min ? `${job.exp_years_min}` : '—'}
                                       {job.exp_years_max ? ` - ${job.exp_years_max}` : ''}
@@ -804,14 +804,14 @@ export default function MarketIntelligencePage() {
                                     </p>
                                   </div>
                                   <div className="p-2 rounded-xl bg-slate-900/60">
-                                    <p className="text-[10px] text-slate-500">Salário</p>
+                                    <p className="text-[12px] text-slate-500">Salário</p>
                                     <p className="text-xs text-white font-semibold">
                                       {job.salary_min ? `${currencySymbol(job.currency)} ${job.salary_min}` : '—'}
                                       {job.salary_max ? ` - ${currencySymbol(job.currency)} ${job.salary_max}` : ''}
                                     </p>
                                   </div>
                                   <div className="p-2 rounded-xl bg-slate-900/60">
-                                    <p className="text-[10px] text-slate-500">Modalidade</p>
+                                    <p className="text-[12px] text-slate-500">Modalidade</p>
                                     <p className="text-xs text-white font-semibold">{job.modality || '—'}</p>
                                   </div>
                                 </div>
@@ -819,10 +819,10 @@ export default function MarketIntelligencePage() {
                                 {/* Soft Skills */}
                                 {job.soft_skills?.length && (
                                   <div>
-                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Soft Skills</p>
+                                    <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider mb-1">Soft Skills</p>
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.soft_skills.map(s => (
-                                        <span key={s} className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-[10px] text-cyan-300">{s}</span>
+                                        <span key={s} className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-[12px] text-cyan-300">{s}</span>
                                       ))}
                                     </div>
                                   </div>
@@ -830,10 +830,10 @@ export default function MarketIntelligencePage() {
 
                                 {job.certifications?.length && (
                                   <div>
-                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Certificações</p>
+                                    <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider mb-1">Certificações</p>
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.certifications.map(c => (
-                                        <span key={c} className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-300">{c}</span>
+                                        <span key={c} className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-[12px] text-purple-300">{c}</span>
                                       ))}
                                     </div>
                                   </div>
@@ -965,7 +965,7 @@ export default function MarketIntelligencePage() {
                         </span>
                       ))}
                     </div>
-                    <p className="text-[10px] text-slate-600 mt-1.5">Número entre parênteses: quantas vagas do top exigem esse item.</p>
+                    <p className="text-[12px] text-slate-600 mt-1.5">Número entre parênteses: quantas vagas do top exigem esse item.</p>
                   </div>
                 )}
               </div>
@@ -990,7 +990,7 @@ export default function MarketIntelligencePage() {
                             </a>
                           )}
                         </div>
-                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
+                        <div className="flex items-center gap-3 text-[13px] text-slate-500 mt-1 flex-wrap">
                           {job.empresa && <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{job.empresa}</span>}
                           {job.localizacao && <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.localizacao}</span>}
                           {job.modalidade && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modalidade}</span>}
@@ -1000,13 +1000,13 @@ export default function MarketIntelligencePage() {
 
                     {job.faltantes.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-1.5">Faltando no seu CV</p>
+                        <p className="text-[12px] font-bold text-rose-400 uppercase tracking-wider mb-1.5">Faltando no seu CV</p>
                         <div className="flex flex-wrap gap-1.5">
                           {job.faltantes.slice(0, 10).map((term, ti) => (
-                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-rose-500/10 text-rose-300 border border-rose-500/20">{term}</span>
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[13px] bg-rose-500/10 text-rose-300 border border-rose-500/20">{term}</span>
                           ))}
                           {job.faltantes.length > 10 && (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] text-slate-500 border border-slate-700/60">
+                            <span className="px-2 py-0.5 rounded-full text-[13px] text-slate-500 border border-slate-700/60">
                               +{job.faltantes.length - 10}
                             </span>
                           )}
@@ -1015,23 +1015,23 @@ export default function MarketIntelligencePage() {
                     )}
                     {(job.desejaveis_faltantes?.length ?? 0) > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-1.5">Diferenciais que faltam</p>
+                        <p className="text-[12px] font-bold text-amber-400 uppercase tracking-wider mb-1.5">Diferenciais que faltam</p>
                         <div className="flex flex-wrap gap-1.5">
                           {job.desejaveis_faltantes!.slice(0, 6).map((term, ti) => (
-                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-amber-500/10 text-amber-300 border border-amber-500/20">{term}</span>
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[13px] bg-amber-500/10 text-amber-300 border border-amber-500/20">{term}</span>
                           ))}
                         </div>
                       </div>
                     )}
                     {job.cobertos.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1.5">Você já tem</p>
+                        <p className="text-[12px] font-bold text-emerald-400 uppercase tracking-wider mb-1.5">Você já tem</p>
                         <div className="flex flex-wrap gap-1.5">
                           {job.cobertos.slice(0, 8).map((term, ti) => (
-                            <span key={ti} className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{term}</span>
+                            <span key={ti} className="px-2 py-0.5 rounded-full text-[13px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{term}</span>
                           ))}
                           {job.cobertos.length > 8 && (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] text-slate-500 border border-slate-700/60">
+                            <span className="px-2 py-0.5 rounded-full text-[13px] text-slate-500 border border-slate-700/60">
                               +{job.cobertos.length - 8}
                             </span>
                           )}

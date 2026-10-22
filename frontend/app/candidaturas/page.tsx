@@ -105,7 +105,7 @@ function StatCard({ label, value, tone = 'slate', glow }: { label: string; value
   }
   return (
     <div className={`rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4 ${glow ? glows[tone] : ''}`}>
-      <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">{label}</div>
+      <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">{label}</div>
       <div className={`mt-1.5 text-2xl font-bold ${tones[tone]}`}>{value}</div>
     </div>
   )
@@ -247,7 +247,7 @@ export default function CandidaturasPage() {
                   </button>
                 ))}
                 {(ov.periodo.primeiro || ov.periodo.ultimo) && (
-                  <span className="ml-auto text-[11px] text-slate-500">
+                  <span className="ml-auto text-[13px] text-slate-500">
                     {ov.periodo.primeiro && `desde ${ov.periodo.primeiro}`}
                     {ov.periodo.primeiro && ov.periodo.ultimo && ' — '}
                     {ov.periodo.ultimo && `até ${ov.periodo.ultimo}`}
@@ -281,7 +281,7 @@ export default function CandidaturasPage() {
                 <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800/70">
+                      <tr className="text-left text-[13px] uppercase tracking-wider text-slate-500 border-b border-slate-800/70">
                         <th className="px-4 py-3 font-medium">Data</th>
                         <th className="px-4 py-3 font-medium">Portal</th>
                         <th className="px-4 py-3 font-medium">Vaga</th>
@@ -299,7 +299,7 @@ export default function CandidaturasPage() {
                               transition={{ duration: 0.15, delay: Math.min(i, 8) * 0.02 }}
                               className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
                               <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
-                                {r.data || '—'}{r.horario && <span className="ml-1.5 text-[11px] text-slate-600">{r.horario}</span>}
+                                {r.data || '—'}{r.horario && <span className="ml-1.5 text-[13px] text-slate-600">{r.horario}</span>}
                               </td>
                               <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{r.site || '—'}</td>
                               <td className="px-4 py-3 min-w-45">
@@ -312,11 +312,11 @@ export default function CandidaturasPage() {
                                 ) : (
                                   <span className="text-slate-200 font-medium">{r.vaga}</span>
                                 )}
-                                {r.local && <div className="text-[11px] text-slate-500 mt-0.5">{r.local}</div>}
+                                {r.local && <div className="text-[13px] text-slate-500 mt-0.5">{r.local}</div>}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <span title={r.status}
-                                  className={`inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
+                                  className={`inline-block text-[13px] font-semibold px-2.5 py-1 rounded-full border ${meta.cls}`}>
                                   {statusLabel(r.status)}
                                 </span>
                               </td>

@@ -134,7 +134,7 @@ export default function IATab() {
     <div className="space-y-4">
       {/* ── Lista de providers ── */}
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
           Provedores configurados
         </div>
         {erro && !ia && <ErroBox text={erro} onRetry={recarregar} />}
@@ -157,15 +157,15 @@ export default function IATab() {
                 className={`rounded-xl border p-3 bg-slate-950/40 ${ativo ? 'border-emerald-500/40' : 'border-slate-800/70'}`}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium text-slate-200">{p.nome || p.id}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">{p.tipo}</span>
-                  {p.api_key_masked && <span className="text-[11px] text-slate-500 font-mono">{p.api_key_masked}</span>}
+                  <span className="text-[12px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">{p.tipo}</span>
+                  {p.api_key_masked && <span className="text-[13px] text-slate-500 font-mono">{p.api_key_masked}</span>}
                   {ativo && (
-                    <span className="flex items-center gap-1 text-[11px] text-emerald-300">
+                    <span className="flex items-center gap-1 text-[13px] text-emerald-300">
                       <Star className="w-3 h-3 fill-emerald-300" /> ativo
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[11px] text-slate-500">
+                <div className="mt-1 text-[13px] text-slate-500">
                   {p.modelo}{p.base_url && <> · {p.base_url}</>}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -204,7 +204,7 @@ export default function IATab() {
 
       {/* ── Form (criar / editar) ── */}
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
           {form.id ? `Editando ${form.nome || form.id}` : 'Novo provedor'}
         </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">

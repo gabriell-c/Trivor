@@ -121,7 +121,7 @@ export default function ResumesTab() {
         <div className="mt-2 text-sm font-medium text-slate-200">
           {arquivo ? arquivo.name : 'Arraste o currículo aqui (PDF ou DOCX, até 5MB)'}
         </div>
-        <div className="text-[11px] text-slate-500 mt-0.5">ou escolha o arquivo</div>
+        <div className="text-[13px] text-slate-500 mt-0.5">ou escolha o arquivo</div>
         <button onClick={() => fileRef.current?.click()} className={`${btnPrimary} mt-3`}>
           <File className="w-3.5 h-3.5" /> Escolher arquivo
         </button>
@@ -132,7 +132,7 @@ export default function ResumesTab() {
       {/* ── Metadados pra IA ── */}
       {arquivo && (
         <div className={cardCls}>
-          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+          <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
             Descreva pra IA — ela usa isso pra escolher o currículo certo por vaga
           </div>
           <div className="mt-3 grid sm:grid-cols-3 gap-3">
@@ -161,7 +161,7 @@ export default function ResumesTab() {
 
       {/* ── Lista ── */}
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
           Currículos enviados ({items?.length ?? '…'})
         </div>
         {erro && <div className="mt-2 text-xs text-rose-300">{erro}</div>}
@@ -178,21 +178,21 @@ export default function ResumesTab() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <FileText className="w-4 h-4 text-slate-500" />
                   <span className="text-sm font-medium text-slate-200">{item.nome || item.id}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">
+                  <span className="text-[12px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">
                     {item.id}
                   </span>
                   {!item.existe && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-rose-500/40 text-rose-300">
+                    <span className="text-[12px] px-2 py-0.5 rounded-full border border-rose-500/40 text-rose-300">
                       arquivo ausente
                     </span>
                   )}
                   <span className="ml-auto flex gap-1.5">
                     <button onClick={() => { setEditando(item); setEdNome(item.nome); setEdDesc(item.descricao) }}
-                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800/50 transition-colors">
+                      className="flex items-center gap-1 text-[13px] font-medium px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800/50 transition-colors">
                       <Pencil className="w-3 h-3" /> Editar
                     </button>
                     <button onClick={() => excluir(item)}
-                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 transition-colors">
+                      className="flex items-center gap-1 text-[13px] font-medium px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </span>

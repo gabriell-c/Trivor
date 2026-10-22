@@ -110,7 +110,7 @@ export interface ResumeItem {
 
 /* ═══ Aparência compartilhada das abas (mesma linguagem dos cards da página) ═══ */
 export const inputCls = 'w-full px-3 py-2 rounded-xl bg-slate-950/50 border border-slate-800 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors'
-export const labelCls = 'text-[11px] font-medium text-slate-400 uppercase tracking-wider'
+export const labelCls = 'text-[13px] font-medium text-slate-400 uppercase tracking-wider'
 export const btnPrimary = 'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50'
 export const btnDanger = 'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors disabled:opacity-50'
 export const cardCls = 'rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4'

@@ -121,7 +121,7 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
             </div>
             <div className="text-center">
               <p className="text-sm font-medium text-emerald-400 truncate max-w-[200px]">{file.name}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{(file.size / 1024).toFixed(1)} KB</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">{(file.size / 1024).toFixed(1)} KB</p>
             </div>
             <button
               type="button"
@@ -140,7 +140,7 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
               <p className="text-sm font-medium text-slate-400">
                 {isDragging ? 'Solte o arquivo aqui' : 'Arraste e solte ou clique'}
               </p>
-              <p className="text-[10px] text-slate-600 mt-0.5">PDF, DOCX ou DOC — até {maxSizeMB}MB</p>
+              <p className="text-[12px] text-slate-600 mt-0.5">PDF, DOCX ou DOC — até {maxSizeMB}MB</p>
             </div>
           </>
         )}

@@ -79,10 +79,10 @@ export default function ExecutarTab() {
     <div className="space-y-4">
       <div className={cardCls}>
         <div className="flex items-center justify-between gap-3">
-          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+          <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
             Bots do Job Hunter
           </div>
-          <span className="text-[11px] text-slate-500">iniciar abre um navegador nesta máquina</span>
+          <span className="text-[13px] text-slate-500">iniciar abre um navegador nesta máquina</span>
         </div>
         {msg && (
           <div className={`mt-3 text-xs rounded-xl px-3 py-2 border ${msg.kind === 'ok'
@@ -117,7 +117,7 @@ export default function ExecutarTab() {
                       {name}
                     </button>
                     {isRunning && run?.started_at && (
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[13px] text-slate-500">
                         rodando desde {new Date(run.started_at).toLocaleTimeString('pt-BR')} (pid {run.pid})
                       </div>
                     )}
@@ -150,23 +150,23 @@ export default function ExecutarTab() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <FileTerminal className="w-4 h-4 text-indigo-300" />
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+            <span className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
               Log em tempo real · {focus}
             </span>
             {runs?.[focus]?.running && (
-              <span className="flex items-center gap-1.5 text-[11px] text-emerald-300">
+              <span className="flex items-center gap-1.5 text-[13px] text-emerald-300">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> rodando
               </span>
             )}
           </div>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-[13px] text-slate-400 cursor-pointer">
             <input type="checkbox" checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)}
               className="accent-indigo-500" />
             <Pin className="w-3 h-3" /> acompanhar fim
           </label>
         </div>
         <pre ref={preRef}
-          className="mt-3 h-[340px] overflow-y-auto rounded-xl bg-slate-950/70 border border-slate-800/70 p-3 text-[11px] leading-relaxed text-slate-300 font-mono whitespace-pre-wrap">
+          className="mt-3 h-[340px] overflow-y-auto rounded-xl bg-slate-950/70 border border-slate-800/70 p-3 text-[13px] leading-relaxed text-slate-300 font-mono whitespace-pre-wrap">
           {log.length === 0
             ? 'Sem log ainda — inicie o bot ou escolha outro na lista acima.'
             : log.join('\n')}

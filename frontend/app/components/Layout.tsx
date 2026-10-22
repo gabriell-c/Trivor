@@ -104,7 +104,7 @@ export default function Sidebar({ globalStatus = 'none', providerCount = 0, coll
                   )}
                 </AnimatePresence>
                 {!collapsed && tool.id === 'api-settings' && providerCount > 0 && (
-                  <span className="ml-auto text-[10px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full">{providerCount}</span>
+                  <span className="ml-auto text-[12px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full">{providerCount}</span>
                 )}
               </Link>
             )

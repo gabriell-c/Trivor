@@ -259,10 +259,10 @@ export default function PerfilTab() {
     <div className="space-y-4">
       <div className={cardCls}>
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+          <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
             Informações pessoais
           </div>
-          <span className="text-[11px] text-slate-500">os bots preenchem os portais com isso</span>
+          <span className="text-[13px] text-slate-500">os bots preenchem os portais com isso</span>
         </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
           <Campo label="Nome"><input className={inputCls} value={p.nome} onChange={e => set('nome', e.target.value)} /></Campo>
@@ -298,8 +298,8 @@ export default function PerfilTab() {
 
       <div className={cardCls}>
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço</div>
-          <span className="text-[11px] text-slate-500">o bot preenche o formulário de endereço com isso</span>
+          <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Endereço</div>
+          <span className="text-[13px] text-slate-500">o bot preenche o formulário de endereço com isso</span>
         </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
           <Campo label="País"><input className={inputCls} value={p.pais} onChange={e => set('pais', e.target.value)} placeholder="Brasil" /></Campo>
@@ -316,14 +316,14 @@ export default function PerfilTab() {
           <Campo label="Bairro"><input className={inputCls} value={p.bairro} onChange={e => set('bairro', e.target.value)} placeholder="Centro" /></Campo>
           <Campo label="CEP"><input className={inputCls} value={p.cep} onChange={e => set('cep', e.target.value)} placeholder="14010-000" /></Campo>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">
+        <p className="mt-2 text-[13px] text-slate-500">
           Se você preencher o bloco “Endereço (.env)” abaixo, ele tem prioridade sobre estes valores nos bots.
         </p>
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Diversidade & inclusão</div>
-        <div className="text-[11px] text-slate-500 mt-1">os portais (Gupy, InfoJobs, Sólides, Indeed) perguntam isso — os bots respondem com estes dados</div>
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Diversidade & inclusão</div>
+        <div className="text-[13px] text-slate-500 mt-1">os portais (Gupy, InfoJobs, Sólides, Indeed) perguntam isso — os bots respondem com estes dados</div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
           <Campo label="Raça / cor">
             <select className={inputCls} value={p.raca_cor} onChange={e => set('raca_cor', e.target.value)}>
@@ -351,7 +351,7 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Localização</div>
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Localização</div>
         <div className="mt-3 flex flex-wrap gap-4">
           {([['aceita_remoto', 'Remoto'], ['aceita_hibrido', 'Híbrido'], ['aceita_presencial', 'Presencial']] as const)
             .map(([k, rotulo]) => (
@@ -376,7 +376,7 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Busca</div>
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Busca</div>
         <div className="mt-3 grid gap-3">
           <Campo label="Níveis alvo (vírgula)"><input className={inputCls} value={p.nivel} onChange={e => set('nivel', e.target.value)} placeholder="estágio, júnior" /></Campo>
           <Campo label="Palavras-chave (uma por linha)">
@@ -391,7 +391,7 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Pretensões salariais</div>
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Pretensões salariais</div>
         <div className="mt-3 grid sm:grid-cols-4 gap-3">
           <Campo label="CLT (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_clt} onChange={e => set('pretensao_clt', e.target.value)} /></Campo>
           <Campo label="PJ hora (R$)"><input type="number" min={0} className={inputCls} value={p.pretensao_pj_hora} onChange={e => set('pretensao_pj_hora', e.target.value)} /></Campo>
@@ -401,8 +401,8 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Tecnologias &amp; Conhecimentos</div>
-        <div className="text-[11px] text-slate-500 mt-1">
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Tecnologias &amp; Conhecimentos</div>
+        <div className="text-[13px] text-slate-500 mt-1">
           usadas pelo Indeed (perguntas de experiência) e pelo Nerdin (contexto do LLM) — uma por linha, no formato <code className="text-slate-400">tecnologia: nível</code>
         </div>
         <div className="mt-3">
@@ -418,8 +418,8 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Formação &amp; Experiência</div>
-        <div className="text-[11px] text-slate-500 mt-1">
+        <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Formação &amp; Experiência</div>
+        <div className="text-[13px] text-slate-500 mt-1">
           a IA usa isso nas perguntas abertas dos portais (Gupy, InfoJobs, Indeed, Sólides, Nerdin)
         </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
@@ -455,8 +455,8 @@ export default function PerfilTab() {
 
       {ctxIa !== null && (
         <div className={cardCls}>
-          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Contexto que a IA recebe</div>
-          <p className="text-[11px] text-slate-500 mt-1">
+          <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Contexto que a IA recebe</div>
+          <p className="text-[13px] text-slate-500 mt-1">
             o exato bloco que os bots injetam nos prompts — gerado do config + .env salvos (exclui alterações acima não salvas)
           </p>
           <pre className="mt-3 rounded-xl border border-slate-800/60 bg-slate-950/60 p-3 text-xs font-mono text-slate-300 whitespace-pre-wrap overflow-auto max-h-96">{ctxIa}</pre>
@@ -466,8 +466,8 @@ export default function PerfilTab() {
       {env && (
         <>
           <div className={cardCls}>
-            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Documentos &amp; Filiação</div>
-            <div className="text-[11px] text-slate-500 mt-1">
+            <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Documentos &amp; Filiação</div>
+            <div className="text-[13px] text-slate-500 mt-1">
               salvos no <code className="text-slate-400">apply/.env</code> — os portais (Indeed, Gupy, Sólides) pedem isso no formulário
             </div>
             <div className="mt-3 grid sm:grid-cols-2 gap-3">
@@ -487,8 +487,8 @@ export default function PerfilTab() {
           </div>
 
           <div className={cardCls}>
-            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço (.env)</div>
-            <div className="text-[11px] text-slate-500 mt-1">
+            <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Endereço (.env)</div>
+            <div className="text-[13px] text-slate-500 mt-1">
               quando preenchido, tem <b className="text-slate-400">prioridade</b> sobre o bloco Endereço acima nos bots
             </div>
             <div className="mt-3 grid sm:grid-cols-2 gap-3">
@@ -502,8 +502,8 @@ export default function PerfilTab() {
           </div>
 
           <div className={cardCls}>
-            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Credenciais dos Portais</div>
-            <div className="text-[11px] text-slate-500 mt-1">
+            <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">Credenciais dos Portais</div>
+            <div className="text-[13px] text-slate-500 mt-1">
               salvos no <code className="text-slate-400">apply/.env</code> para o bot logar sozinho — senha aparece mascarada;
               para trocar, digite a nova completa; sem mexer na senha, ela não é reescrita
             </div>
