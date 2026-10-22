@@ -22,6 +22,9 @@ interface Perfil {
   nivel: string
   tecnologias: string
   pretensao_clt: string; pretensao_pj_hora: string; pretensao_pj_mensal: string; pretensao_estagio: string
+  formacaoCurso: string; formacaoInstituicao: string; formacaoAno: string; formacaoSituacao: string
+  certificacoes: string; experiencia: string; idiomas: string; sobre: string
+  inicio: string; horasSemana: string
 }
 
 /* Segredos que a aba gerencia no apply/.env — mesma lista do backend
@@ -83,6 +86,16 @@ function paraPerfil(cfg: ApplyConfig): Perfil {
       .map(([nome, nv]) => `${nome}: ${str(nv)}`).join('\n'),
     pretensao_clt: str(c.pretensao_clt), pretensao_pj_hora: str(c.pretensao_pj_hora),
     pretensao_pj_mensal: str(c.pretensao_pj_mensal), pretensao_estagio: str(c.pretensao_estagio),
+    formacaoCurso: str((c.formacao as Record<string, unknown> | undefined)?.curso),
+    formacaoInstituicao: str((c.formacao as Record<string, unknown> | undefined)?.instituicao),
+    formacaoAno: str((c.formacao as Record<string, unknown> | undefined)?.ano_conclusao),
+    formacaoSituacao: str((c.formacao as Record<string, unknown> | undefined)?.situacao),
+    certificacoes: paraLista(c.certificacoes),
+    experiencia: paraLista(c.experiencia),
+    idiomas: paraLista(c.idiomas),
+    sobre: str(c.sobre),
+    inicio: str(c.inicio),
+    horasSemana: str(c.horas_semana),
   }
 }
 
@@ -102,6 +115,16 @@ function str(v: unknown): string {
   return v === null || v === undefined ? '' : String(v)
 }
 
+/* O config guarda listas (certificações, experiências, idiomas) como
+ * arrays de linhas; a UI edita tudo em um textarea, uma linha por item. */
+function paraLista(v: unknown): string {
+  if (Array.isArray(v)) return v.map(x => str(x)).join('\n')
+  return str(v)
+}
+function paraLinhas(texto: string): string[] {
+  return texto.split('\n').map(x => x.trim()).filter(Boolean)
+}
+
 export default function PerfilTab() {
   const [cfg, setCfg] = useState<ApplyConfig | null>(null)
   const [p, setP] = useState<Perfil | null>(null)
@@ -111,6 +134,18 @@ export default function PerfilTab() {
   const [salvo, setSalvo] = useState(false)
   const [sujo, setSujo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  /* "Ver o contexto da IA" — o bloco exato que os bots injetam nos prompts
+   * (GET /api/apply/perfil-contexto), para conferir se a IA enxerga tudo. */
+  const [ctxIa, setCtxIa] = useState<string | null>(null)
+  const [ctxErro, setCtxErro] = useState<string | null>(null)
+
+  const verContextoIa = () => {
+    if (ctxIa !== null) { setCtxIa(null); return }
+    setCtxErro(null)
+    applyFetch<{ texto: string }>('/api/apply/perfil-contexto')
+      .then(r => setCtxIa(r.texto))
+      .catch(e => setCtxErro(e instanceof Error ? e.message : 'Falha ao carregar o contexto.'))
+  }
 
   const carregar = () => {
     applyFetch<ApplyConfig>('/api/apply/config')
@@ -143,6 +178,16 @@ export default function PerfilTab() {
         data_nascimento: isoParaDmy(p.data_nascimento), possui_pj: p.possui_pj,
         pretensao_clt: p.pretensao_clt, pretensao_pj_hora: p.pretensao_pj_hora,
         pretensao_pj_mensal: p.pretensao_pj_mensal, pretensao_estagio: p.pretensao_estagio,
+        formacao: {
+          curso: p.formacaoCurso, instituicao: p.formacaoInstituicao,
+          ano_conclusao: p.formacaoAno, situacao: p.formacaoSituacao,
+        },
+        certificacoes: paraLinhas(p.certificacoes),
+        experiencia: paraLinhas(p.experiencia),
+        idiomas: paraLinhas(p.idiomas),
+        sobre: p.sobre,
+        inicio: p.inicio,
+        horas_semana: p.horasSemana,
       },
       localizacao: {
         ...(cfg.localizacao ?? {}),
@@ -372,6 +417,52 @@ export default function PerfilTab() {
         </div>
       </div>
 
+      <div className={cardCls}>
+        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Formação &amp; Experiência</div>
+        <div className="text-[11px] text-slate-500 mt-1">
+          a IA usa isso nas perguntas abertas dos portais (Gupy, InfoJobs, Indeed, Sólides, Nerdin)
+        </div>
+        <div className="mt-3 grid sm:grid-cols-2 gap-3">
+          <Campo label="Curso"><input className={inputCls} value={p.formacaoCurso} onChange={e => set('formacaoCurso', e.target.value)} placeholder="Engenharia de Software" /></Campo>
+          <Campo label="Instituição"><input className={inputCls} value={p.formacaoInstituicao} onChange={e => set('formacaoInstituicao', e.target.value)} placeholder="Estácio" /></Campo>
+          <Campo label="Ano de conclusão"><input className={inputCls} value={p.formacaoAno} onChange={e => set('formacaoAno', e.target.value)} placeholder="2029" /></Campo>
+          <Campo label="Situação"><input className={inputCls} value={p.formacaoSituacao} onChange={e => set('formacaoSituacao', e.target.value)} placeholder="Cursando / Concluído" /></Campo>
+          <Campo label="Início"><input className={inputCls} value={p.inicio} onChange={e => set('inicio', e.target.value)} placeholder="Imediata" /></Campo>
+          <Campo label="Horas por semana"><input type="number" min={0} className={inputCls} value={p.horasSemana} onChange={e => set('horasSemana', e.target.value)} placeholder="40" /></Campo>
+        </div>
+        <div className="mt-3 grid gap-3">
+          <Campo label="Certificações (nome: ano — uma por linha)">
+            <textarea className={`${inputCls} h-20 font-mono text-xs`} value={p.certificacoes}
+              onChange={e => set('certificacoes', e.target.value)}
+              placeholder={'AWS Cloud Practitioner: 2025\nHTML: 2024'} />
+          </Campo>
+          <Campo label="Experiência & projetos (uma por linha)">
+            <textarea className={`${inputCls} h-24 font-mono text-xs`} value={p.experiencia}
+              onChange={e => set('experiencia', e.target.value)}
+              placeholder={'Freelancer Python/React: 2022-2026\nProjeto X (GitHub): 2024'} />
+          </Campo>
+          <Campo label="Idiomas (idioma: nível — uma por linha)">
+            <textarea className={`${inputCls} h-20 font-mono text-xs`} value={p.idiomas}
+              onChange={e => set('idiomas', e.target.value)}
+              placeholder={'Espanhol: Básico\nFrancês: Intermediário'} />
+          </Campo>
+          <Campo label="Sobre si (1-2 frases — para perguntas como 'fale sobre você')">
+            <textarea className={`${inputCls} h-16 text-xs`} value={p.sobre}
+              onChange={e => set('sobre', e.target.value)} />
+          </Campo>
+        </div>
+      </div>
+
+      {ctxIa !== null && (
+        <div className={cardCls}>
+          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Contexto que a IA recebe</div>
+          <p className="text-[11px] text-slate-500 mt-1">
+            o exato bloco que os bots injetam nos prompts — gerado do config + .env salvos (exclui alterações acima não salvas)
+          </p>
+          <pre className="mt-3 rounded-xl border border-slate-800/60 bg-slate-950/60 p-3 text-xs font-mono text-slate-300 whitespace-pre-wrap overflow-auto max-h-96">{ctxIa}</pre>
+        </div>
+      )}
+
       {env && (
         <>
           <div className={cardCls}>
@@ -449,6 +540,11 @@ export default function PerfilTab() {
             Descartar alterações
           </button>
         )}
+        <button onClick={verContextoIa}
+          className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800/50 transition-colors">
+          {ctxIa !== null ? 'Fechar contexto da IA' : 'Ver o contexto da IA'}
+        </button>
+        {ctxErro && <span className="text-xs text-rose-300">{ctxErro}</span>}
         {salvo && <span className="text-xs text-emerald-300">Salvo — os próximos bots já usam esses dados.</span>}
         {(sujo || envSujo) && !salvo && <span className="text-xs text-amber-300">Alterações não salvas</span>}
         {erro && p && <span className="text-xs text-rose-300">{erro}</span>}
