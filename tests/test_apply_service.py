@@ -147,6 +147,25 @@ class TestApplyApplications:
 # ============================================================================
 
 class TestApplyEndpoints:
+    def test_env_endpoint_roundtrip(self, client, apply_dir):
+        env = apply_dir / ".env"
+        env.write_text("NERDIN_SENHA=abc123\n", encoding="utf-8")
+        r = client.get("/api/apply/env")
+        assert r.status_code == 200
+        assert "abc123" not in r.json()["NERDIN_SENHA"]  # senha mascarada
+        body = {**r.json(), "CANDIDATO_CPF": "11122233344"}
+        r2 = client.put("/api/apply/env", json=body)
+        assert r2.status_code == 200
+        conteudo = env.read_text(encoding="utf-8")
+        assert "NERDIN_SENHA=abc123" in conteudo.replace('"', "")  # mask devolvido → real mantido
+        assert "11122233344" in conteudo
+
+    def test_env_endpoint_chave_inconheita_rejeitada(self, client, apply_dir):
+        r = client.get("/api/apply/env")
+        body = {**r.json(), "CHAVE_INVALIDA": "x"}
+        r2 = client.put("/api/apply/env", json=body)
+        assert r2.status_code == 400
+
     def test_overview_available(self, client, apply_dir):
         r = client.get("/api/apply/overview")
         assert r.status_code == 200

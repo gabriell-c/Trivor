@@ -225,3 +225,59 @@ def test_resume_upload_validacoes(fake_apply):
         ad.resume_delete('inexistente')
     with pytest.raises(ad.ApplyAdminError, match='não encontrado'):
         ad.resume_update('inexistente', {'nome': 'n'})
+
+
+# ── env (segredos dos bots em apply/.env) ─────────────────────────────────
+
+def test_env_sem_arquivo_retorna_vazias(fake_apply):
+    got = ad.load_env()
+    assert set(got) == set(ad.APPLY_ENV_KEYS)
+    assert all(v == '' for v in got.values())
+    # .env não existe ainda — load não cria arquivo
+    assert not (fake_apply / '.env').exists()
+
+
+def test_env_roundtrip_preserva_linhas_alheias(fake_apply):
+    p = fake_apply / '.env'
+    p.write_text('GROQ_API_KEY=gsk_segredo_intocavel\nCANDIDATO_CPF=12345678909\n', encoding='utf-8')
+    got = ad.load_env()
+    assert got['CANDIDATO_CPF'] == '12345678909'
+    ad.save_env({**got, 'CANDIDATO_CPF': '99988877766'})
+    conteudo = p.read_text(encoding='utf-8')
+    assert 'GROQ_API_KEY=gsk_segredo_intocavel' in conteudo  # linha alheia intocada
+    assert '99988877766' in conteudo
+    assert ad.load_env()['CANDIDATO_CPF'] == '99988877766'
+
+
+def test_env_senha_mascarada_e_restaurada(fake_apply):
+    p = fake_apply / '.env'
+    p.write_text('GUPY_SENHA=minhasenha12345\n', encoding='utf-8')
+    got = ad.load_env()
+    mask = got['GUPY_SENHA']
+    assert 'minhasenha' not in mask and mask
+    # devolve o mask → backend mantém o valor real (a UI não redigita)
+    ad.save_env(got)
+    assert 'GUPY_SENHA="minhasenha12345"' in p.read_text(encoding='utf-8')
+    # valor novo no mask → vira o valor
+    got2 = ad.load_env()
+    got2['GUPY_SENHA'] = 'nova-senha-99'
+    ad.save_env(got2)
+    assert 'nova-senha-99' in p.read_text(encoding='utf-8')
+
+
+def test_env_valor_vazio_remove_chave(fake_apply):
+    p = fake_apply / '.env'
+    p.write_text('CANDIDATO_RG=ABC123\nCANDIDATO_CPF=1\n', encoding='utf-8')
+    got = ad.load_env()
+    got['CANDIDATO_RG'] = ''
+    ad.save_env(got)
+    conteudo = p.read_text(encoding='utf-8')
+    assert 'CANDIDATO_RG' not in conteudo
+    assert 'CANDIDATO_CPF' in conteudo
+
+
+def test_env_chave_nao_liberada_rejeitada(fake_apply):
+    got = ad.load_env()
+    got['ARBITRARIA_KEY'] = 'x'
+    with pytest.raises(ad.ApplyAdminError, match='não permitidas'):
+        ad.save_env(got)

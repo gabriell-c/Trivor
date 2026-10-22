@@ -148,6 +148,26 @@ async def api_apply_config_put(request: Request):
     return _admin_handler(salvar, payload)
 
 
+@router.get('/api/apply/env')
+def api_apply_env_get():
+    """Segredos dos bots (apply/.env) — só as chaves liberadas;
+    *_SENHA saem mascaradas, com a mesma regra de api_key de IA."""
+    return _admin_handler(apply_admin.load_env)
+
+
+@router.put('/api/apply/env')
+async def api_apply_env_put(request: Request):
+    """Salva os segredos editados na aba Perfil (documentos, filiação,
+    endereço, credenciais de portal). Só chaves liberadas; valor vazio
+    remove a chave; mask original devolve o valor real. As demais linhas
+    do .env (GROQ_API_KEY etc.) não são tocadas."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return _admin_handler(apply_admin.save_env, payload)
+
+
 @router.get('/api/apply/ia')
 def api_apply_ia_list():
     return _admin_handler(apply_admin.ia_list)

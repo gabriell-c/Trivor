@@ -1,11 +1,16 @@
 """Admin do apply (Job Hunter) — Nível 3: o painel do Trivor gerencia
-config, provedores de IA e currículos. O config.yaml continua sendo a
-fonte de verdade: os bots leem dele direto, o backend apenas lê/grava.
+config, provedores de IA, currículos e segredos do .env. O config.yaml e
+o .env continuam sendo a fonte de verdade: os bots leem deles direto, o
+backend apenas lê/grava.
 
 Regras de segurança:
 - api_key nunca sai do backend mascarada (4 primeiros + 4 últimos).
 - escrita atômica do config.yaml (tmp + rename).
 - upload de currículo: só extensões .pdf/.docx, tamanho limitado.
+- .env: só as chaves de APPLY_ENV_KEYS podem ser lidas/gravadas pela UI;
+  as demais linhas do arquivo (GROQ_API_KEY etc.) são preservadas tal
+  como estão. Senhas saem mascaradas; PUT com o mask original mantém o
+  valor (mesmo padrão de restauração da api_key de IA).
 """
 import importlib.util
 import re
@@ -13,6 +18,7 @@ from pathlib import Path
 
 import yaml
 from apply_service import resolve_apply_dir
+from dotenv import dotenv_values
 
 
 # ── Erros que as rotas convertem em 4xx ─────────────────────────────────────
@@ -59,9 +65,105 @@ def save_config(cfg: dict) -> dict:
     return cfg
 
 
-# ════════════════════════════════════════════════════════════════════════════
+
+#  ENV — segredos dos bots (apply/.env)
+# ════════════════════════════════════════════════════════════════════════
+
+# Só o que os bots efetivamente leem — a UI não toca nas demais chaves
+# do .env (GROQ_API_KEY, HF_API_KEY etc. continuam fora do alcance dela).
+APPLY_ENV_KEYS = (
+    # Documentos — Indeed/Gupy/Solides preenchem o formulário com isso
+    'CANDIDATO_CPF', 'CANDIDATO_RG', 'CANDIDATO_CNH',
+    # Filiação — os portais perguntam nome do pai/mãe
+    'CANDIDATO_NOME_PAI', 'CANDIDATO_NOME_MAE',
+    # Nacionalidade — perguntada nos formulários (Indeed/Gupy)
+    'CANDIDATO_NACIONALIDADE',
+    # Endereço — tem prioridade sobre o config.yaml nos bots
+    'ENDERECO_LOGRADOURO', 'ENDERECO_NUMERO', 'ENDERECO_COMPLEMENTO',
+    'ENDERECO_BAIRRO', 'ENDERECO_CEP', 'ENDERECO_CIDADE', 'ENDERECO_ESTADO',
+    # Credenciais dos portais
+    'GUPY_EMAIL', 'GUPY_SENHA',
+    'INFOJOBS_EMAIL', 'INFOJOBS_SENHA',
+    'NERDIN_EMAIL', 'NERDIN_SENHA',
+    'SOLIDES_EMAIL', 'SOLIDES_SENHA',
+)
+_APPLY_ENV_SENSITIVE = frozenset(k for k in APPLY_ENV_KEYS if k.endswith('_SENHA'))
+
+
+def _env_path() -> Path:
+    return _apply_dir() / '.env'
+
+
+def _env_atual() -> dict:
+    p = _env_path()
+    vals = dotenv_values(p) if p.is_file() else {}
+    return {k: (vals.get(k) or '') for k in APPLY_ENV_KEYS}
+
+
+def load_env() -> dict:
+    """Só as chaves liberadas; *_SENHA saem mascaradas (mesma regra de api_key)."""
+    out = _env_atual()
+    for k in _APPLY_ENV_SENSITIVE:
+        out[k] = _mask(out[k])
+    return out
+
+
+def save_env(payload: dict) -> dict:
+    """Mescla APENAS as chaves liberadas em apply/.env, preservando as
+    demais linhas do arquivo tal como estão (chaves de IA etc.).
+
+    - valor vazio → a chave sai do arquivo
+    - valor igual ao mask do que está salvo → mantém o real
+      (a UI não digita a senha de novo só para salvar outra coisa)
+    """
+    if not isinstance(payload, dict):
+        raise ApplyAdminError('Env inválido: esperado um objeto (dict).')
+    unknown = sorted(k for k in payload if k not in APPLY_ENV_KEYS)
+    if unknown:
+        raise ApplyAdminError(f"Chaves não permitidas no .env do apply: {', '.join(unknown)}.")
+
+    atual = _env_atual()
+    merge: dict[str, str] = {}
+    for k in APPLY_ENV_KEYS:
+        valor = payload.get(k, '')
+        if not isinstance(valor, str):
+            raise ApplyAdminError(f"O valor de {k} deve ser texto.")
+        valor = valor.strip()
+        if valor == '':
+            merge[k] = ''
+        elif k in _APPLY_ENV_SENSITIVE and atual[k] and valor == _mask(atual[k]):
+            merge[k] = atual[k]
+        else:
+            merge[k] = valor
+
+    lines = []
+    p = _env_path()
+    if p.is_file():
+        lines = p.read_text(encoding='utf-8').splitlines()
+    kept: list[str] = []
+    for linha in lines:
+        chave = None
+        if linha.strip() and not linha.lstrip().startswith('#'):
+            head, sep, _resto = linha.partition('=')
+            if sep and head.strip() in APPLY_ENV_KEYS:
+                chave = head.strip()
+        if chave is None:
+            kept.append(linha)
+
+    texto = '\n'.join(kept).rstrip('\n')
+    for k in APPLY_ENV_KEYS:
+        v = merge.get(k, '')
+        if v:
+            v_esc = v.replace('\\', '\\\\').replace('"', '\\"')
+            texto = f'{texto}\n{k}="{v_esc}"' if texto else f'{k}="{v_esc}"'
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix('.env.tmp')
+    tmp.write_text(texto + '\n', encoding='utf-8')
+    tmp.replace(p)
+    return load_env()
+
+
 #  IA — provedores (config.yaml → ia)
-# ════════════════════════════════════════════════════════════════════════════
 
 def _ia() -> dict:
     cfg = load_config()
