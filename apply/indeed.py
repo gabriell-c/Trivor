@@ -57,6 +57,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import llm as _llm_lib
 from dotenv import load_dotenv
 from groq import Groq
 from selenium.common.exceptions import (
@@ -1502,12 +1503,7 @@ def _agendar_retorno_groq(reset_utc: _dt.datetime) -> None:
     t.start()
 
 
-def _calcular_reset_groq() -> _dt.datetime:
-    agora = _dt.datetime.now(_dt.UTC)
-    reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
-    if reset <= agora:
-        reset += _dt.timedelta(days=1)
-    return reset
+_calcular_reset_groq = _llm_lib.calcular_reset_groq
 
 
 def _normalizar_messages_para_hf(messages: list[dict]) -> list[dict]:
@@ -1605,44 +1601,21 @@ def _chamar_groq(
     temperature: float = 0.1,
     tentativas: int = 4,
 ) -> str:
-    ultimo_erro: Exception | None = None
+    def _log(msg: str) -> None:
+        log_info(f"  [Groq] {msg}")
 
-    for tentativa in range(tentativas):
-        try:
-            resp = groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                messages=messages,
-            )
-            return resp.choices[0].message.content.strip()
-
-        except Exception as exc:
-            ultimo_erro = exc
-            msg = str(exc)
-
-            if "429" in msg or "rate_limit" in msg.lower():
-                m = re.search(r"try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)s", msg)
-                wait = int(m.group(1) or 0) * 60 + float(m.group(2) or 0) + 5 if m else 90
-
-                if wait > 300:
-                    raise _GroqLimiteDiario(str(exc))
-                else:
-                    log_info(f"  [Groq] rate-limit curto: aguardando {int(wait)}s "
-                             f"(tentativa {tentativa+1}/{tentativas})")
-                    time.sleep(wait)
-                    continue
-
-            backoff = 2 ** tentativa + random.uniform(0, 1)
-            log_warn(f"  [Groq] erro (tentativa {tentativa+1}/{tentativas}): {exc} "
-                     f"— retry em {backoff:.1f}s")
-            time.sleep(backoff)
-
-    raise RuntimeError(f"Groq falhou após {tentativas} tentativas: {ultimo_erro}")
+    return _llm_lib.chamar_groq(
+        messages,
+        model=GROQ_MODEL,
+        api_key=groq_client.api_key,
+        log_info=_log,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        tentativas=tentativas,
+    )
 
 
-class _GroqLimiteDiario(Exception):
-    """Sinaliza que o limite diário do Groq foi atingido."""
+_GroqLimiteDiario = _llm_lib.GroqLimiteDiario
 
 
 def chamar_llm(

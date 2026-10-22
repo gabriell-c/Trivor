@@ -31,14 +31,12 @@ import os
 import re
 import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import llm as _llm_lib
 from dotenv import load_dotenv
-from groq import Groq
 from playwright.sync_api import Page, sync_playwright
 
 load_dotenv()
@@ -313,16 +311,8 @@ _llm_state = {
 }
 
 
-class _GroqLimiteDiario(Exception):
-    pass
-
-
-def _calcular_reset_groq() -> "_dt.datetime":
-    agora = _dt.datetime.now(_dt.UTC)
-    reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
-    if reset <= agora:
-        reset += _dt.timedelta(days=1)
-    return reset
+_GroqLimiteDiario = _llm_lib.GroqLimiteDiario
+_calcular_reset_groq = _llm_lib.calcular_reset_groq
 
 
 def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
@@ -339,51 +329,19 @@ def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
     threading.Thread(target=_voltar, daemon=True).start()
 
 
-def _post_json(url: str, headers: dict, payload: dict, timeout: int = 60) -> dict:
-    data = json.dumps(payload).encode("utf-8")
-    req  = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
 def _chamar_groq(prompt: str, config: dict, temperatura: float = 0.1,
                  tentativas: int = 4) -> str:
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY não configurada")
-
-    client      = Groq(api_key=GROQ_API_KEY)
-    ultimo_erro = None
-
-    for tentativa in range(tentativas):
-        try:
-            resp = client.chat.completions.create(
-                model=config["groq"]["model"],
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperatura,
-            )
-            return resp.choices[0].message.content.strip()
-
-        except Exception as exc:
-            ultimo_erro = exc
-            msg = str(exc)
-
-            if "429" in msg or "rate_limit" in msg.lower():
-                m    = re.search(r"try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)s", msg)
-                wait = int(m.group(1) or 0) * 60 + float(m.group(2) or 0) + 5 if m else 90
-                if wait > 300:
-                    raise _GroqLimiteDiario(str(exc))
-                log(f"    [LLM] ⚡ Groq rate limit curto: aguardando {int(wait)}s "
-                    f"(tentativa {tentativa + 1}/{tentativas})")
-                time.sleep(wait)
-                continue
-
-            import random as _random
-            backoff = 2 ** tentativa + _random.uniform(0, 1)
-            log(f"    [LLM] ⚠️  Groq erro (tentativa {tentativa + 1}/{tentativas}): {exc} "
-                f"— retry em {backoff:.1f}s")
-            time.sleep(backoff)
-
-    raise RuntimeError(f"Groq falhou após {tentativas} tentativas: {ultimo_erro}")
+    return _llm_lib.chamar_groq(
+        [{"role": "user", "content": prompt}],
+        model=config["groq"]["model"],
+        api_key=GROQ_API_KEY,
+        log_info=lambda m: log(f"    [LLM] ⚡ {m}"),
+        max_tokens=None,
+        temperature=temperatura,
+        tentativas=tentativas,
+    )
 
 
 def _chamar_gemini(prompt: str, temperatura: float = 0.1,
@@ -399,40 +357,15 @@ def _chamar_gemini(prompt: str, temperatura: float = 0.1,
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY não configurada")
 
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash-lite-preview-06-17:generateContent?key={GEMINI_API_KEY}"
+    texto = _llm_lib.chamar_gemini(
+        prompt,
+        api_key=GEMINI_API_KEY,
+        log_info=lambda m: log(f"    [LLM] ⚡ {m}"),
+        temperatura=temperatura,
+        tentativas=tentativas,
     )
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature":     max(0.0, temperatura),
-            "maxOutputTokens": 600,
-        },
-    }
-
-    for tentativa in range(tentativas):
-        try:
-            data  = _post_json(url, {"Content-Type": "application/json"}, payload)
-            texto = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            log(f"    [LLM Gemini] ✅ ({len(texto)} chars)")
-            return texto
-
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="ignore")
-
-            if e.code == 429:
-                if "daily" in body.lower() or ("quota" in body.lower() and "day" in body.lower()):
-                    raise RuntimeError(f"Gemini cota diária esgotada: {body[:200]}") from e
-                wait = 4 * (tentativa + 1)
-                log(f"    [LLM] ⚡ Gemini RPM: aguardando {wait}s "
-                    f"(tentativa {tentativa + 1}/{tentativas})")
-                time.sleep(wait)
-                continue
-
-            raise RuntimeError(f"Gemini HTTP {e.code}: {body[:300]}") from e
-
-    raise RuntimeError(f"Gemini falhou após {tentativas} tentativas (RPM)")
+    log(f"    [LLM Gemini] ✅ ({len(texto)} chars)")
+    return texto
 
 
 def _chamar_mistral(prompt: str, temperatura: float = 0.1) -> str:
@@ -443,25 +376,14 @@ def _chamar_mistral(prompt: str, temperatura: float = 0.1) -> str:
     if not MISTRAL_API_KEY:
         raise RuntimeError("MISTRAL_API_KEY não configurada")
 
-    url     = "https://api.mistral.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {MISTRAL_API_KEY}",
-        "Content-Type":  "application/json",
-    }
-    payload = {
-        "model":       "mistral-small-latest",
-        "messages":    [{"role": "user", "content": prompt}],
-        "max_tokens":  600,
-        "temperature": max(0.0, temperatura),
-    }
-    try:
-        data  = _post_json(url, headers, payload)
-        texto = data["choices"][0]["message"]["content"].strip()
-        log(f"    [LLM Mistral] ✅ (resposta: {texto!r})")
-        return texto
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Mistral HTTP {e.code}: {body[:300]}") from e
+    texto = _llm_lib.chamar_mistral(
+        prompt,
+        api_key=MISTRAL_API_KEY,
+        temperatura=temperatura,
+        max_tokens=600,
+    )
+    log(f"    [LLM Mistral] ✅ (resposta: {texto!r})")
+    return texto
 
 
 def _chamar_llm(prompt: str, config: dict, contexto: str = "",
