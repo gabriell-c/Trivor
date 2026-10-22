@@ -81,8 +81,8 @@ class Browser:
     def _launch_chromium_like(self, sync_playwright, family: str) -> None:
         """patchright e playwright têm a mesma API — diferença é o stealth."""
         pw = sync_playwright().start()
-        kwargs = dict(user_data_dir=self._profile_dir(family),
-                      headless=self.headless, args=self._stealth_args())
+        kwargs = {'user_data_dir': self._profile_dir(family),
+                  'headless': self.headless, 'args': self._stealth_args()}
         if self.channel:
             kwargs['channel'] = self.channel
         ctx = pw.chromium.launch_persistent_context(**kwargs)
@@ -98,6 +98,7 @@ class Browser:
 
     def _start_camoufox(self) -> None:
         import sys
+
         from camoufox.sync_api import Camoufox
         # `os` coerente com a máquina hospedeira: fingerprint de Firefox Linux
         # rodando em Windows é sinal de bot (cross-check de platform).
@@ -198,9 +199,9 @@ class _SeleniumPage:
         return self._d.page_source
 
     def wait_for_selector(self, selector: str, **_kw):
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.common.by import By
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.support.ui import WebDriverWait
         return WebDriverWait(self._d, self._timeout_ms / 1000).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
 

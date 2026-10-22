@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 
 import yaml
-
 from apply_service import resolve_apply_dir
+
 
 # ── Erros que as rotas convertem em 4xx ─────────────────────────────────────
 class ApplyAdminError(Exception):

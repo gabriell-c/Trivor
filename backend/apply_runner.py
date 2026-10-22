@@ -150,16 +150,17 @@ def start_bot(bot: str) -> dict:
     # PYTHONUNBUFFERED: sem isso, o print do bot fica no buffer (bloqueio de
     # 4KB quando stdout é arquivo) e a UI não veria o log crescer.
     env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
-    log_f = open(_logfile(bot), 'a', encoding='utf-8')
-    proc = subprocess.Popen(
-        [sys.executable, str(script)],
-        cwd=str(apply_dir),
-        stdout=log_f,
-        stderr=subprocess.STDOUT,
-        env=env,
-        start_new_session=True,
-    )
-    log_f.close()  # o processo mantém o handle; não vazar pro FastAPI
+    # O bloco with fecha o handle do pai após o Popen — o processo mantém
+    # o próprio, então nada de handle aberto vazando pro FastAPI.
+    with open(_logfile(bot), 'a', encoding='utf-8') as log_f:
+        proc = subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(apply_dir),
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+        )
     now = datetime.now().isoformat(timespec='seconds')
     _pidfile(bot).write_text(
         json.dumps({'pid': proc.pid, 'started_at': now, 'script': APPLY_BOTS[bot]}),

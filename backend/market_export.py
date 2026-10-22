@@ -1,7 +1,7 @@
 """Market intelligence export functions - MD, PDF, DOCX"""
 
-from io import BytesIO
 from datetime import datetime
+from io import BytesIO
 
 
 def _median_display(stats: dict) -> str:
@@ -20,89 +20,89 @@ def generate_market_markdown_export(report: dict, job_title: str, seniority: str
     lines = []
     # Header
     lines.append(f"# Intelligence de Mercado — {job_title}")
-    lines.append(f"")
+    lines.append("")
     lines.append(f"**Seniority:** {seniority}  |  **Stack:** {', '.join(s.get('target_stack', []))}  |  **Local:** {location}")
     lines.append(f"**Gerado em:** {now_str}  |  **Modelo:** {model_name}")
-    lines.append(f"")
+    lines.append("")
 
     # Summary metrics
-    lines.append(f"## Resumo")
-    lines.append(f"")
-    lines.append(f"| Métrica | Valor |")
-    lines.append(f"|---|---|")
+    lines.append("## Resumo")
+    lines.append("")
+    lines.append("| Métrica | Valor |")
+    lines.append("|---|---|")
     lines.append(f"| Vagas coletadas | {s.get('total_jobs_scanned', 0)} |")
     lines.append(f"| Pré-filtradas | {s.get('pre_filtered_count', 0)} |")
     lines.append(f"| Analisadas com IA | {s.get('relevant_jobs_analyzed', 0)} |")
     lines.append(f"| Descartadas | {s.get('discarded_jobs', 0)} |")
     lines.append(f"| Confiança | {s.get('confidence_score', 'N/A')} — {s.get('confidence_reason', '')} |")
     lines.append(f"| Anos de experiência (mediana) | {_median_display(stats)} |")
-    lines.append(f"")
+    lines.append("")
 
     # Technologies
     if stats.get("required_technologies"):
-        lines.append(f"## Tecnologias Obrigatórias")
-        lines.append(f"")
-        lines.append(f"| Tecnologia | Ocorrências | % |")
-        lines.append(f"|---|---|---|")
+        lines.append("## Tecnologias Obrigatórias")
+        lines.append("")
+        lines.append("| Tecnologia | Ocorrências | % |")
+        lines.append("|---|---|---|")
         for t in stats["required_technologies"]:
             lines.append(f"| {t['name']} | {t['count']} | {t['percentage']}% |")
-        lines.append(f"")
+        lines.append("")
 
     if stats.get("desirable_technologies"):
-        lines.append(f"## Tecnologias Desejáveis / Diferenciais")
-        lines.append(f"")
-        lines.append(f"| Tecnologia | Ocorrências | % |")
-        lines.append(f"|---|---|---|")
+        lines.append("## Tecnologias Desejáveis / Diferenciais")
+        lines.append("")
+        lines.append("| Tecnologia | Ocorrências | % |")
+        lines.append("|---|---|---|")
         for t in stats["desirable_technologies"]:
             lines.append(f"| {t['name']} | {t['count']} | {t['percentage']}% |")
-        lines.append(f"")
+        lines.append("")
 
     # Experience distribution
     if stats.get("exp_years_distribution"):
-        lines.append(f"## Distribuição de Anos de Experiência")
-        lines.append(f"")
-        lines.append(f"| Faixa | Vagas |")
-        lines.append(f"|---|---|")
+        lines.append("## Distribuição de Anos de Experiência")
+        lines.append("")
+        lines.append("| Faixa | Vagas |")
+        lines.append("|---|---|")
         for range_key, count in sorted(stats["exp_years_distribution"].items()):
             lines.append(f"| {range_key} | {count} |")
-        lines.append(f"")
+        lines.append("")
 
     # Modalities
     if stats.get("modalities"):
-        lines.append(f"## Modalidades")
-        lines.append(f"")
-        lines.append(f"| Modalidade | Vagas | % |")
-        lines.append(f"|---|---|---|")
+        lines.append("## Modalidades")
+        lines.append("")
+        lines.append("| Modalidade | Vagas | % |")
+        lines.append("|---|---|---|")
         for m in stats["modalities"]:
             lines.append(f"| {m['name']} | {m['count']} | {m['percentage']}% |")
-        lines.append(f"")
+        lines.append("")
 
     # Soft skills
     if stats.get("top_soft_skills"):
-        lines.append(f"## Soft Skills mais pedidas")
-        lines.append(f"")
-        lines.append(f"| Skill | Ocorrências |")
-        lines.append(f"|---|---|")
+        lines.append("## Soft Skills mais pedidas")
+        lines.append("")
+        lines.append("| Skill | Ocorrências |")
+        lines.append("|---|---|")
         for sk in stats["top_soft_skills"][:15]:
             lines.append(f"| {sk['name']} | {sk['count']} |")
-        lines.append(f"")
+        lines.append("")
 
     # Certifications
     if stats.get("top_certifications"):
-        lines.append(f"## Certificações mais pedidas")
-        lines.append(f"")
-        lines.append(f"| Certificação | Ocorrências |")
-        lines.append(f"|---|---|")
+        lines.append("## Certificações mais pedidas")
+        lines.append("")
+        lines.append("| Certificação | Ocorrências |")
+        lines.append("|---|---|")
         for c in stats["top_certifications"][:10]:
             lines.append(f"| {c['name']} | {c['count']} |")
-        lines.append(f"")
+        lines.append("")
 
     # Sample jobs
     lines.append(f"## Vagas Analisadas ({len(jobs)} relevantes)")
-    lines.append(f"")
+    lines.append("")
     for i, job in enumerate(jobs, 1):
         lines.append(f"### {i}. {job.get('title', 'N/A')} — {job.get('company', 'N/A')}")
-        lines.append(f"")
+        lines.append("")
         lines.append(f"- **Local:** {job.get('location', 'N/A')}  |  **Modalidade:** {job.get('modality', 'N/A')}  |  **Fonte:** {job.get('source', 'N/A')}")
         reqs = job.get('requirements', [])
         if reqs:
@@ -124,7 +124,7 @@ def generate_market_markdown_export(report: dict, job_title: str, seniority: str
         level = job.get('role_level')
         if level:
             lines.append(f"- **Nível:** {level}")
-        lines.append(f"")
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -132,10 +132,10 @@ def generate_market_markdown_export(report: dict, job_title: str, seniority: str
 def generate_market_docx_export(report: dict, job_title: str, seniority: str, location: str, model_name: str) -> BytesIO:
     """Generate a well-formatted DOCX export of the market analysis report."""
     from docx import Document
-    from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
 
     doc = Document()
 
@@ -403,17 +403,22 @@ def generate_market_docx_export(report: dict, job_title: str, seniority: str, lo
 
 def generate_market_pdf_export(report: dict, job_title: str, seniority: str, location: str, model_name: str) -> BytesIO:
     """Generate a modern, well-formatted PDF export of the market analysis report."""
-    from reportlab.lib.pagesizes import A4
+    import os
+
     from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        KeepTogether
-    )
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    import os
+    from reportlab.platypus import (
+        KeepTogether,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -582,7 +587,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
                  Paragraph(str(t["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{t['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for t in stats["required_technologies"][:20]]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[6*cm, 2.5*cm, 2*cm])
         t.setStyle(header_style("4F46E5"))
         t.setStyle(make_table_style("4F46E5", "F8FAFC"))
@@ -596,7 +601,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
                  Paragraph(str(t["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{t['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for t in stats["desirable_technologies"][:15]]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[6*cm, 2.5*cm, 2*cm])
         t.setStyle(header_style("0891B2"))
         t.setStyle(make_table_style("0891B2", "F0FDFA"))
@@ -609,7 +614,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Faixa", "Vagas"]]
         data = [[Paragraph(k, body_style), Paragraph(str(v), ParagraphStyle('n', alignment=1))]
                 for k, v in sorted(stats["exp_years_distribution"].items())]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[6*cm, 5*cm])
         t.setStyle(header_style("059669"))
         t.setStyle(make_table_style("059669", "F0FDF4"))
@@ -624,7 +629,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
                  Paragraph(str(m["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{m['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for m in stats["modalities"]]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[5*cm, 2.5*cm, 2*cm])
         t.setStyle(header_style("7C3AED"))
         t.setStyle(make_table_style("7C3AED", "FAF5FF"))
@@ -638,7 +643,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         data = [[Paragraph(sk["name"], body_style),
                  Paragraph(str(sk["count"]), ParagraphStyle('n', alignment=1))]
                 for sk in stats["top_soft_skills"][:15]]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[7*cm, 3*cm])
         t.setStyle(header_style("DC2626"))
         t.setStyle(make_table_style("DC2626", "FEF2F2"))
@@ -652,7 +657,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
         data = [[Paragraph(c["name"], body_style),
                  Paragraph(str(c["count"]), ParagraphStyle('n', alignment=1))]
                 for c in stats["top_certifications"][:10]]
-        rows = [header] + data
+        rows = [header, *data]
         t = Table(rows, colWidths=[7*cm, 3*cm])
         t.setStyle(header_style("D97706"))
         t.setStyle(make_table_style("D97706", "FFFBEB"))

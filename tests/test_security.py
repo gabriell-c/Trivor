@@ -17,8 +17,8 @@ from fastapi.testclient import TestClient
 BACKEND_DIR = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from main import app  # noqa: E402
-from apply_runner import ApplyRunError, bot_log, start_bot, stop_bot  # noqa: E402
+from apply_runner import ApplyRunError, bot_log, start_bot, stop_bot
+from main import app
 
 
 @pytest.fixture

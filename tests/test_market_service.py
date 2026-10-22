@@ -1,13 +1,13 @@
 """
 Testes unitários para market_service.py
 """
-import pytest
-import sqlite3
-import os
-import sys
 import json
+import sqlite3
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add backend to path
 BACKEND_PATH = Path(__file__).parent.parent / "backend"
@@ -325,7 +325,6 @@ class TestRunMarketAnalysis:
 
         # AI fails
         mock_client = MagicMock()
-        from openai import APIConnectionError
         mock_client.chat.completions.create.side_effect = Exception("AI down")
         mock_openai.return_value = mock_client
 

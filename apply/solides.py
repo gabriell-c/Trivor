@@ -56,7 +56,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 from groq import Groq
-from playwright.sync_api import sync_playwright, Page, BrowserContext
+from playwright.sync_api import BrowserContext, Page, sync_playwright
 
 load_dotenv()
 
@@ -168,7 +168,8 @@ def chamar_llm(prompt: str, max_tokens: int = 300, temperature: float = 0.1) -> 
 
 
 def _chamar_huggingface(prompt: str, max_tokens: int = 300, temperature: float = 0.1) -> str:
-    import urllib.request, urllib.error
+    import urllib.error
+    import urllib.request
     hf_key = os.getenv("HF_API_KEY", "")
     if not hf_key:
         raise RuntimeError("HF_API_KEY não configurada")
@@ -349,7 +350,7 @@ def ia_responder_killer_question_radio(pergunta: str) -> str:
         "aceita trabalhar", "disposto a",
     ]
     if any(p in pergunta_lower for p in CONFIRMAR_SIM):
-        log_info(f"    [killer] Pergunta de confirmação → Sim")
+        log_info("    [killer] Pergunta de confirmação → Sim")
         return "Sim"
 
     loc = LOCALIZACAO
@@ -1613,7 +1614,7 @@ def candidatar_vaga(page: Page, vaga: dict) -> dict:
         if badges_vaga:
             log_info(f"  Badges da vaga: {badges_vaga}")
             if not _filtrar_vaga(vaga["titulo"], badges_vaga):
-                log_skip(f"  ⏭️  Vaga descartada na página (badge confirma nível indesejado)")
+                log_skip("  ⏭️  Vaga descartada na página (badge confirma nível indesejado)")
                 resultado["status"] = "nivel_excluido"
                 return resultado
 

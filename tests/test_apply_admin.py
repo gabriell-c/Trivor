@@ -17,7 +17,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'backend'))
 
-import apply_admin as ad  # noqa: E402
+import apply_admin as ad
 
 
 @pytest.fixture
@@ -29,7 +29,8 @@ def fake_apply(tmp_path, monkeypatch):
     # ia_test importa apply/common/llm.py direto do arquivo — espelha o real
     llm_real = os.path.join(ROOT, 'apply', 'common', 'llm.py')
     (apply_dir / 'common').mkdir()
-    (apply_dir / 'common' / 'llm.py').write_text(open(llm_real, encoding='utf-8').read(), encoding='utf-8')
+    with open(llm_real, encoding='utf-8') as f:
+        (apply_dir / 'common' / 'llm.py').write_text(f.read(), encoding='utf-8')
     monkeypatch.setenv('APPLY_DIR', str(apply_dir))
     return apply_dir
 

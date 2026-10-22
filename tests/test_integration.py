@@ -2,12 +2,12 @@
 Testes de integração com FastAPI TestClient — sem necessidade de servidor rodando.
 Executar: pytest tests/test_integration.py -v
 """
-import sys
 import json
 import os
 import sqlite3
+import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -487,7 +487,7 @@ class TestCalcFitScore:
 
     def test_compute_job_fit_uses_shared_formula(self):
         """_compute_job_fit e o ranking do cv-fit devem concordar com calc_fit_score."""
-        from main import calc_fit_score, _compute_job_fit
+        from main import _compute_job_fit, calc_fit_score
         cv = "Experiência: Python, Django, PostgreSQL. Liderei equipe com 5 pessoas. Excel avançado."
         job = "Requisitos: Python, Django\nDiferencial: Kubernetes"
         fit = _compute_job_fit(cv, job)
@@ -1187,6 +1187,7 @@ class TestLoadDotenv:
         """Guarda de regressão: a chamada load_dotenv() deve vir ANTES da
         primeira leitura de os.getenv("OPENAI_API_KEY") do main."""
         from pathlib import Path
+
         import main
         src = Path(main.__file__).read_text(encoding="utf-8")
         load_idx = src.index("load_dotenv(")

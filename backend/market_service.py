@@ -3,20 +3,20 @@ Market Intelligence Service – módulo completo de Inteligência de Mercado.
 Coleta, filtro, extração IA e agregação estatística.
 """
 
-import sqlite3
+import hashlib
 import json
+import logging
 import os
 import re
+import sqlite3
 import time
 import traceback
-import logging
-import urllib.request
 import urllib.error
-import hashlib
+import urllib.request
 import uuid
-from pathlib import Path
-from typing import Any, Dict, List
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from openai import OpenAI
 
@@ -56,7 +56,6 @@ _REPORTS_KEEP_LAST = 30
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
-
 
 # ---------------------------------------------------------------------------
 # Utilitários
@@ -370,9 +369,7 @@ def _is_garbage_requirement(text: str) -> bool:
         if re.search(pattern, t, re.IGNORECASE):
             return True
     # Verifica se é apenas números/pontuação
-    if re.match(r'^[\d\s.,%\-/]+$', t):
-        return True
-    return False
+    return bool(re.match(r'^[\d\s.,%\-/]+$', t))
 
 
 def normalize_skill(skill: str) -> str:
@@ -394,7 +391,7 @@ def normalize_skill(skill: str) -> str:
     return ' '.join(w.capitalize() for w in t.split()) if t else ""
 
 
-def extract_mentioned_skills(text: str) -> List[str]:
+def extract_mentioned_skills(text: str) -> list[str]:
     """Retorna as skills canônicas mencionadas em QUALQUER parte do texto,
     usando o mapeamento _SKILL_NORMALIZATION (mesma base canônica do market).
     Usa-se no fit determinístico CV × vaga para complementar a extração
@@ -402,7 +399,7 @@ def extract_mentioned_skills(text: str) -> List[str]:
     if not text or not text.strip():
         return []
     text_lower = text.lower()
-    mentioned: List[str] = []
+    mentioned: list[str] = []
     seen = set()
     for pattern, canonical in _SKILL_NORMALIZATION.items():
         if not canonical:
@@ -631,7 +628,7 @@ def _fetch_jsearch_jobs(
     country: str = "br",
     language: str = "pt",
     num_pages: int = 4,
-    api_keys: List[str] = None,
+    api_keys: list[str] | None = None,
     date_posted: str = "all",
 ) -> tuple:
     """Através JSearch API busca vagas reais, agregando resultados de TODAS as chaves."""
@@ -741,7 +738,7 @@ def _fetch_jsearch_jobs(
     return jobs, last_remaining, last_total
 
 
-def _build_jobs_from_raw(raw_jobs: List, default_country: str) -> List[Dict]:
+def _build_jobs_from_raw(raw_jobs: list, default_country: str) -> list[dict]:
     """Constrói lista de jobs a partir dos dados brutos da API."""
     jobs = []
     for j in raw_jobs:
@@ -845,7 +842,7 @@ def _get_jsearch_country_language(location: str) -> tuple:
     return "br", "pt"
 
 
-def _get_geo_keywords(location: str) -> List[str]:
+def _get_geo_keywords(location: str) -> list[str]:
     """Retorna palavras-chave geográficas para enriquecer as queries de busca."""
     loc = location.lower()
     if "internacional" in loc:
@@ -854,7 +851,7 @@ def _get_geo_keywords(location: str) -> List[str]:
     return ["Brasil", "Brazil", "remoto Brasil", "vaga Brasil"]
 
 
-def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: List[str] = None, date_posted: str = "all", location: str = "Remoto Nacional"):
+def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor Backend", jsearch_api_keys: list[str] | None = None, date_posted: str = "all", location: str = "Remoto Nacional"):
     """Preenche a base de vagas quando está vazia.
     Se jsearch_api_keys (lista) for fornecido, tenta buscar vagas reais primeiro
     (com JSEARCH_API_KEY do ambiente como chave sintética extra).
@@ -1105,7 +1102,7 @@ _LEVEL_KEYWORDS = {
 }
 
 
-def heuristic_extract(job_text: str) -> Dict[str, Any]:
+def heuristic_extract(job_text: str) -> dict[str, Any]:
     """Extrai dados estruturados via regex quando a IA falha."""
     if not job_text or not job_text.strip():
         return {"is_relevant": False, "role_level": None, "exp_years_min": None,
@@ -1113,7 +1110,7 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
                 "certifications": [], "soft_skills": [], "salary_min": None,
                 "salary_max": None, "currency": None}
     text_lower = job_text.lower()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "is_relevant": True,
         "role_level": None,
         "exp_years_min": None,
@@ -1222,7 +1219,7 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
             result["certifications"].append(m.group(0).capitalize())
 
     # Requirements e nice_to_have por heurística
-    lines = [l.strip() for l in job_text.split('\n') if l.strip()]
+    lines = [linha.strip() for linha in job_text.split('\n') if linha.strip()]
     for line in lines:
         ll = line.lower()
         if 'requisito' in ll or 'obrigatório' in ll or 'obrigatorio' in ll:
@@ -1239,14 +1236,7 @@ def heuristic_extract(job_text: str) -> Dict[str, Any]:
                 if len(p) >= 3 and len(p) < 100:
                     result["nice_to_have"].append(p)
         # Formação escolar
-        elif 'formação' in ll or 'formacao' in ll or 'escolaridade' in ll or 'ensino' in ll:
-            parts = re.split(r'[:,;]', line)
-            for p in parts[1:]:
-                p = p.strip()
-                if len(p) >= 3 and len(p) < 100:
-                    result["requirements"].append(p)
-        # Idiomas
-        elif 'idioma' in ll or 'idiomas' in ll:
+        elif 'formação' in ll or 'formacao' in ll or 'escolaridade' in ll or 'ensino' in ll or 'idioma' in ll or 'idiomas' in ll:
             parts = re.split(r'[:,;]', line)
             for p in parts[1:]:
                 p = p.strip()
@@ -1449,17 +1439,14 @@ def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "
     return "nacional"
 
 
-def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str], seniority: str, location: str) -> int:
+def _keyword_score(job_text_lower: str, job_title: str, target_stack: list[str], seniority: str, location: str) -> int:
     """Retorna score de relevância permissivo. Nunca zera por falta de palavra exata."""
     if seniority.lower() == "nenhum":
         sen_matches = []
     else:
         sen_matches = _SENIORITY_MATCHES.get(seniority.lower(), [])
 
-    if target_stack:
-        keywords = target_stack
-    else:
-        keywords = [w for w in job_title.strip().split() if len(w) > 2]
+    keywords = target_stack or [w for w in job_title.strip().split() if len(w) > 2]
 
     # Base score permissivo (1): Deixa todas as vagas capturadas irem para a IA decidir relevância
     score = 1
@@ -1493,13 +1480,13 @@ def _keyword_score(job_text_lower: str, job_title: str, target_stack: List[str],
 
 
 def _pre_filter_jobs(
-    raw_jobs: List[tuple],
-    target_stack: List[str],
+    raw_jobs: list[tuple],
+    target_stack: list[str],
     seniority: str,
     location: str,
-    neg_list: List[str],
+    neg_list: list[str],
     max_jobs: int = _MAX_JOBS_FOR_ANALYSIS,
-) -> List[tuple]:
+) -> list[tuple]:
     """Filtra vagas por keywords e modalidade antes de enviar para IA."""
     filtered = []
 
@@ -1551,7 +1538,7 @@ def _pre_filter_jobs(
                 "canadá", "canada", "portugal", "frança",
                 "trøndelag", "snåsa", "san german",
             ]
-            if any(l in loc_text for l in _NON_BR_LOCATIONS):
+            if any(loc in loc_text for loc in _NON_BR_LOCATIONS):
                 continue
 
         # MODALIDADE — ativada para filtrar vagas irrelevantes
@@ -1605,7 +1592,7 @@ def _pre_filter_jobs(
 # Extração com IA (vaga única)
 # ---------------------------------------------------------------------------
 
-def extract_job_with_ai(client: OpenAI, selected_model: str, job_text: str, target_stack: List[str], seniority: str = "Pleno", location: str = "Remoto Nacional") -> Dict[str, Any]:
+def extract_job_with_ai(client: OpenAI, selected_model: str, job_text: str, target_stack: list[str], seniority: str = "Pleno", location: str = "Remoto Nacional") -> dict[str, Any]:
     """Usa IA para extrair dados estruturados de uma vaga de forma rigorosa."""
     job_title_context = target_stack[0] if target_stack else "diversas áreas"
     prompt = f"""EXTRAIA TODOS OS DADOS POSSÍVEIS desta vaga.
@@ -1681,7 +1668,7 @@ Retorne o JSON abaixo com TODOS os campos preenchidos:
 # ---------------------------------------------------------------------------
 
 
-def _sanitize_requirements(item: Dict[str, Any]) -> Dict[str, Any]:
+def _sanitize_requirements(item: dict[str, Any]) -> dict[str, Any]:
     """Safety net: remove obvious non-skills from requirements and soft_skills."""
     import re as _re
 
@@ -1763,17 +1750,14 @@ def _sanitize_requirements(item: Dict[str, Any]) -> Dict[str, Any]:
             return True
 
         # Benefícios em inglês
-        if any(kw in t_lower for kw in [
+        return any(kw in t_lower for kw in [
             "health insurance", "dental insurance", "vision insurance",
             "life insurance", "401k", "retirement",
             "paid time off", "pto", "paid leave",
             "wellness", "gym", "fitness",
             "tuition reimbursement", "education assistance",
             "stock options", "equity", "rsu",
-        ]):
-            return True
-
-        return False
+        ])
 
     for field in ("requirements", "soft_skills", "nice_to_have"):
         if field not in item or not isinstance(item[field], list):
@@ -1843,7 +1827,7 @@ _ADMIN_COMMON_SKILLS = [
 ]
 
 
-def _ensure_common_skills(item: Dict[str, Any], job_text: str) -> Dict[str, Any]:
+def _ensure_common_skills(item: dict[str, Any], job_text: str) -> dict[str, Any]:
     """Garante que skills administrativos comuns sejam extraídos se presentes no texto.
     Roda após a IA para capturar o que ela perdeu."""
     if not job_text or not item:
@@ -1884,7 +1868,7 @@ def _ensure_common_skills(item: Dict[str, Any], job_text: str) -> Dict[str, Any]
     return item
 
 
-def _extract_languages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _extract_languages(item: dict[str, Any]) -> list[dict[str, Any]]:
     """Detecta idiomas nos requirements/nice_to_have e os separa para o campo languages."""
     import re as _re
 
@@ -1975,7 +1959,7 @@ _BATCH_SIZE = 10  # reduzido de 25 para 10 para evitar APITimeoutError da OpenAI
 _batch_mismatch_warned = False
 
 
-def _parse_batch_response(data: Any, expected: int) -> List[Dict[str, Any]]:
+def _parse_batch_response(data: Any, expected: int) -> list[dict[str, Any]]:
     """Tenta extrair a lista de jobs da resposta da IA, lidando com formatos variados."""
     # Caso 1: resposta já é uma lista
     if isinstance(data, list):
@@ -1995,15 +1979,15 @@ def _parse_batch_response(data: Any, expected: int) -> List[Dict[str, Any]]:
 
 
 def _pad_missing_jobs(
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
     expected: int,
     client: OpenAI,
     selected_model: str,
-    job_texts: List[str],
-    target_stack: List[str],
+    job_texts: list[str],
+    target_stack: list[str],
     seniority: str,
     location: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Retorna apenas os jobs que a IA retornou — sem fabricar dados."""
     result = data[:expected]
     if len(result) < expected:
@@ -2017,11 +2001,11 @@ def _pad_missing_jobs(
 def _fallback_extract_jobs(
     client: OpenAI,
     selected_model: str,
-    job_texts: List[str],
-    target_stack: List[str],
+    job_texts: list[str],
+    target_stack: list[str],
     seniority: str,
     location: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Fallback: tenta IA individual, se falhar usa heurística."""
     results = []
     for job_text in job_texts:
@@ -2049,12 +2033,12 @@ def _fallback_extract_jobs(
 def extract_jobs_batched(
     client: OpenAI,
     selected_model: str,
-    job_texts: List[str],
-    target_stack: List[str],
+    job_texts: list[str],
+    target_stack: list[str],
     seniority: str = "Pleno",
     location: str = "Remoto Nacional",
-    neg_list: List[str] = None,
-) -> List[Dict[str, Any]]:
+    neg_list: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Chama a IA UMA vez com N vagas e devolve uma lista de resultados."""
     if not job_texts:
         return []
@@ -2110,7 +2094,7 @@ IMPORTANTE: Quanto mais itens extrair, melhor. Não seja seletivo — se a vaga 
 
 IMPORTANTE: AGRUPE variações do mesmo skill nos arrays. Exemplos:
 - "Excel avançado", "Excel básico" → inclua apenas "Excel"
-- "Pacote Office", "MS Excel" → inclua apenas "Excel"  
+- "Pacote Office", "MS Excel" → inclua apenas "Excel"
 - "Inglês avançado", "Inglês básico" → inclua apenas "Inglês"
 - "Proatividade", "Pró-atividade" → inclua apenas "Proatividade"
 - "Word", "Microsoft Word" → inclua apenas "Word"
@@ -2177,7 +2161,7 @@ REGRAS OBRIGATÓRIAS:
         content = re.sub(r'｜thinking｜.*?／｜thinking｜', '', content, flags=re.DOTALL).strip()
         # Remove any remaining <thinking>...</thinking>
         content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
-        
+
         # Garante que content não seja string vazia ou inválida para o json.loads
         if not content or content == "[]":
             raw = []
@@ -2249,7 +2233,7 @@ REGRAS OBRIGATÓRIAS:
         return _fallback_extract_jobs(client, selected_model, job_texts, target_stack, seniority, location)
 
 
-def _median(values: List[float]):
+def _median(values: list[float]):
     """Mediana clássica: média dos 2 centrais em lista par. Lista vazia → None."""
     if not values:
         return None
@@ -2280,8 +2264,8 @@ def run_market_analysis(
     location: str,
     time_window: str,
     negative_keywords: str = "",
-    jsearch_api_keys: List[str] = None
-) -> Dict[str, Any]:
+    jsearch_api_keys: list[str] | None = None
+) -> dict[str, Any]:
     """Executa o pipeline completo de Inteligência de Mercado."""
 
     # 1. Garante vagas de amostragem no DB (limpa buscas anteriores para evitar dados de outra área)
@@ -2344,7 +2328,7 @@ def run_market_analysis(
         batch_results = extract_jobs_batched(client, selected_model, job_texts, stack_list, seniority=seniority, location=location, neg_list=neg_list)
 
         batch_rows = []
-        for idx, (job_id, title, company, description, loc, mod, source, source_url, job_text) in enumerate(batch):
+        for idx, (job_id, title, company, description, loc, mod, source, source_url, _unused) in enumerate(batch):
             extracted = batch_results[idx] if idx < len(batch_results) else {}
             extracted = _sanitize_requirements(extracted)
             # Extração agora é 100% baseada no texto real da vaga pela IA, sem injeção forçada de skills.
@@ -2352,8 +2336,8 @@ def run_market_analysis(
             extracted_languages = _extract_languages(extracted)
             is_rel = extracted.get("is_relevant", False)
 
-            reqs_norm = sorted(set(normalize_skill(t) for t in extracted.get("requirements", []) if normalize_skill(t)))
-            nice_norm = sorted(set(normalize_skill(t) for t in extracted.get("nice_to_have", []) if normalize_skill(t)))
+            reqs_norm = sorted({normalize_skill(t) for t in extracted.get("requirements", []) if normalize_skill(t)})
+            nice_norm = sorted({normalize_skill(t) for t in extracted.get("nice_to_have", []) if normalize_skill(t)})
 
             # Debug: log first batch results
             if batch_start == 0 and idx < 3:
@@ -2469,7 +2453,7 @@ def run_market_analysis(
     # Idiomas Ranking (nome + nível mais citado)
     language_ranking = []
     for lname, levels in sorted(language_level_counts.items(), key=lambda x: sum(x[1].values()), reverse=True):
-        top_level_name, top_level_count = max(levels.items(), key=lambda x: x[1])
+        top_level_name, _ = max(levels.items(), key=lambda x: x[1])
         language_ranking.append({
             "name": lname,
             "count": sum(levels.values()),

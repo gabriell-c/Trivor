@@ -8,7 +8,6 @@ parado) e bot desconhecido. Nenhum bot real é executado.
 import json
 import os
 import signal
-import subprocess
 import sys
 import time
 
@@ -17,7 +16,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'backend'))
 
-import apply_runner as ar  # noqa: E402
+import apply_runner as ar
 
 FAKE_BOT = """import time
 print('oi da automacao')
@@ -56,7 +55,7 @@ def test_ciclo_de_vida_completo(fake_apply):
             if st['log_tail']:
                 break
             time.sleep(0.25)
-        assert any('oi da automacao' in l for l in st['log_tail']), st['log_tail']
+        assert any('oi da automacao' in linha for linha in st['log_tail']), st['log_tail']
 
         # segundo start do mesmo bot → erro "já está em execução" (409 na rota)
         with pytest.raises(ar.ApplyRunError, match='já está em execução'):

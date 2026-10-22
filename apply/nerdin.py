@@ -25,20 +25,21 @@ VERSÃO v1.0:
   - Resolução de nível de tecnologia via config.yaml + LLM fallback
 """
 
+import datetime as _dt
+import json
 import os
 import re
-import time
-import json
-import yaml
 import threading
-import datetime as _dt
-import urllib.request
+import time
 import urllib.error
+import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from playwright.sync_api import sync_playwright, Page
-from groq import Groq
+
+import yaml
 from dotenv import load_dotenv
+from groq import Groq
+from playwright.sync_api import Page, sync_playwright
 
 load_dotenv()
 
@@ -245,13 +246,13 @@ MAPA_NIVEL_VALUE = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 def carregar_config() -> dict:
-    with open("config.yaml", "r", encoding="utf-8") as f:
+    with open("config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def log(msg: str):
     print(f"  {msg}")
 
-def esperar(page: Page, segundos: float = None):
+def esperar(page: Page, segundos: float | None = None):
     config = carregar_config()
     s = segundos or config["automacao"]["delay_entre_acoes"]
     page.wait_for_timeout(int(s * 1000))
@@ -317,7 +318,7 @@ class _GroqLimiteDiario(Exception):
 
 
 def _calcular_reset_groq() -> "_dt.datetime":
-    agora = _dt.datetime.now(_dt.timezone.utc)
+    agora = _dt.datetime.now(_dt.UTC)
     reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
     if reset <= agora:
         reset += _dt.timedelta(days=1)
@@ -326,7 +327,7 @@ def _calcular_reset_groq() -> "_dt.datetime":
 
 def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
     def _voltar():
-        agora  = _dt.datetime.now(_dt.timezone.utc)
+        agora  = _dt.datetime.now(_dt.UTC)
         espera = max(0, (reset_utc - agora).total_seconds()) + 15
         log(f"    [LLM] Groq volta em {int(espera / 60)}min "
             f"({reset_utc.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')} local)")
@@ -948,7 +949,7 @@ def candidatar_vaga_nerdin(page: Page, vaga: dict, config: dict) -> dict:
 
     except Exception as e:
         log(f"  ❌ Erro: {e}")
-        resultado["status"] = f"erro: {str(e)}"
+        resultado["status"] = f"erro: {e!s}"
 
     return resultado
 
@@ -961,7 +962,7 @@ def _ler_json_candidaturas() -> tuple[list, list]:
     arquivo = "relatorio/candidaturas.json"
     if not os.path.exists(arquivo):
         return [], []
-    with open(arquivo, "r", encoding="utf-8") as f:
+    with open(arquivo, encoding="utf-8") as f:
         try:
             dados = json.load(f)
         except json.JSONDecodeError:

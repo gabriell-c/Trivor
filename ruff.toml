@@ -1,10 +1,24 @@
-# Configuração standalone do ruff (não é pyproject.toml: chaves em top-level)
+# Configuração única do ruff para o projeto inteiro (backend/, apply/, frontend/*).
+# Mantida em ruff.toml no root: é a fonte de verdade — o [tool.ruff] de
+# backend/pyproject.toml foi removido p/ evitar configs em conflito.
 target-version = "py311"
 line-length = 100
 
 [lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
-ignore = ["E501", "B008", "SIM102"]
+ignore = [
+    "E501",    # linhas longas: prompts PT-BR e literais de template
+    "B008",    # Depends() em default de parâmetro é padrão FastAPI
+    "SIM102",  # return condicional embutido em função grande
+    "RUF001",  # tipografia PT-BR intencional (— “ ”)
+    "RUF002",  # en-dash/multiplicação em docstring PT-BR intencional
+    "RUF003",  # acentos/traços em comentários
+    "E402",    # import após manipulação de sys.path nos scripts apply/
+    "N806",     # constantes locais (ex.: _PALAVRAS_EN dentro de função)
+    "N812",     # alias `EC` do Selenium é padrão universal
+    "N818",     # nomeação de exceções do domínio (sem sufixo Error)
+    "B904",     # encadeamento implícito de exceção (legado, baixo valor)
+]
 
 [lint.per-file-ignores]
 "__init__.py" = ["F401"]

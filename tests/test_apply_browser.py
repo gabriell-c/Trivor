@@ -11,7 +11,6 @@ nenhum acesso a portal real.
 import http.server
 import json
 import shutil
-import socket
 import sys
 import threading
 from pathlib import Path
@@ -21,7 +20,7 @@ import pytest
 APPLY_DIR = Path(__file__).parent.parent / "apply"
 sys.path.insert(0, str(APPLY_DIR))
 
-from common import browser as bmod  # noqa: E402
+from common import browser as bmod
 
 PAGE_F = """<html><body>
 <input id="a">
@@ -110,7 +109,8 @@ class BrowserCtx:
 
 class TestEngines:
     def test_core_imports(self):
-        import patchright.sync_api, camoufox.sync_api, playwright.sync_api
+        import camoufox.sync_api
+        import patchright.sync_api
         assert hasattr(patchright.sync_api, 'sync_playwright')
         assert hasattr(camoufox.sync_api, 'Camoufox')
         assert bmod.ENGINES == ('camoufox', 'patchright', 'playwright', 'undetected')

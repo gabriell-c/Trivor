@@ -1,17 +1,18 @@
-import sys
-import re
-import time
 import logging
+import re
+import sys
 import tempfile
-from pathlib import Path
+import time
 from collections import Counter
-from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Response, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from docling.document_converter import DocumentConverter
-from openai import OpenAI
+from pathlib import Path
+
 import httpx
+from docling.document_converter import DocumentConverter
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from openai import OpenAI
 from starlette.concurrency import run_in_threadpool
 
 # Handlers são async: I/O síncrono (OpenAI SDK, docling, urlopen, pipeline de
@@ -29,21 +30,29 @@ if not logger.handlers:
     _h = logging.StreamHandler()
     _h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
     logger.addHandler(_h)
-import sqlite3, json, os, uuid, hashlib
+import hashlib
+import json
+import os
+import sqlite3
+import uuid
 
 # Adiciona o diretório backend ao Python path para importar export_utils
 backend_path = Path(__file__).parent
 if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
 
-import pypdfium2 as pdfium
-from export_utils import generate_markdown_export, generate_docx_export, generate_pdf_export
-from market_export import generate_market_markdown_export, generate_market_docx_export, generate_market_pdf_export
-from market_service import run_market_analysis, init_market_db
-from apply_service import apply_overview, apply_applications, ApplyDataError, resolve_apply_dir
-from apply_runner import start_bot, stop_bot, bot_log, list_bots, ApplyRunError
 import apply_admin
-from logging_service import init_logs_db, log_request, get_logs, get_logs_stats, clear_logs, LOGS_DB
+import pypdfium2 as pdfium
+from apply_runner import ApplyRunError, bot_log, list_bots, start_bot, stop_bot
+from apply_service import ApplyDataError, apply_applications, apply_overview, resolve_apply_dir
+from export_utils import generate_docx_export, generate_markdown_export, generate_pdf_export
+from logging_service import LOGS_DB, clear_logs, get_logs, get_logs_stats, init_logs_db, log_request
+from market_export import (
+    generate_market_docx_export,
+    generate_market_markdown_export,
+    generate_market_pdf_export,
+)
+from market_service import init_market_db, run_market_analysis
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 KNOWLEDGE_DIR = BASE_DIR / 'knowledge'
@@ -160,14 +169,14 @@ def _resolve_key_and_client(provider_id: str | None, api_key: str | None,
 
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 # ---------------------------------------------------------------------------
 # Funções de Resposta Padronizada
 # ---------------------------------------------------------------------------
 
-def error_response(code: str, message: str, details: dict = None, status_code: int = 400) -> JSONResponse:
+def error_response(code: str, message: str, details: dict | None = None, status_code: int = 400) -> JSONResponse:
     """Retorna resposta de erro padronizada."""
     return JSONResponse(
         status_code=status_code,
@@ -258,7 +267,7 @@ def _extract_pdf_text_pymupdf(pdf_path: str) -> str:
                 continue
 
             # Agrupar posições X para detectar colunas
-            x_positions = sorted(set(int(b[0]) for b in blocks))
+            x_positions = sorted({int(b[0]) for b in blocks})
             columns = []
             current_col_x = []
             col_gap = 50  # gap mínimo para considerar coluna diferente
@@ -680,7 +689,7 @@ def _compute_job_fit(cv_text: str, job_description: str) -> dict:
     """Fit determinístico CV × vaga única: extrai requisitos da descrição da vaga
     (heurística do módulo de mercado + dicionário de skills canônicas) e mede a
     cobertura no texto do CV. Sem LLM — reproducible entre execuções."""
-    from market_service import heuristic_extract, extract_mentioned_skills
+    from market_service import extract_mentioned_skills, heuristic_extract
     extraction = heuristic_extract(job_description)
     requirements = [r for r in extraction.get('requirements', []) if isinstance(r, str) and len(r.strip()) > 2]
     nice_to_have = [n for n in extraction.get('nice_to_have', []) if isinstance(n, str) and len(n.strip()) > 2]
@@ -811,7 +820,7 @@ def _check_tech_stack_by_experience(text: str) -> dict:
     return {"por_experiencia": True, "problema": None}
 
 
-def _detect_Exit_Reason(text: str) -> list[dict]:
+def _detect_exit_reason(text: str) -> list[dict]:
     """Detecta menção a motivo de saída do emprego."""
     motivos = [
         'demissão',
@@ -886,7 +895,7 @@ def _detect_multiple_cvs(text: str) -> dict:
 
     # Se encontrou muitos nomes diferentes no documento, pode ser múltiplos CVs
     # Nome no topo + nome em outra seção = possível mistura
-    distinct_names = list(set(n.lower() for n in names if len(n) > 5))
+    distinct_names = list({n.lower() for n in names if len(n) > 5})
 
     # Contar seções de experiência
     exp_count = len(exp_sections)
@@ -1070,7 +1079,7 @@ async def analyze_cv(
                 f.write(content)
 
             # Extrair texto com fallback chain (helper reutilizado pelo /api/market/cv-fit)
-            markdown_text, extractor_used, fallback_used = await run_in_threadpool(_extract_cv_text, temp_path, ext)
+            markdown_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
             if not markdown_text:
                 markdown_text = "Erro ao extrair texto do documento."
 
@@ -1093,7 +1102,7 @@ async def analyze_cv(
             if ext == '.pdf':
                 pdf_links = await run_in_threadpool(_extract_pdf_links, temp_path)
                 for url in pdf_links:
-                    already = any(l['url'] == url for l in links_info)
+                    already = any(link['url'] == url for link in links_info)
                     if not already:
                         links_info.append({'url': url, 'valid': True})
             logger.info(f"[CV] Links detectados: {len(links_info)}")
@@ -1159,7 +1168,7 @@ async def analyze_cv(
             checklist_validacao['projetos_com_link'] = projetos_check
 
             # 9. Verificar motivo de saída
-            motivo_saida = _detect_Exit_Reason(markdown_text)
+            motivo_saida = _detect_exit_reason(markdown_text)
             if motivo_saida:
                 logger.warning(f"[CHECKLIST] Motivo de saída: {len(motivo_saida)} encontrados")
             checklist_validacao['motivo_saida'] = motivo_saida
@@ -1208,7 +1217,7 @@ async def analyze_cv(
             prompt_estrut_file = KNOWLEDGE_DIR / 'cv_analysis_estrutura.md'
             prompt_qual_file = KNOWLEDGE_DIR / 'cv_analysis_qualidade.md'
             if prompt_estrut_file.exists():
-                with open(prompt_estrut_file, 'r', encoding='utf-8') as f:
+                with open(prompt_estrut_file, encoding='utf-8') as f:
                     sys_prompt_estrut = f.read()
             else:
                 sys_prompt_estrut = """Você é um especialista em análise de currículos (CV) para ATS e mercado de trabalho.
@@ -1278,7 +1287,7 @@ REGRAS IMPORTANTES (OBRIGATÓRIO SEGUIR):
 
             # Fallback do passo 2 (arquivo ausente → prompt mínimo, mesmo padrão)
             if prompt_qual_file.exists():
-                with open(prompt_qual_file, 'r', encoding='utf-8') as f:
+                with open(prompt_qual_file, encoding='utf-8') as f:
                     sys_prompt_qual = f.read()
             else:
                 sys_prompt_qual = ("Você é um especialista em QUALIDADE de currículos (CV). "
@@ -1297,7 +1306,7 @@ CURRÍCULO (Markdown):
 ---
 
 INFORMAÇÕES ADICIONAIS:
-- Links detectados: {[l['url'] for l in links_info] if links_info else 'Nenhum'}
+- Links detectados: {[link['url'] for link in links_info] if links_info else 'Nenhum'}
 - Tipo de arquivo: {ext}
 - Extrator usado: {extractor_used}
 - Job description (se fornecida): {job_description or 'Nenhuma'}
@@ -1450,7 +1459,7 @@ tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. I
 
             # Extrair TODAS as palavras do texto extraído (tokenização por espaço+pontuação)
             _words_raw = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ']+", markdown_text or "")
-            _words_norm = set(_norm(w) for w in _words_raw)
+            _words_norm = {_norm(w) for w in _words_raw}
 
             # 1) ERRORS ORTOGRÁFICOS: validação rigorosa em nível de palavra
             if 'erros_ortograficos' in analysis and isinstance(analysis['erros_ortograficos'], list):
@@ -1638,7 +1647,7 @@ tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. I
                 analysis['fit_com_vaga'] = _compute_job_fit(markdown_text, jd_clean)
 
             analysis['_extractor_used'] = extractor_used
-            analysis['_links'] = [l['url'] for l in links_info]
+            analysis['_links'] = [link['url'] for link in links_info]
 
             # Salvar log com texto extraído e prompt
             llm_prompt = (f"SYSTEM (passo 1):\n{sys_prompt_estrut}\n\nUSER (passo 1):\n{user_content_estrut}\n\n"
@@ -1668,7 +1677,7 @@ tem resultado mensurável (trecho: "Responsável pelo módulo de cobrança")'. I
         raise
     except Exception as e:
         logger.error(f"[CV] Erro: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar o currículo: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao processar o currículo: {e!s}")
 
 
 # ---------------------------------------------------------------------------
@@ -1929,7 +1938,7 @@ def _count_bullets_experiencia(text: str) -> int:
             fim = i
             break
     corpo = linhas[inicio:fim] if inicio is not None else linhas
-    return sum(1 for l in corpo if _BULLET_LINE_RE.match(l))
+    return sum(1 for linha in corpo if _BULLET_LINE_RE.match(linha))
 
 
 def _repeated_terms(text: str) -> dict:
@@ -2046,7 +2055,7 @@ async def cv_semantic_fit(
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
     # Resolve credenciais e client LLM (provider_id → TRIVOR_IAS → OPENAI_API_KEY → provider salvo)
-    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    client, key, selected_model, _ = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
     if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
@@ -2065,7 +2074,7 @@ async def cv_semantic_fit(
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if CV_FIT_PROMPT_FILE.exists():
-        with open(CV_FIT_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        with open(CV_FIT_PROMPT_FILE, encoding='utf-8') as f:
             sys_prompt = f.read()
     else:
         sys_prompt = ("Você é um consultor sênior de recrutamento. Compare o currículo com a "
@@ -2186,17 +2195,16 @@ async def cv_recruiter_sim(
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
     # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
-    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    client, key, selected_model, _ = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
     if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
     temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cvrecruit_')
-    extractor_used = "none"
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
+        cv_text, _, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2205,7 +2213,7 @@ async def cv_recruiter_sim(
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if RECRUITER_PROMPT_FILE.exists():
-        with open(RECRUITER_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        with open(RECRUITER_PROMPT_FILE, encoding='utf-8') as f:
             sys_prompt = f.read()
     else:
         sys_prompt = ("Você é um recrutador experiente. Leia a descrição da vaga e o "
@@ -2370,17 +2378,16 @@ async def cv_cover_letter(
         raise HTTPException(status_code=400, detail="Arquivo excede 10MB.")
 
     # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
-    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    client, key, selected_model, _ = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
     if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
     t0 = time.time()
     temp_fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='cvcover_')
-    extractor_used = "none"
     try:
         with os.fdopen(temp_fd, 'wb') as f:
             f.write(content)
-        cv_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
+        cv_text, _, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
         if not cv_text or not cv_text.strip():
             raise HTTPException(status_code=400, detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.")
     finally:
@@ -2389,7 +2396,7 @@ async def cv_cover_letter(
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if COVER_LETTER_PROMPT_FILE.exists():
-        with open(COVER_LETTER_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        with open(COVER_LETTER_PROMPT_FILE, encoding='utf-8') as f:
             sys_prompt = f.read()
     else:
         sys_prompt = ("Você escreve cartas de apresentação profissionais, em PT-BR, "
@@ -2535,7 +2542,7 @@ async def cv_diff(
     deterministico = _diff_cv_deterministic(texto_anterior, texto_novo)
 
     # Resolve credenciais e client LLM (mesmo padrão dos demais endpoints CV)
-    client, key, selected_model, base_url = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
+    client, key, selected_model, _ = _resolve_key_and_client(provider_id, api_key, api_url, model_name)
     if client is None:
         raise HTTPException(status_code=400, detail="Chave de API não fornecida.")
 
@@ -2543,7 +2550,7 @@ async def cv_diff(
 
     # Carregar prompt de sistema (fallback mínimo se o arquivo sumiu)
     if CV_DIFF_PROMPT_FILE.exists():
-        with open(CV_DIFF_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        with open(CV_DIFF_PROMPT_FILE, encoding='utf-8') as f:
             sys_prompt = f.read()
     else:
         sys_prompt = ("Você compara duas versões do currículo de um candidato, em PT-BR, "
@@ -2728,7 +2735,7 @@ async def analyze_ia(
             }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na análise de IA: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro na análise de IA: {e!s}")
 
 
 # ---------------------------------------------------------------------------
@@ -2859,7 +2866,7 @@ async def export_analysis(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {e!s}")
 
 
 @app.post('/api/export/market')
@@ -2906,7 +2913,7 @@ async def export_market_analysis(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {e!s}")
 
 
 # ---------------------------------------------------------------------------
@@ -2949,7 +2956,8 @@ async def api_test_jsearch_key(
     api_key: str = Form(...),
 ):
     """Testa uma chave JSearch e retorna status."""
-    import urllib.request, json
+    import json
+    import urllib.request
     try:
         import urllib.parse
         query = urllib.parse.quote_plus("test")
@@ -3295,7 +3303,7 @@ def api_apply_resume_delete(rid: str):
 async def api_get_logs(
     limit: int = 100,
     offset: int = 0,
-    endpoint: str = None,
+    endpoint: str | None = None,
     error_only: bool = False,
 ):
     """Retorna logs paginados + stats."""
@@ -3440,7 +3448,7 @@ async def analyze_linkedin(
 
     # Carregar prompt de sistema
     if LINKEDIN_PROMPT_FILE.exists():
-        with open(LINKEDIN_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        with open(LINKEDIN_PROMPT_FILE, encoding='utf-8') as f:
             sys_p = f.read()
     else:
         sys_p = "Você é um especialista em análise de perfis LinkedIn."
@@ -3551,9 +3559,10 @@ async def analyze_linkedin(
         )
 
 if __name__ == "__main__":
-    import uvicorn
     import signal
     import sys
+
+    import uvicorn
 
     def graceful_shutdown(signum, frame):
         logger.info("Recebido sinal de encerramento. Finalizando graceful...")

@@ -6,10 +6,10 @@ status, filtros/paginação e os endpoints /api/apply/* (incluindo estados
 ausentes e arquivo corrompido).
 """
 import json
-import pytest
-
 import sys
 from pathlib import Path
+
+import pytest
 
 BACKEND_PATH = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(BACKEND_PATH))
@@ -53,8 +53,8 @@ def no_apply(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client():
-    from main import app
     from fastapi.testclient import TestClient
+    from main import app
     return TestClient(app)
 
 

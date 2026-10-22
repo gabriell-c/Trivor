@@ -1,11 +1,13 @@
-from io import BytesIO
 import html as _html
+from io import BytesIO
+
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
+
 
 def set_cell_background(cell, fill_hex):
     tcPr = cell._element.get_or_add_tcPr()
@@ -53,7 +55,7 @@ _SECAO_TITULOS = {
 
 def generate_markdown_export(data: dict, filename: str, job_target: str, model_name: str) -> str:
     md = []
-    md.append(f"# Trivor")
+    md.append("# Trivor")
     md.append(f"**Arquivo:** {filename} | **Vaga / Nível:** {job_target} | **Modelo:** {model_name}\n")
     md.append(f"## 🏆 Resume Score: {_nota_formatada(data)} / 100\n")
     md.append(f"### 📋 Parecer Executivo\n{data.get('resumo_executivo', 'Sem resumo disponível.')}\n")
@@ -71,7 +73,7 @@ def generate_markdown_export(data: dict, filename: str, job_target: str, model_n
         'objetivo': '🎯 ' + _SECAO_TITULOS['objetivo'],
     }
     for k, title in titulos.items():
-        if k in secoes and secoes[k]:
+        if secoes.get(k):
             item = secoes[k]
             status = (item.get('status') or 'atencao').upper()
             md.append(f"### {title} [{status}]")
@@ -187,7 +189,7 @@ def generate_docx_export(data: dict, filename: str, job_target: str, model_name:
     titulos = _SECAO_TITULOS
 
     for k, title in titulos.items():
-        if k in secoes and secoes[k]:
+        if secoes.get(k):
             item = secoes[k]
             p_s = doc.add_paragraph()
             r_st = p_s.add_run(f"• {title}  [{(item.get('status') or 'atencao').upper()}]\n")
@@ -244,10 +246,10 @@ def generate_docx_export(data: dict, filename: str, job_target: str, model_name:
 
 
 def generate_pdf_export(data: dict, filename: str, job_target: str, model_name: str) -> BytesIO:
-    from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -354,7 +356,7 @@ def generate_pdf_export(data: dict, filename: str, job_target: str, model_name: 
     titulos = _SECAO_TITULOS
 
     for k, title in titulos.items():
-        if k in secoes and secoes[k]:
+        if secoes.get(k):
             item = secoes[k]
             status = (item.get('status') or 'atencao').upper()
             status_color = '#059669' if status == 'OK' else ('#D97706' if status == 'ATENCAO' else '#E11D48')

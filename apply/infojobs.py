@@ -26,20 +26,21 @@ VERSÃO v1.1/1.2:
   - Fallback local para múltipla escolha
 """
 
+import datetime as _dt
+import json
 import os
 import re
-import time
-import json
-import yaml
 import threading
-import datetime as _dt
-import urllib.request
+import time
 import urllib.error
+import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from playwright.sync_api import sync_playwright, Page
-from groq import Groq
+
+import yaml
 from dotenv import load_dotenv
+from groq import Groq
+from playwright.sync_api import Page, sync_playwright
 
 load_dotenv()
 
@@ -120,13 +121,13 @@ Desenvolvimento em Python com Django (Django Master)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def carregar_config() -> dict:
-    with open("config.yaml", "r", encoding="utf-8") as f:
+    with open("config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def log(msg: str):
     print(f"  {msg}")
 
-def esperar(page: Page, segundos: float = None):
+def esperar(page: Page, segundos: float | None = None):
     config = carregar_config()
     s = segundos or config["automacao"]["delay_entre_acoes"]
     page.wait_for_timeout(int(s * 1000))
@@ -173,7 +174,7 @@ class _GroqLimiteDiario(Exception):
 
 
 def _calcular_reset_groq() -> "_dt.datetime":
-    agora = _dt.datetime.now(_dt.timezone.utc)
+    agora = _dt.datetime.now(_dt.UTC)
     reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
     if reset <= agora:
         reset += _dt.timedelta(days=1)
@@ -182,7 +183,7 @@ def _calcular_reset_groq() -> "_dt.datetime":
 
 def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
     def _voltar():
-        agora  = _dt.datetime.now(_dt.timezone.utc)
+        agora  = _dt.datetime.now(_dt.UTC)
         espera = max(0, (reset_utc - agora).total_seconds()) + 15
         log(f"    [LLM] Groq volta em {int(espera / 60)}min "
             f"({reset_utc.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')} local)")
@@ -447,52 +448,62 @@ def _fallback_local_multipla_escolha(pergunta: str, opcoes: list[dict]) -> dict:
         for t in ["superior cursando", "ensino superior cursando", "graduação cursando",
                   "superior incompleto", "cursando"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
         for t in ["superior completo", "ensino superior completo", "graduação completa"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     if any(x in p for x in ["experiência", "tempo de experiência", "anos de experiência",
                              "experiência requisitada", "tempo na área"]):
         for t in ["mais de 01 ano", "mais de 1 ano", "acima de 1 ano", "acima de um ano",
                   "mais de 2 anos", "mais de 3 anos"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
         for t in ["06 meses", "6 meses a", "6 meses"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     if any(x in p for x in ["cnh", "habilitação", "habilitacao", "carteira de motorista"]):
         for t in ["não possuo habilitação", "não possuo cnh", "não possuo", "não tenho"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     if any(x in p for x in ["inglês", "ingles", "english", "idioma", "língua"]):
         for t in ["básico", "basico"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     if any(x in p for x in ["já trabalhou", "trabalhou na empresa", "já foi colaborador",
                              "ex-funcionário", "ex-colaborador", "sistema fiesc",
                              "trabalhou no grupo", "faz parte do grupo"]):
         r = achar("não")
-        if r: return r
+        if r:
+            return r
 
     if any(x in p for x in ["declaro", "concordo", "li e concordo", "estou ciente",
                              "aceito", "confirmo", "compreendo", "ciência"]):
         for t in ["li e concordo", "concordo", "aceito", "estou ciente", "sim"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     if any(x in p for x in ["bolsista", "bolsa", "cnpq", "ipt", "fapesp",
                              "deficiência", "deficiente", "pcd", "reabilitado"]):
         r = achar("não")
-        if r: return r
+        if r:
+            return r
 
     if any(x in p for x in ["disponibilidade", "disponível", "início imediato"]):
         for t in ["sim", "imediata", "disponível"]:
             r = achar(t)
-            if r: return r
+            if r:
+                return r
 
     melhor = max(opcoes, key=lambda o: o.get("score", 0))
     if melhor.get("score", 0) > 0:
@@ -1155,7 +1166,7 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
 
     except Exception as e:
         log(f"  ❌ Erro: {e}")
-        resultado["status"] = f"erro: {str(e)}"
+        resultado["status"] = f"erro: {e!s}"
 
     return resultado
 
@@ -1168,7 +1179,7 @@ def _ler_json_candidaturas() -> tuple[list, list]:
     arquivo = "relatorio/candidaturas.json"
     if not os.path.exists(arquivo):
         return [], []
-    with open(arquivo, "r", encoding="utf-8") as f:
+    with open(arquivo, encoding="utf-8") as f:
         try:
             dados = json.load(f)
         except json.JSONDecodeError:

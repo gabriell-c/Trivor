@@ -19,11 +19,13 @@ LM Studio, Ollama, vLLM, Together...); `tipo: anthropic` usa
 `/v1/messages`. O backend (aba IA do Trivor) grava esse bloco; os bots
 lêm por aqui. Sem dependência nova — urllib da stdlib.
 """
+import contextlib
 import json
 import random
 import time
 import urllib.error
 import urllib.request
+
 
 class LLMError(RuntimeError):
     """Falha definitiva do provedor (após os retries)."""
@@ -92,10 +94,8 @@ def chat(prov: dict, prompt: str, temperature: float = 0.5,
         except urllib.error.HTTPError as e:
             ultimo = e
             corpo = ''
-            try:
+            with contextlib.suppress(Exception):
                 corpo = e.read().decode('utf-8', errors='ignore')[:300]
-            except Exception:
-                pass
             if e.code in (401, 403, 404):  # credencial/modelo — retry não resolve
                 raise LLMError(f"HTTP {e.code} do provedor: {corpo}") from e
             if tentativa < tentativas - 1:

@@ -1,12 +1,9 @@
 """
 Testes de integração com a API do backend (requer servidor rodando em 127.0.0.1:8000)
 """
-import pytest
-import requests
-import os
 import json
-import sys
-from pathlib import Path
+
+import requests
 
 BASE = "http://127.0.0.1:8000"
 

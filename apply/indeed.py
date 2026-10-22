@@ -59,20 +59,19 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 from groq import Groq
-from seleniumbase import Driver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import Select, WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
     ElementNotInteractableException,
-    NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
     WebDriverException,
 )
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select, WebDriverWait
+from seleniumbase import Driver
 
 # ═══════════════════════════════════════════════════════════════
 #  BOOTSTRAP
@@ -199,7 +198,7 @@ def _descricao_em_ingles(descricao: str) -> bool:
             temperature=0.0,
         ).strip().upper()
 
-        log_info(f"  [IA idioma descrição] resposta bruta: {repr(resposta[:20])}")
+        log_info(f"  [IA idioma descrição] resposta bruta: {resposta[:20]!r}")
         return resposta.startswith("S") or resposta.startswith("Y")
 
     except Exception as exc:
@@ -219,7 +218,7 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
     2. Densidade de palavras funcionais inglesas (the, your, and, by...)
     Se qualquer heurística ultrapassar o threshold, confirma via IA.
     """
-    labels_validos = [l.strip() for l in labels if l and len(l.strip()) > 5]
+    labels_validos = [rot.strip() for rot in labels if rot and len(rot.strip()) > 5]
     if len(labels_validos) < 2:
         return False
 
@@ -238,8 +237,8 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
         r"\bdata subject\b", r"\byour application\b", r"\bapplicable law\b",
     ]
     contagem_frases = sum(
-        1 for l in labels_validos
-        if any(re.search(p, _PREFIXO.sub("", l).lower()) for p in _FRASES_EN)
+        1 for rot in labels_validos
+        if any(re.search(p, _PREFIXO.sub("", rot).lower()) for p in _FRASES_EN)
     )
     pct_frases = contagem_frases / len(labels_validos)
 
@@ -251,7 +250,7 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
         r"\bour\b", r"\bwe\b", r"\bto\b", r"\bin\b", r"\bis\b",
         r"\bare\b", r"\bhas\b", r"\bhave\b", r"\bnot\b", r"\ball\b",
     ]
-    texto_total = " ".join(_PREFIXO.sub("", l).lower() for l in labels_validos)
+    texto_total = " ".join(_PREFIXO.sub("", rot).lower() for rot in labels_validos)
     palavras_total = len(texto_total.split())
     if palavras_total > 0:
         hits_en = sum(len(re.findall(p, texto_total)) for p in _PALAVRAS_EN)
@@ -268,7 +267,7 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
         return False
 
     # ── Confirmação via IA ──
-    texto_labels = "\n".join(f"- {l}" for l in labels_validos[:25])
+    texto_labels = "\n".join(f"- {rot}" for rot in labels_validos[:25])
     prompt = (
         "Você vai analisar o conteúdo de um formulário de candidatura de emprego.\n"
         "Responda APENAS com a palavra SIM ou NÃO — nenhuma outra palavra.\n\n"
@@ -289,29 +288,12 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
             max_tokens=5,
             temperature=0.0,
         ).strip().upper()
-        log_info(f"  [idioma formulário] IA respondeu: {repr(resposta[:10])}")
+        log_info(f"  [idioma formulário] IA respondeu: {resposta[:10]!r}")
         return resposta.startswith("S") or resposta.startswith("Y")
 
     except Exception as exc:
         log_warn(f"  [idioma formulário] IA falhou — usando heurística: {exc}")
         return pct_frases > 0.60 or ratio_en > 0.20
-
-    try:
-        resposta = chamar_llm(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=5,
-            temperature=0.0,
-        ).strip().upper()
-        log_info(f"  [idioma formulário] IA respondeu: {repr(resposta[:10])}")
-        ia_diz_ingles = resposta.startswith("S") or resposta.startswith("Y")
-
-        # Só pula se AMBOS concordarem: heurística ≥ 30% E IA diz SIM
-        return ia_diz_ingles
-
-    except Exception as exc:
-        log_warn(f"  [idioma formulário] IA falhou — usando só heurística: {exc}")
-        # Sem IA, só pula se heurística for muito forte (> 60%)
-        return pct_en > 0.60
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -691,10 +673,10 @@ def _resolver_por_regra(campo: dict, contexto_vaga: str = "") -> tuple[bool, Any
             if todas_ilegíveis and opcoes:
                 # Convenção típica do Indeed: índice 0 = Masculino, 1 = Feminino, 2 = Outro
                 if any(k in genero_cfg for k in ["masculino", "homem", "male"]):
-                    log_warn(f"    [GÊNERO] Opções ilegíveis — assumindo índice 0 = Masculino")
+                    log_warn("    [GÊNERO] Opções ilegíveis — assumindo índice 0 = Masculino")
                     return True, 0
                 elif any(k in genero_cfg for k in ["feminino", "mulher", "female"]):
-                    log_warn(f"    [GÊNERO] Opções ilegíveis — assumindo índice 1 = Feminino")
+                    log_warn("    [GÊNERO] Opções ilegíveis — assumindo índice 1 = Feminino")
                     return True, 1
 
         elif tipo in ("texto", "textarea"):
@@ -730,7 +712,6 @@ def _resolver_por_regra(campo: dict, contexto_vaga: str = "") -> tuple[bool, Any
     ]
     if tipo in ("radio", "select", "checkbox") and any(t in pergunta for t in _TERMOS_GRUPO_DIV):
         raca_cfg   = div.get("raca_cor", "").lower()
-        opcoes_lower = [o.lower() for o in opcoes]
 
         # Opções que representam "nenhum grupo" / homem cis sem minoria
         neutro_keys = [
@@ -749,10 +730,7 @@ def _resolver_por_regra(campo: dict, contexto_vaga: str = "") -> tuple[bool, Any
         preta_keys = ["preta", "negro", "negra", "black"]
         parda_keys = ["parda", "pardo", "mixed", "morena", "moreno"]
 
-        if any(k in raca_cfg for k in ["pret", "negr"]):
-            alvo_raca = preta_keys
-        else:
-            alvo_raca = parda_keys  # default: pardo
+        alvo_raca = preta_keys if any(k in raca_cfg for k in ["pret", "negr"]) else parda_keys  # default: pardo
 
         for j, opt in enumerate(opcoes):
             if any(k in opt.lower() for k in alvo_raca):
@@ -821,7 +799,6 @@ def _resolver_por_regra(campo: dict, contexto_vaga: str = "") -> tuple[bool, Any
     if tipo in ("radio", "select") and any(t in pergunta for t in _TERMOS_SEGMENTO):
         autonomo_keys  = ["autônomo", "autonomo", "freelance", "freelancer", "autônoma"]
         tecnologia_keys = ["tecnologia", "ti", "t.i", "software", "informática", "informatica"]
-        primeiro_keys  = ["1°", "1o", "primeiro emprego", "primeiro", "primeiro trabalho"]
 
         # Prioridade: Autônomo > Tecnologia > (nunca 1° emprego para freelancer)
         for j, opt in enumerate(opcoes):
@@ -963,7 +940,6 @@ def _resolver_por_regra(campo: dict, contexto_vaga: str = "") -> tuple[bool, Any
     if tipo in ("radio", "select") and any(t in pergunta for t in _TERMOS_SEGMENTO):
         autonomo_keys = ["autônomo", "autonomo", "freelance", "freelancer", "autono"]
         tech_keys     = ["tecnologia", "technology", "ti", "t.i", "software", "informática"]
-        primeiro_keys = ["1°", "1º", "primeiro emprego", "primeiro job", "sem experiência"]
 
         # Prioridade: autônomo > tecnologia (nunca "1° emprego")
         for j, opt in enumerate(opcoes):
@@ -1371,7 +1347,7 @@ def _ia_resolver_campo(campo: dict, contexto_vaga: str, modo_forcado: bool = Fal
         for linha in reversed(raw.split("\n")):
             if linha.strip():
                 resposta_str = linha.strip().strip("\"' ")
-                log_warn(f"      [IA] Sem FINAL:, usando última linha: {repr(resposta_str[:50])}")
+                log_warn(f"      [IA] Sem FINAL:, usando última linha: {resposta_str[:50]!r}")
                 break
 
     if not resposta_str:
@@ -1491,8 +1467,8 @@ def ia_gerar_carta(titulo: str, empresa: str, descricao: str) -> str:
 #  LLM ROUTER — Groq primário / HuggingFace fallback
 # ═══════════════════════════════════════════════════════════════
 
-import threading
 import datetime as _dt
+import threading
 
 _HF_MODEL_LEGADO = "meta-llama/Meta-Llama-3-8B-Instruct"
 _hf_model_cfg    = CONFIG.get("huggingface", {}).get("model", "")
@@ -1510,9 +1486,9 @@ _llm_state = {
 }
 
 
-def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
+def _agendar_retorno_groq(reset_utc: _dt.datetime) -> None:
     def _voltar():
-        agora  = _dt.datetime.now(_dt.timezone.utc)
+        agora  = _dt.datetime.now(_dt.UTC)
         espera = max(0, (reset_utc - agora).total_seconds()) + 15
         log_info(f"  [LLM] HuggingFace ativo. Groq volta em {int(espera/60)}min "
                  f"({reset_utc.astimezone(TZ).strftime('%H:%M')} horário local)")
@@ -1526,8 +1502,8 @@ def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
     t.start()
 
 
-def _calcular_reset_groq() -> "_dt.datetime":
-    agora = _dt.datetime.now(_dt.timezone.utc)
+def _calcular_reset_groq() -> _dt.datetime:
+    agora = _dt.datetime.now(_dt.UTC)
     reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
     if reset <= agora:
         reset += _dt.timedelta(days=1)
@@ -1585,8 +1561,8 @@ def _chamar_huggingface(
     max_tokens: int = 400,
     temperature: float = 0.1,
 ) -> str:
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     if not HF_API_KEY:
         raise RuntimeError("HF_API_KEY não configurada no .env")
@@ -1680,12 +1656,12 @@ def chamar_llm(
     if provedor == "groq":
         try:
             return _chamar_groq(messages, max_tokens, temperature)
-        except _GroqLimiteDiario as exc:
+        except _GroqLimiteDiario:
             reset_utc = _calcular_reset_groq()
             with _llm_state["lock"]:
                 _llm_state["provedor"]      = "huggingface"
                 _llm_state["groq_reset_em"] = reset_utc
-            log_err(f"  [LLM] Groq: limite diário atingido → trocando para HuggingFace")
+            log_err("  [LLM] Groq: limite diário atingido → trocando para HuggingFace")
             _agendar_retorno_groq(reset_utc)
 
     try:
@@ -2333,7 +2309,7 @@ def aguardar_resolucao_captcha(driver: Driver, timeout: int = 240) -> bool:
                 esperar(1.5)
                 return True
             if verificar_enviada(driver):
-                log_ok(f"  ✅ Candidatura enviada automaticamente após captcha!")
+                log_ok("  ✅ Candidatura enviada automaticamente após captcha!")
                 return True
         if elapsed % 20 == 19:
             log_warn(f"  ⏳ Aguardando resolução... ({elapsed+1}/{timeout}s)")
@@ -2600,14 +2576,14 @@ def _is_date_field(el: Any, label_hint: str = "") -> bool:
 
 def _label_eh_nascimento(label: str) -> bool:
     """Retorna True se o label se refere a data de nascimento."""
-    l = label.lower()
-    return any(t in l for t in _TERMOS_NASCIMENTO)
+    texto = label.lower()
+    return any(t in texto for t in _TERMOS_NASCIMENTO)
 
 
 def _label_eh_data_inicio(label: str) -> bool:
     """Retorna True se o label se refere a data de início/disponibilidade."""
-    l = label.lower()
-    return any(t in l for t in _TERMOS_DATA_INICIO)
+    texto = label.lower()
+    return any(t in texto for t in _TERMOS_DATA_INICIO)
 
 
 def _formatar_data_para_input(driver: Driver, el: Any, valor_ddmmaaaa: str) -> bool:
@@ -2623,10 +2599,7 @@ def _formatar_data_para_input(driver: Driver, el: Any, valor_ddmmaaaa: str) -> b
     # Para input[type='date'], o valor aceito pelo setter é AAAA-MM-DD
     if tipo == "date":
         partes = valor_ddmmaaaa.split("/")
-        if len(partes) == 3:
-            valor_iso = f"{partes[2]}-{partes[1]}-{partes[0]}"
-        else:
-            valor_iso = valor_ddmmaaaa
+        valor_iso = f"{partes[2]}-{partes[1]}-{partes[0]}" if len(partes) == 3 else valor_ddmmaaaa
 
         # Estratégia 1: setter nativo React-friendly
         with suppress(Exception):
@@ -3419,7 +3392,6 @@ def _switch_to_apply_iframe(driver: Driver) -> bool:
         iframes = _all(driver, sel)
         for iframe in iframes:
             with suppress(Exception):
-                src = (iframe.get_attribute("src") or "").lower()
                 if "srcdoc" in (iframe.get_attribute("outerHTML") or "").lower():
                     continue
                 driver.switch_to.frame(iframe)
@@ -3459,7 +3431,7 @@ def _inserir_carta_na_revisao(driver: Driver, carta: str) -> bool:
             return True
 
     if clicou and str(clicou).startswith("ja_preenchido:"):
-        log_info(f"    Documentos de apoio já preenchidos — pulando")
+        log_info("    Documentos de apoio já preenchidos — pulando")
         return True
 
     log_info("    DOM principal sem seção — tentando via contentDocument do iframe srcdoc...")
@@ -3500,7 +3472,7 @@ def _inserir_carta_na_revisao(driver: Driver, carta: str) -> bool:
             return True
 
     if clicou2 and str(clicou2).startswith("ja_preenchido:"):
-        log_info(f"    Documentos de apoio já preenchidos (srcdoc) — pulando")
+        log_info("    Documentos de apoio já preenchidos (srcdoc) — pulando")
         return True
 
     log_info("    Tentando switch_to.frame no application-preview...")
@@ -3514,7 +3486,7 @@ def _inserir_carta_na_revisao(driver: Driver, carta: str) -> bool:
             if secao_el:
                 conteudo = secao_el.get_attribute("data-contents") or ""
                 if conteudo.lower() not in ("empty", ""):
-                    log_info(f"    Documentos já preenchidos (frame) — pulando")
+                    log_info("    Documentos já preenchidos (frame) — pulando")
                     driver.switch_to.default_content()
                     return True
 
@@ -3616,7 +3588,7 @@ def _clicar_submit_com_retry(driver: Driver, tentativas: int = 3) -> bool:
                 clicou = True
 
         if not clicou:
-            log_warn(f"  Submit: nenhuma estratégia de clique funcionou")
+            log_warn("  Submit: nenhuma estratégia de clique funcionou")
             continue
 
         esperar(3)
@@ -3954,7 +3926,7 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
                         break
                 elif etapa == "desconhecida":
                     if not clicar_continuar(driver):
-                        log_warn(f"  Etapa desconhecida e sem botão continuar — abortando")
+                        log_warn("  Etapa desconhecida e sem botão continuar — abortando")
                         break
 
             except _PerguntaFiliacaoDetectada as exc:
@@ -3976,7 +3948,7 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
                 log_ok("  ✅ Candidatura enviada (confirmação final)!")
             else:
                 resultado["status"] = "incompleto"
-                log_err(f"  Atingiu máximo de iterações sem concluir")
+                log_err("  Atingiu máximo de iterações sem concluir")
 
     except _PerguntaFiliacaoDetectada as exc:
         log_skip(f"  ⏭️  VAGA PULADA — pergunta de filiação detectada: {exc}")

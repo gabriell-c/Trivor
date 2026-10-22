@@ -32,25 +32,24 @@ VERSÃO v1.1:
     · MISTRAL_API_KEY — console.mistral.ai
 """
 
-import os
-import sys
+import contextlib
+import datetime as _dt
 import json
-import time
+import os
 import random
 import re
 import threading
-import datetime as _dt
-import urllib.request
+import time
 import urllib.error
+import urllib.request
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
+from common.browser import SESSIONS_DIR, Browser, BrowserUnavailable, find_adaptive
 from dotenv import load_dotenv
 from groq import Groq
 from playwright.sync_api import Page
-from common.browser import Browser, BrowserUnavailable, find_adaptive, SESSIONS_DIR
 
 load_dotenv()
 
@@ -149,7 +148,7 @@ USER_AGENTS = [
 
 
 def carregar_config() -> dict:
-    with open("config.yaml", "r", encoding="utf-8") as f:
+    with open("config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -232,7 +231,7 @@ class _GroqLimiteDiario(Exception):
 
 
 def _calcular_reset_groq() -> "_dt.datetime":
-    agora = _dt.datetime.now(_dt.timezone.utc)
+    agora = _dt.datetime.now(_dt.UTC)
     reset = agora.replace(hour=0, minute=0, second=10, microsecond=0)
     if reset <= agora:
         reset += _dt.timedelta(days=1)
@@ -241,7 +240,7 @@ def _calcular_reset_groq() -> "_dt.datetime":
 
 def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
     def _voltar():
-        agora  = _dt.datetime.now(_dt.timezone.utc)
+        agora  = _dt.datetime.now(_dt.UTC)
         espera = max(0, (reset_utc - agora).total_seconds()) + 15
         log(f"  [LLM] Groq volta em {int(espera / 60)}min "
             f"({reset_utc.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')} local)")
@@ -1065,35 +1064,19 @@ def etapa_perguntas_empresa(page: Page, titulo: str, descricao: str,
                     "já trabalhou", "trabalhou no", "trabalhou na", "ex-colaborador",
                     "vínculo", "vinculo", "faz parte do grupo", "grupo positivo",
                     "grupo empresarial", "pertence ao grupo",
-                ]):
-                    escolhida, texto_escolhido = _nao(opcoes_texto)
-
-                # ── Sempre "Não" — prestação de serviços ─────────────────────
-                elif any(p in pergunta_lower for p in [
+                ]) or any(p in pergunta_lower for p in [
                     "prestou serviço", "presta serviço", "prestou serviços",
                     "forma direta ou indireta", "terceirizado",
-                ]):
-                    escolhida, texto_escolhido = _nao(opcoes_texto)
-
-                # ── Sempre "Não" — cargo público / função pública ─────────────
-                elif any(p in pergunta_lower for p in [
+                ]) or any(p in pergunta_lower for p in [
                     "cargo público", "função pública", "emprego público",
                     "administração pública", "servidor público", "poder executivo",
                     "poder legislativo", "poder judiciário", "mandato",
                     "órgão público", "ente público",
-                ]):
-                    escolhida, texto_escolhido = _nao(opcoes_texto)
-
-                # ── Sempre "Não" — parentesco / relação familiar com empresa ──
-                elif any(p in pergunta_lower for p in [
+                ]) or any(p in pergunta_lower for p in [
                     "parente", "familiar", "cônjuge", "companheiro",
                     "relação de amizade", "amigo", "relacionamento",
                     "pessoa politicamente exposta",
-                ]):
-                    escolhida, texto_escolhido = _nao(opcoes_texto)
-
-                # ── Sempre "Não" — indicação ──────────────────────────────────
-                elif any(p in pergunta_lower for p in ["indicad", "recomendad", "referência"]):
+                ]) or any(p in pergunta_lower for p in ["indicad", "recomendad", "referência"]):
                     escolhida, texto_escolhido = _nao(opcoes_texto)
 
                 # ── PCD — lê do config ────────────────────────────────────────
@@ -1472,11 +1455,9 @@ def etapa_apresentacao(page: Page, titulo: str, descricao: str,
             return False
 
         esperar(page, 1)
-        try:
+        with contextlib.suppress(Exception):
             page.wait_for_selector("#dialog-save-personalization-step",
                                    state="visible", timeout=5000)
-        except Exception:
-            pass
 
         log("  ✨ Modal 'Apresente-se!' detectado, personalizando...")
 
@@ -1841,10 +1822,8 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
         resultado["status"] = f"erro: {str(e)[:100]}"
         resultado["respostas"] = respostas_salvas
     finally:
-        try:
+        with contextlib.suppress(Exception):
             nova_aba.close()
-        except Exception:
-            pass
 
     return resultado
 
@@ -1858,12 +1837,12 @@ def links_ja_candidatados_gupy() -> set:
     if not os.path.exists(arquivo):
         return set()
     try:
-        with open(arquivo, "r", encoding="utf-8") as f:
+        with open(arquivo, encoding="utf-8") as f:
             dados = json.load(f)
         # Suporta tanto lista plana quanto formato {candidaturas: [...]}
         if isinstance(dados, dict):
             dados = dados.get("candidaturas", [])
-        return set(c["link"] for c in dados if c.get("site") == "Gupy")
+        return {c["link"] for c in dados if c.get("site") == "Gupy"}
     except Exception:
         return set()
 
@@ -1874,7 +1853,7 @@ def _formatar_respostas_txt(respostas: dict) -> str:
     linhas = []
     for chave, valor in respostas.items():
         if chave == "Apresentação pessoal":
-            linhas.append(f"    ✉️  Apresentação pessoal:")
+            linhas.append("    ✉️  Apresentação pessoal:")
             for linha in str(valor).splitlines():
                 linhas.append(f"       {linha}")
         else:
@@ -1899,7 +1878,7 @@ def salvar_log(candidatura: dict):
     existentes = []
     if os.path.exists(arquivo_json):
         try:
-            with open(arquivo_json, "r", encoding="utf-8") as f:
+            with open(arquivo_json, encoding="utf-8") as f:
                 dados = json.load(f)
             # Suporta ambos os formatos
             existentes = dados.get("candidaturas", dados) if isinstance(dados, dict) else dados

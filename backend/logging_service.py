@@ -2,13 +2,12 @@
 Request Logger – registra todas as requisições de IA com métricas detalhadas.
 """
 
-import sqlite3
 import json
+import sqlite3
 import uuid
-from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-
+from pathlib import Path
+from typing import Any
 
 LOGS_DIR = Path(__file__).parent.parent / "data"
 LOGS_DB = LOGS_DIR / "requests.log.db"
@@ -49,11 +48,11 @@ def log_request(
     duration_ms: float,
     model: str,
     api_key_preview: str,
-    request_body: Optional[Dict] = None,
-    response_summary: Optional[str] = None,
-    error: Optional[str] = None,
-    extracted_text: Optional[str] = None,
-    llm_prompt: Optional[str] = None,
+    request_body: dict | None = None,
+    response_summary: str | None = None,
+    error: str | None = None,
+    extracted_text: str | None = None,
+    llm_prompt: str | None = None,
 ) -> str:
     log_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
@@ -83,9 +82,9 @@ def log_request(
 def get_logs(
     limit: int = 100,
     offset: int = 0,
-    endpoint: Optional[str] = None,
+    endpoint: str | None = None,
     error_only: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     conn = sqlite3.connect(LOGS_DB)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -108,7 +107,7 @@ def get_logs(
     return [dict(r) for r in rows]
 
 
-def get_logs_stats() -> Dict[str, Any]:
+def get_logs_stats() -> dict[str, Any]:
     conn = sqlite3.connect(LOGS_DB)
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM api_logs")

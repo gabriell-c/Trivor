@@ -2,9 +2,10 @@
 Testes de acessibilidade (a11y) — validação estrutural dos componentes React
 Foca em problemas que afetam leitores de tela e navegação por teclado.
 """
-import pytest
 import re
 from pathlib import Path
+
+import pytest
 
 _BASE = Path(__file__).parent.parent
 _FE = _BASE / "frontend" / "app"
