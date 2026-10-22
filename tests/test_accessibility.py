@@ -9,7 +9,9 @@ from pathlib import Path
 _BASE = Path(__file__).parent.parent
 _FE = _BASE / "frontend" / "app"
 
-_LINKEDIN = _FE / "linkedin" / "page.tsx"
+# As páginas /<slug> são wrappers finos (dynamic import); a heurística de
+# a11y inspeciona o módulo real da tool, não o wrapper.
+_LINKEDIN = _FE / "analise-linkedin" / "linkedin.tsx"
 _LAYOUT = _FE / "layout.tsx"
 _APP_SHELL = _FE / "components" / "AppShell.tsx"
 _LAYOUT_COMP = _FE / "components" / "Layout.tsx"
