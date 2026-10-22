@@ -12,6 +12,7 @@ interface Perfil {
   nivel_ingles: string; dias: string
   data_nascimento: string; possui_pj: boolean
   pais: string; estado_nome: string; estado_uf: string; cidade_end: string
+  logradouro: string; numero: string; complemento: string; bairro: string; cep: string
   raca_cor: string; genero: string; orientacao_sexual: string; pcd: boolean
   aceita_remoto: boolean; aceita_hibrido: boolean; aceita_presencial: boolean
   aceita_mudanca: boolean
@@ -19,8 +20,13 @@ interface Perfil {
   palavras_chave: string
   palavras_negativas: string
   nivel: string
+  tecnologias: string
   pretensao_clt: string; pretensao_pj_hora: string; pretensao_pj_mensal: string; pretensao_estagio: string
 }
+
+/* Segredos que a aba gerencia no apply/.env — mesma lista do backend
+ * (APPLY_ENV_KEYS); *_SENHA chegam mascaradas do GET. */
+type EnvApply = Record<string, string>
 
 /* Opções fixas que os bots esperam no config (Gupy casa por substring,
  * Sólides mapeia p/ valores do select, Indeed por palavra-chave). */
@@ -63,6 +69,8 @@ function paraPerfil(cfg: ApplyConfig): Perfil {
     data_nascimento: dmyParaIso(c.data_nascimento), possui_pj: !!c.possui_pj,
     pais: str(end.pais), estado_nome: str(end.estado_nome),
     estado_uf: str(end.estado_uf), cidade_end: str(end.cidade),
+    logradouro: str(end.logradouro), numero: str(end.numero),
+    complemento: str(end.complemento), bairro: str(end.bairro), cep: str(end.cep),
     raca_cor: str(div.raca_cor), genero: str(div.genero),
     orientacao_sexual: str(div.orientacao_sexual), pcd: !!div.pcd,
     aceita_remoto: !!loc.aceita_remoto, aceita_hibrido: !!loc.aceita_hibrido,
@@ -71,9 +79,23 @@ function paraPerfil(cfg: ApplyConfig): Perfil {
     palavras_chave: Array.isArray(busca.palavras_chave) ? (busca.palavras_chave as string[]).join('\n') : '',
     palavras_negativas: Array.isArray(busca.palavras_excluir) ? (busca.palavras_excluir as string[]).join('\n') : '',
     nivel: Array.isArray(busca.nivel) ? (busca.nivel as string[]).join(', ') : '',
+    tecnologias: Object.entries((cfg.tecnologias as Record<string, unknown>) ?? {})
+      .map(([nome, nv]) => `${nome}: ${str(nv)}`).join('\n'),
     pretensao_clt: str(c.pretensao_clt), pretensao_pj_hora: str(c.pretensao_pj_hora),
     pretensao_pj_mensal: str(c.pretensao_pj_mensal), pretensao_estagio: str(c.pretensao_estagio),
   }
+}
+
+/* "Python: Avançado" (uma por linha) → dict p/ o config.yaml. Linha sem
+ * "nome: nível" é descartada (o bot espera o formato nome→nível). */
+function paraTecnologias(texto: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const linha of texto.split('\n').map(l => l.trim()).filter(Boolean)) {
+    const i = linha.indexOf(':')
+    if (i <= 0) continue
+    out[linha.slice(0, i).trim()] = linha.slice(i + 1).trim()
+  }
+  return out
 }
 
 function str(v: unknown): string {
@@ -83,6 +105,8 @@ function str(v: unknown): string {
 export default function PerfilTab() {
   const [cfg, setCfg] = useState<ApplyConfig | null>(null)
   const [p, setP] = useState<Perfil | null>(null)
+  const [env, setEnv] = useState<EnvApply | null>(null)
+  const [envSujo, setEnvSujo] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [salvo, setSalvo] = useState(false)
   const [sujo, setSujo] = useState(false)
@@ -94,9 +118,11 @@ export default function PerfilTab() {
         setCfg(c)
         setP(paraPerfil(c))
         setSujo(false)
-        setErro(null)
       })
       .catch(e => setErro(e instanceof Error ? e.message : 'Falha ao carregar a config.'))
+    applyFetch<EnvApply>('/api/apply/env')
+      .then(v => { setEnv(v); setEnvSujo(false) })
+      .catch(e => setErro(e instanceof Error ? e.message : 'Falha ao carregar os segredos (.env).'))
   }
   useEffect(() => { carregar() }, [])
 
@@ -127,6 +153,8 @@ export default function PerfilTab() {
       endereco: {
         ...(cfg.endereco ?? {}),
         pais: p.pais, estado_nome: p.estado_nome, estado_uf: p.estado_uf, cidade: p.cidade_end,
+        logradouro: p.logradouro, numero: p.numero, complemento: p.complemento,
+        bairro: p.bairro, cep: p.cep,
       },
       diversidade: {
         ...(cfg.diversidade ?? {}),
@@ -139,12 +167,17 @@ export default function PerfilTab() {
         palavras_excluir: p.palavras_negativas.split("\n").map(x => x.trim()).filter(Boolean),
         nivel: p.nivel.split(",").map(x => x.trim()).filter(Boolean),
       },
+      tecnologias: paraTecnologias(p.tecnologias),
     }
 
     try {
       await applyMethod<unknown>("/api/apply/config", "PUT", novoCfg)
+      // .env só é reescrito se a UI mexeu nele (evita sobrescrever chave
+      // que o usuário editou manualmente entre o load e o save).
+      if (envSujo && env) await applyMethod<unknown>("/api/apply/env", "PUT", env)
       setSalvo(true)
       setSujo(false)
+      setEnvSujo(false)
       setErro(null)
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao salvar.")
@@ -170,6 +203,11 @@ export default function PerfilTab() {
   const set = (k: keyof Perfil, v: string | boolean) => {
     setP(prev => (prev ? { ...prev, [k]: v } : prev))
     setSujo(true)
+  }
+
+  const setEnvField = (k: string, v: string) => {
+    setEnv(prev => (prev ? { ...prev, [k]: v } : prev))
+    setEnvSujo(true)
   }
 
   return (
@@ -214,7 +252,10 @@ export default function PerfilTab() {
       </div>
 
       <div className={cardCls}>
-        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço</div>
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço</div>
+          <span className="text-[11px] text-slate-500">o bot preenche o formulário de endereço com isso</span>
+        </div>
         <div className="mt-3 grid sm:grid-cols-2 gap-3">
           <Campo label="País"><input className={inputCls} value={p.pais} onChange={e => set('pais', e.target.value)} placeholder="Brasil" /></Campo>
           <Campo label="Estado (nome)"><input className={inputCls} value={p.estado_nome} onChange={e => set('estado_nome', e.target.value)} placeholder="São Paulo" /></Campo>
@@ -224,7 +265,15 @@ export default function PerfilTab() {
             </select>
           </Campo>
           <Campo label="Cidade"><input className={inputCls} value={p.cidade_end} onChange={e => set('cidade_end', e.target.value)} placeholder="Cidade" /></Campo>
+          <Campo label="Logradouro"><input className={inputCls} value={p.logradouro} onChange={e => set('logradouro', e.target.value)} placeholder="Av. Brasil" /></Campo>
+          <Campo label="Número"><input className={inputCls} value={p.numero} onChange={e => set('numero', e.target.value)} placeholder="123 ou S/N" /></Campo>
+          <Campo label="Complemento"><input className={inputCls} value={p.complemento} onChange={e => set('complemento', e.target.value)} placeholder="Apto 42" /></Campo>
+          <Campo label="Bairro"><input className={inputCls} value={p.bairro} onChange={e => set('bairro', e.target.value)} placeholder="Centro" /></Campo>
+          <Campo label="CEP"><input className={inputCls} value={p.cep} onChange={e => set('cep', e.target.value)} placeholder="14010-000" /></Campo>
         </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Se você preencher o bloco “Endereço (.env)” abaixo, ele tem prioridade sobre estes valores nos bots.
+        </p>
       </div>
 
       <div className={cardCls}>
@@ -306,20 +355,102 @@ export default function PerfilTab() {
         </div>
       </div>
 
+      <div className={cardCls}>
+        <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Tecnologias &amp; Conhecimentos</div>
+        <div className="text-[11px] text-slate-500 mt-1">
+          usadas pelo Indeed (perguntas de experiência) e pelo Nerdin (contexto do LLM) — uma por linha, no formato <code className="text-slate-400">tecnologia: nível</code>
+        </div>
+        <div className="mt-3">
+          <Campo label="Tecnologias (nome: nível — uma por linha)">
+            <textarea
+              className={`${inputCls} h-28 font-mono text-xs`}
+              value={p.tecnologias}
+              onChange={e => set('tecnologias', e.target.value)}
+              placeholder={'Python: Pleno\nSQL: Básico\ndbt: Acadêmico'}
+            />
+          </Campo>
+        </div>
+      </div>
+
+      {env && (
+        <>
+          <div className={cardCls}>
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Documentos &amp; Filiação</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              salvos no <code className="text-slate-400">apply/.env</code> — os portais (Indeed, Gupy, Sólides) pedem isso no formulário
+            </div>
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              <Campo label="CPF"><input className={inputCls} value={env.CANDIDATO_CPF ?? ''} onChange={e => setEnvField('CANDIDATO_CPF', e.target.value)} placeholder="000.000.000-00" /></Campo>
+              <Campo label="RG"><input className={inputCls} value={env.CANDIDATO_RG ?? ''} onChange={e => setEnvField('CANDIDATO_RG', e.target.value)} placeholder="0000000-0" /></Campo>
+              <Campo label="CNH"><input className={inputCls} value={env.CANDIDATO_CNH ?? ''} onChange={e => setEnvField('CANDIDATO_CNH', e.target.value)} placeholder="000000000-0" /></Campo>
+              <Campo label="Nacionalidade">
+                <input className={inputCls} value={env.CANDIDATO_NACIONALIDADE ?? ''} onChange={e => setEnvField('CANDIDATO_NACIONALIDADE', e.target.value)} placeholder="Brasileiro" />
+              </Campo>
+              <Campo label="Nome do pai">
+                <input className={inputCls} value={env.CANDIDATO_NOME_PAI ?? ''} onChange={e => setEnvField('CANDIDATO_NOME_PAI', e.target.value)} placeholder="para a pergunta de filiação" />
+              </Campo>
+              <Campo label="Nome da mãe">
+                <input className={inputCls} value={env.CANDIDATO_NOME_MAE ?? ''} onChange={e => setEnvField('CANDIDATO_NOME_MAE', e.target.value)} placeholder="para a pergunta de filiação" />
+              </Campo>
+            </div>
+          </div>
+
+          <div className={cardCls}>
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Endereço (.env)</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              quando preenchido, tem <b className="text-slate-400">prioridade</b> sobre o bloco Endereço acima nos bots
+            </div>
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              {([['ENDERECO_LOGRADOURO', 'Logradouro'], ['ENDERECO_NUMERO', 'Número'], ['ENDERECO_COMPLEMENTO', 'Complemento'], ['ENDERECO_BAIRRO', 'Bairro'], ['ENDERECO_CEP', 'CEP'], ['ENDERECO_CIDADE', 'Cidade'], ['ENDERECO_ESTADO', 'Estado']] as const)
+                .map(([k, rotulo]) => (
+                  <Campo key={k} label={rotulo}>
+                    <input className={inputCls} value={env[k] ?? ''} onChange={e => setEnvField(k, e.target.value)} />
+                  </Campo>
+                ))}
+            </div>
+          </div>
+
+          <div className={cardCls}>
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Credenciais dos Portais</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              salvos no <code className="text-slate-400">apply/.env</code> para o bot logar sozinho — senha aparece mascarada;
+              para trocar, digite a nova completa; sem mexer na senha, ela não é reescrita
+            </div>
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              {([['gupy', 'Gupy'], ['infojobs', 'InfoJobs'], ['nerdin', 'Nerdin'], ['solides', 'Sólides']] as const)
+                .map(([nome, rotulo]) => (
+                  <div key={nome} className="rounded-xl border border-slate-800 p-3 space-y-2.5">
+                    <div className="text-xs font-semibold text-slate-300">{rotulo}</div>
+                    <Campo label="E-mail">
+                      <input type="email" className={inputCls} value={env[`${nome}_EMAIL`.toUpperCase()] ?? ''}
+                        onChange={e => setEnvField(`${nome}_EMAIL`.toUpperCase(), e.target.value)} />
+                    </Campo>
+                    <Campo label="Senha">
+                      <input type="password" className={inputCls} value={env[`${nome}_SENHA`.toUpperCase()] ?? ''}
+                        onChange={e => setEnvField(`${nome}_SENHA`.toUpperCase(), e.target.value)}
+                        placeholder="•••• (mascarada — para manter, não mexa)" />
+                    </Campo>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
         <button onClick={salvar} disabled={salvando} className={btnPrimary}>
           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
           Salvar perfil
         </button>
-        {sujo && (
-          <button onClick={() => { setSujo(false); setSalvo(false); carregar() }}
+        {(sujo || envSujo) && (
+          <button onClick={() => { setSujo(false); setEnvSujo(false); setSalvo(false); carregar() }}
             disabled={salvando}
             className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800/50 transition-colors">
             Descartar alterações
           </button>
         )}
         {salvo && <span className="text-xs text-emerald-300">Salvo — os próximos bots já usam esses dados.</span>}
-        {sujo && !salvo && <span className="text-xs text-amber-300">Alterações não salvas</span>}
+        {(sujo || envSujo) && !salvo && <span className="text-xs text-amber-300">Alterações não salvas</span>}
         {erro && p && <span className="text-xs text-rose-300">{erro}</span>}
       </div>
     </div>
