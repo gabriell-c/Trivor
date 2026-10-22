@@ -31,6 +31,9 @@ def fake_apply(tmp_path, monkeypatch):
     (apply_dir / 'common').mkdir()
     with open(llm_real, encoding='utf-8') as f:
         (apply_dir / 'common' / 'llm.py').write_text(f.read(), encoding='utf-8')
+    perfil_real = os.path.join(ROOT, 'apply', 'common', 'perfil.py')
+    with open(perfil_real, encoding='utf-8') as f:
+        (apply_dir / 'common' / 'perfil.py').write_text(f.read(), encoding='utf-8')
     monkeypatch.setenv('APPLY_DIR', str(apply_dir))
     return apply_dir
 
@@ -49,6 +52,24 @@ def test_config_roundtrip(fake_apply):
 def test_save_config_rejeita_nao_dict(fake_apply):
     with pytest.raises(ad.ApplyAdminError):
         ad.save_config(['lista'])
+
+
+def test_perfil_contexto_secoes_e_senhas(fake_apply):
+    """O bloco que a IA dos bots enxerga: config + documentos do .env entram,
+    senhas NUNCA entram."""
+    cfg = {'candidato': {'nome': 'Ana', 'sobre': 'dev júnior'},
+           'busca': {'palavras_excluir': ['java']}}
+    ad.save_config(cfg)
+    (fake_apply / '.env').write_text(
+        'CANDIDATO_CPF="11122233344"\nGUPY_SENHA="segredo"\n', encoding='utf-8')
+    out = ad.perfil_contexto()
+    texto = out['texto']
+    assert 'Ana' in texto
+    assert 'dev júnior' in texto          # campo novo (sobre) entra no contexto
+    assert 'LISTA DE EXCLUSÕES' in texto
+    assert 'java' in texto
+    assert '11122233344' in texto          # documento do .env entra
+    assert 'segredo' not in texto          # senha nunca entra
 
 
 # ── IA ───────────────────────────────────────────────────────────────────────

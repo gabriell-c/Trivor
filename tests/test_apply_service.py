@@ -40,6 +40,11 @@ def apply_dir(tmp_path, monkeypatch):
     d = tmp_path / "apply"
     (d / "relatorio").mkdir(parents=True)
     (d / "relatorio" / "candidaturas.json").write_text(json.dumps(SAMPLE), encoding="utf-8")
+    # o endpoint /api/apply/perfil-contexto importa apply/common/perfil.py
+    # direto do arquivo (o __init__ do pacote puxa browser — não cabe no backend)
+    (d / "common").mkdir()
+    perfil_real = Path(__file__).parent.parent / "apply" / "common" / "perfil.py"
+    (d / "common" / "perfil.py").write_text(perfil_real.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setenv("APPLY_DIR", str(d))
     return d
 
@@ -172,6 +177,23 @@ class TestApplyEndpoints:
         body = r.json()
         assert body["available"] is True
         assert body["total"] == 5
+
+    def test_perfil_contexto_endpoint(self, client, apply_dir):
+        """O bloco que a IA dos bots recebe: config + documentos do .env
+        entram; senhas NUNCA entram."""
+        (apply_dir / "config.yaml").write_text(
+            "candidato:\n  nome: Ana\nbusca:\n  palavras_excluir:\n  - java\n",
+            encoding="utf-8")
+        (apply_dir / ".env").write_text(
+            'CANDIDATO_CPF="11122233344"\nGUPY_SENHA="segredo"\n', encoding="utf-8")
+        r = client.get("/api/apply/perfil-contexto")
+        assert r.status_code == 200
+        texto = r.json()["texto"]
+        assert "Ana" in texto
+        assert "LISTA DE EXCLUSÕES" in texto
+        assert "java" in texto
+        assert "11122233344" in texto      # documento do .env entra
+        assert "segredo" not in texto       # senha nunca entra
 
     def test_overview_unavailable_is_200_with_flag(self, client, no_apply):
         r = client.get("/api/apply/overview")

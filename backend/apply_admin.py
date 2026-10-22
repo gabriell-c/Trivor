@@ -163,6 +163,31 @@ def save_env(payload: dict) -> dict:
     return load_env()
 
 
+#  PERFIL — o contexto que a IA dos bots enxerga (apply/common/perfil.py)
+
+def _perfil_module():
+    """Carrega apply/common/perfil.py direto do arquivo: o __init__ do
+    pacote `common` puxa a camada de browser e não cabe no backend."""
+    spec = importlib.util.spec_from_file_location(
+        'apply_perfil', _apply_dir() / 'common' / 'perfil.py')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def perfil_contexto() -> dict:
+    """O exato bloco de texto que os 5 bots injetam nos prompts dos LLMs.
+
+    Deixa o usuário conferir no Trivor o que a IA enxerga (aba Perfil →
+    "Ver o contexto da IA"). .env entra só com as chaves liberadas,
+    excluindo segredos; o módulo `perfil` ignora qualquer outra chave."""
+    mod = _perfil_module()
+    cfg = load_config()
+    env = {k: v for k, v in _env_atual().items()
+           if k in mod.ENV_DOC_KEYS or k.startswith('ENDERECO_')}
+    return {'texto': mod.contexto_perfil(cfg, env=env)}
+
+
 #  IA — provedores (config.yaml → ia)
 
 def _ia() -> dict:

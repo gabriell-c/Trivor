@@ -168,6 +168,13 @@ async def api_apply_env_put(request: Request):
     return _admin_handler(apply_admin.save_env, payload)
 
 
+@router.get('/api/apply/perfil-contexto')
+def api_apply_perfil_contexto():
+    """O bloco de contexto que a IA dos bots recebe — a aba Perfil mostra isso
+    para o usuário conferir exatamente o que os LLMs enxergam."""
+    return _admin_handler(apply_admin.perfil_contexto)
+
+
 @router.get('/api/apply/ia')
 def api_apply_ia_list():
     return _admin_handler(apply_admin.ia_list)
