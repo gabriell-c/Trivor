@@ -276,7 +276,7 @@ export default function MarketIntelligencePage() {
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2">Palavras-chave Negativas (excluir vagas)</label>
             <TagInput value={negativeKeywords} onChange={setNegativeKeywords} placeholder="Ex: java, intern, estágio (Enter ou vírgula)" className="w-full" />
-            <p className="text-[12px] text-slate-600 mt-1">Vagas que contiverem essas palavras serão excluídas da análise.</p>
+            <p className="text-[12px] text-slate-500 mt-1">Vagas que contiverem essas palavras serão excluídas da análise.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -310,7 +310,7 @@ export default function MarketIntelligencePage() {
                   🌍 Internacional
                 </button>
               </div>
-              <p className="text-[12px] text-slate-600 mt-1">
+              <p className="text-[12px] text-slate-500 mt-1">
                 {isInternational ? 'Vagas em inglês, dólar/euro, exterior.' : 'Vagas em português, real, Brasil.'}
               </p>
             </div>
@@ -437,12 +437,12 @@ export default function MarketIntelligencePage() {
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Pré-filtradas</p>
               <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.pre_filtered_count}</p>
-              <p className="text-[12px] text-slate-600 mt-0.5">analisadas pela IA</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">analisadas pela IA</p>
             </div>
             <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <p className="text-[12px] text-slate-500 uppercase font-bold tracking-wider">Descartadas</p>
               <p className="text-2xl font-black text-slate-500 mt-1">{R.summary.discarded_jobs}</p>
-              <p className="text-[12px] text-slate-600 mt-0.5">pela IA</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">pela IA</p>
             </div>
 
             {/* Rejection reasons removed from summary tab */}
@@ -460,7 +460,7 @@ export default function MarketIntelligencePage() {
                     <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
                   <span className="text-xs text-slate-400 w-16 text-right">{tech.percentage}%</span>
-                  <span className="text-xs text-slate-600 w-12 text-right">{tech.count}</span>
+                  <span className="text-xs text-slate-500 w-12 text-right">{tech.count}</span>
                 </div>
               ))}
               {R.statistics.required_technologies.length === 0 && <p className="text-xs text-slate-500">Nenhuma habilidade obrigatória extraída.</p>}
@@ -492,7 +492,7 @@ export default function MarketIntelligencePage() {
                     <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500" style={{ width: `${Math.min(tech.percentage, 100)}%` }} />
                   </div>
                   <span className="text-xs text-slate-400 w-16 text-right">{tech.percentage}%</span>
-                  <span className="text-xs text-slate-600 w-12 text-right">{tech.count}</span>
+                  <span className="text-xs text-slate-500 w-12 text-right">{tech.count}</span>
                 </div>
               ))}
               {R.statistics.desirable_technologies.length === 0 && <p className="text-xs text-slate-500">Nenhuma habilidade diferenciada extraída.</p>}
@@ -726,7 +726,7 @@ export default function MarketIntelligencePage() {
                           <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{job.company}</span>
                           <span className="flex items-center gap-1"><MapPinIcon className="w-3 h-3" />{job.location}</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.modality}</span>
-                          <span className="text-slate-600">· {job.source}</span>
+                          <span className="text-slate-500">· {job.source}</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {job.requirements.slice(0, 4).map(t => (
@@ -776,7 +776,7 @@ export default function MarketIntelligencePage() {
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.requirements.length > 0 ? job.requirements.map(t => (
                                         <span key={t} className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[12px] text-emerald-400">{t}</span>
-                                      )) : <span className="text-[12px] text-slate-600">—</span>}
+                                      )) : <span className="text-[12px] text-slate-500">—</span>}
                                     </div>
                                   </div>
                                   <div>
@@ -784,7 +784,7 @@ export default function MarketIntelligencePage() {
                                     <div className="flex flex-wrap gap-1.5">
                                       {job.nice_to_have.length > 0 ? job.nice_to_have.map(t => (
                                         <span key={t} className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400">{t}</span>
-                                      )) : <span className="text-[12px] text-slate-600">—</span>}
+                                      )) : <span className="text-[12px] text-slate-500">—</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -887,7 +887,7 @@ export default function MarketIntelligencePage() {
       {activeTab === 'results' && !result && (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-10 text-center space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto">
-            <BarChart3 className="w-8 h-8 text-slate-600" />
+            <BarChart3 className="w-8 h-8 text-slate-500" />
           </div>
           <div>
             <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
@@ -898,7 +898,7 @@ export default function MarketIntelligencePage() {
       {activeTab === 'jobs' && !result && (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-10 text-center space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto">
-            <Briefcase className="w-8 h-8 text-slate-600" />
+            <Briefcase className="w-8 h-8 text-slate-500" />
           </div>
           <div>
             <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
@@ -961,11 +961,11 @@ export default function MarketIntelligencePage() {
                     <div className="flex flex-wrap gap-2">
                       {fitResult.faltantes_topicos.slice(0, 8).map((t, i) => (
                         <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-rose-500/10 text-rose-300 border border-rose-500/20">
-                          {t.termo} <span className="text-rose-400/60">({t.em_quantas_vagas})</span>
+                          {t.termo} <span className="text-rose-400/72">({t.em_quantas_vagas})</span>
                         </span>
                       ))}
                     </div>
-                    <p className="text-[12px] text-slate-600 mt-1.5">Número entre parênteses: quantas vagas do top exigem esse item.</p>
+                    <p className="text-[12px] text-slate-500 mt-1.5">Número entre parênteses: quantas vagas do top exigem esse item.</p>
                   </div>
                 )}
               </div>

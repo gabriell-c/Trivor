@@ -299,7 +299,7 @@ export default function CandidaturasPage() {
                               transition={{ duration: 0.15, delay: Math.min(i, 8) * 0.02 }}
                               className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
                               <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
-                                {r.data || '—'}{r.horario && <span className="ml-1.5 text-[13px] text-slate-600">{r.horario}</span>}
+                                {r.data || '—'}{r.horario && <span className="ml-1.5 text-[13px] text-slate-500">{r.horario}</span>}
                               </td>
                               <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{r.site || '—'}</td>
                               <td className="px-4 py-3 min-w-45">

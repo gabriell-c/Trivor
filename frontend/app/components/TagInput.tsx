@@ -57,7 +57,7 @@ export function TagInput({ value, onChange, placeholder = 'Digite e pressione En
         />
       </div>
       {value.length > 0 && (
-        <p className="text-[12px] text-slate-600 mt-1">
+        <p className="text-[12px] text-slate-500 mt-1">
           Pressione Enter ou vírgula para adicionar · Backspace para remover
         </p>
       )}

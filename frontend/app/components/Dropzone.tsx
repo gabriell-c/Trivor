@@ -140,7 +140,7 @@ export function Dropzone({ accept = '.pdf,.docx,.doc', maxSizeMB = 10, onFileSel
               <p className="text-sm font-medium text-slate-400">
                 {isDragging ? 'Solte o arquivo aqui' : 'Arraste e solte ou clique'}
               </p>
-              <p className="text-[12px] text-slate-600 mt-0.5">PDF, DOCX ou DOC — até {maxSizeMB}MB</p>
+              <p className="text-[12px] text-slate-500 mt-0.5">PDF, DOCX ou DOC — até {maxSizeMB}MB</p>
             </div>
           </>
         )}
