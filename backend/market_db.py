@@ -11,6 +11,12 @@ from pathlib import Path
 
 from market_log import logger
 
+# Path do banco de mercado (definido no main.py antes da divisão; mesmo
+# valor — backend/market.db). Morar aqui permite as rotas acessarem por
+# market_db.DB_FILE (leitura de atributo em tempo de chamada), para os
+# testes apontarem o DB via monkeypatch em um único alvo.
+DB_FILE = Path(__file__).parent / "market.db"
+
 DB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS market_raw_jobs (
     id TEXT PRIMARY KEY,

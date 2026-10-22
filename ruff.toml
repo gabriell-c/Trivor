@@ -23,7 +23,10 @@ ignore = [
 [lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["S101", "PLR2004"]
+# Handlers de rota têm 5+ parâmetros de form (api_key/api_url/model_name/
+# provider_id + campos de negócio); o limite de 5 é regra, não estilo.
 "**/main.py" = ["PLR0913"]
+"**/*_routes.py" = ["PLR0913"]
 
 [lint.isort]
 known-first-party = ["backend"]

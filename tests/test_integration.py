@@ -187,7 +187,7 @@ class TestAnalyzeCV:
         # do desenvolvedor (TRIVOR_IAS / OPENAI_API_KEY no .env).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("main._get_provider_for_tool", return_value=None),
+            patch("cv_routes._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/analyze",
@@ -291,8 +291,8 @@ class TestAnalyzeCVTwoPasses:
 
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "sk-teste-1234567890", "TRIVOR_IAS": "[]"}),
-            patch("main._extract_cv_text", return_value=(cv_text, "mock", False)),
-            patch("main.OpenAI") as mock_openai,
+            patch("cv_routes._extract_cv_text", return_value=(cv_text, "mock", False)),
+            patch("cv_routes.OpenAI") as mock_openai,
         ):
             mock_openai.return_value.chat.completions.create.side_effect = [
                 _FakeLLMResponse(passo1, 100, 200),
@@ -506,7 +506,7 @@ class TestMarketCvFit:
         import market_service
         db = tmp_path / "market_fit.db"
         market_service.init_market_db(db)
-        monkeypatch.setattr("main.DB_FILE", db)
+        monkeypatch.setattr("market_db.DB_FILE", db)
         conn = sqlite3.connect(db)
         conn.execute("""
             INSERT INTO market_jobs (id, raw_job_id, title, company, location, modality, source, source_url, is_relevant, requirements, nice_to_have)
@@ -530,7 +530,7 @@ class TestMarketCvFit:
         import market_service
         db = tmp_path / "market_fit_empty.db"
         market_service.init_market_db(db)
-        monkeypatch.setattr("main.DB_FILE", db)
+        monkeypatch.setattr("market_db.DB_FILE", db)
         r = client.post(
             "/api/market/cv-fit",
             files={"cv_file": ("cv.txt", b"Texto do curriuclo", "text/plain")},
@@ -573,7 +573,7 @@ class TestJSearchNoPlaintext:
         import market_service
         db = tmp_path / "jsearch_no_plaintext.db"
         market_service.init_market_db(db)
-        monkeypatch.setattr("main.DB_FILE", db)
+        monkeypatch.setattr("market_db.DB_FILE", db)
         return db
 
     def test_new_schema_has_no_api_key_column(self, isolated_db):
@@ -718,7 +718,7 @@ class TestSemanticFitEndpoint:
         # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("main._get_provider_for_tool", return_value=None),
+            patch("llm_core._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/semantic-fit",
@@ -877,7 +877,7 @@ class TestRecruiterSimEndpoint:
         # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("main._get_provider_for_tool", return_value=None),
+            patch("llm_core._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/recruiter-sim",
@@ -953,7 +953,7 @@ class TestCoverLetterEndpoint:
         # Sem provider no ambiente nem OPENAI_API_KEY → 400 (e não 500).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("main._get_provider_for_tool", return_value=None),
+            patch("llm_core._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/cover-letter",
@@ -1077,7 +1077,7 @@ class TestCVDiffEndpoint:
         # a chamada LLM não pode ser feita).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("main._get_provider_for_tool", return_value=None),
+            patch("llm_core._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/diff",
@@ -1185,14 +1185,15 @@ class TestLoadDotenv:
 
     def test_load_dotenv_called_before_first_key_read(self):
         """Guarda de regressão: a chamada load_dotenv() deve vir ANTES da
-        primeira leitura de os.getenv("OPENAI_API_KEY") do main."""
+        primeira import de módulo de rota no main (os *_routes.py são onde
+        os.getenv("OPENAI_API_KEY") roda em tempo de request)."""
         from pathlib import Path
 
         import main
         src = Path(main.__file__).read_text(encoding="utf-8")
         load_idx = src.index("load_dotenv(")
-        key_idx = src.index('os.getenv("OPENAI_API_KEY"')
-        assert load_idx < key_idx
+        routes_idx = src.index("from cv_routes import")
+        assert load_idx < routes_idx
 
     def test_load_dotenv_mechanism(self, tmp_path, monkeypatch):
         """python-dotenv carrega .env para o os.environ; variável já definida
@@ -1392,7 +1393,7 @@ class TestConnectionPingEndpoint:
     def test_success_returns_latency_and_usage(self, client):
         fake_client = MagicMock()
         fake_client.chat.completions.create.return_value = _FakePingResponse()
-        with patch("main.OpenAI", return_value=fake_client):
+        with patch("ia_routes.OpenAI", return_value=fake_client):
             r = client.post(
                 "/api/test-connection",
                 data={
@@ -1423,7 +1424,7 @@ class TestConnectionPingEndpoint:
         fake_client.chat.completions.create.side_effect = Exception(
             "Authentication failed for sk-fake-test-key-12345: invalid token"
         )
-        with patch("main.OpenAI", return_value=fake_client):
+        with patch("ia_routes.OpenAI", return_value=fake_client):
             r = client.post(
                 "/api/test-connection",
                 data={"api_key": "sk-fake-test-key-12345", "model_name": "gpt-4o"},
@@ -1437,7 +1438,7 @@ class TestConnectionPingEndpoint:
         # Contrato de custo mínimo: max_tokens=1 e prompt fixo curto.
         fake_client = MagicMock()
         fake_client.chat.completions.create.return_value = _FakePingResponse()
-        with patch("main.OpenAI", return_value=fake_client):
+        with patch("ia_routes.OpenAI", return_value=fake_client):
             client.post(
                 "/api/test-connection",
                 data={"api_key": "sk-x", "model_name": "gpt-4o"},

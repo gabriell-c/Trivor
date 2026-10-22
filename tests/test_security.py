@@ -171,6 +171,6 @@ class TestJSearchSsrf:
     então não há SSRF nem URL injection pelo usuário."""
 
     def test_test_key_url_is_hardcoded(self):
-        src = (BACKEND_DIR / "main.py").read_text(encoding="utf-8")
+        src = (BACKEND_DIR / "jsearch_routes.py").read_text(encoding="utf-8")
         assert "api.openwebninja.com/jsearch/search-v2?query={query}" in src
         assert 'urllib.parse.quote_plus("test")' in src
