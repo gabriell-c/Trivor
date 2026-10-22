@@ -2,14 +2,16 @@
 Testes de carga/estresse leve para a API do backend.
 Usa threads assíncronas para simular requisições concorrentes.
 """
-import pytest
-import requests
+import os
 import threading
 import time
-import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-BASE = "http://127.0.0.1:8000"
+import pytest
+import requests
+
+# TRIVOR_TEST_BASE aponta pra uma instância isolada (ex.: 8123) — o padrão
+# 8000 é a instância de dev do usuário.
+BASE = os.environ.get("TRIVOR_TEST_BASE", "http://127.0.0.1:8000")
 
 SAMPLE_TEXT = """Engenheiro de software backend com 9 anos de experiência.
 Nos últimos anos, criei serviços do zero que atenderam dezenas de milhares
