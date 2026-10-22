@@ -37,6 +37,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
+from common import perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -47,71 +48,11 @@ load_dotenv()
 #  PERFIL DO CANDIDATO
 # ══════════════════════════════════════════════════════════════════════════════
 
-PERFIL_CANDIDATO = """
-Nome: (candidato — definido em apply/config.yaml)
-Localização: (cidade/UF — config.yaml → cidade_uf)
-Contato: (telefone/email do candidato — config.yaml)
-LinkedIn: (perfil do candidato — config.yaml)
-GitHub: (perfil do candidato — config.yaml)
-Portfólio: (site do candidato — config.yaml)
-Formação: Engenharia de Software (EAD) — Estácio de Sá, cursando desde fev/2026 (1º semestre)
-Nível: Júnior (freelancer desde novembro/2022, ~3 anos de experiência real)
-Inglês: básico (leitura técnica)
-Disponibilidade: imediata
-Modelo: aceita remoto, híbrido e presencial
-CNH: NÃO possui CNH
-PCD: NÃO é PCD
-
-RESUMO PROFISSIONAL:
-Desenvolvedor Full Stack com experiência sólida em Python, Django e React. Especialista em APIs RESTful
-escaláveis, autenticação JWT, integração frontend e backend e automação com IA (NLP, LLMs). Proficiente
-em MySQL, Git e GitHub, com foco em performance, segurança e arquitetura robusta. Freelancer desde 2022
-desenvolvendo soluções backend completas. Em projetos reais, implementei sistemas que automatizaram até
-80% do atendimento, aumentaram a precisão de respostas com IA em 40% e reduziram erros em 30%.
-
-HABILIDADES TÉCNICAS:
-- Python: sólido (desde 2022) — Django, Django REST Framework, Flask, automações, chatbots, NLP, LLMs
-- PHP: sólido (desde 2022) — sistemas web, APIs RESTful, integração com banco de dados
-- JavaScript: sólido (desde 2022) — React, TypeScript, lógica, DOM, consumo de APIs
-- HTML/CSS: sólido — interfaces responsivas, Tailwind CSS, Bootstrap
-- MySQL: sólido — modelagem, consultas, integração com sistemas web
-- PostgreSQL: uso básico/intermediário
-- Git/GitHub: versionamento, boas práticas
-- Docker: uso básico, containerização de aplicações
-- Autenticação JWT: implementada em projetos reais
-- Chart.js: dashboards e gráficos interativos
-- NumPy, Pandas: processamento de dados
-
-EXPERIÊNCIA:
-- Desenvolvedor Freelancer desde novembro/2022 (~3 anos)
-  · Atuação: desenvolvimento web, APIs, automações, chatbots com IA
-  · Nunca teve emprego CLT formal — toda experiência é freelancer/autônomo
-  · Experiência na área de informática/desenvolvimento de sistemas: ~3 anos
-
-PROJETOS:
-1. Chatbot com IA (Python, Django, MySQL, Groq, LLMs)
-   - Automatizou 80% do atendimento com IA
-   - Usou NLP e LLMs para aumentar precisão em 40%
-   - Recomendações de produtos, consumo de APIs, cálculo de frete
-   - Código limpo, metodologias ágeis, redução de erros em 30%
-
-2. GoMoney — Sistema Financeiro (React, PHP, MySQL, Chart.js, Tailwind CSS, Docker, JWT)
-   - Web app de gestão financeira completa
-   - Autenticação JWT e CRUD completo
-   - Painéis gráficos dinâmicos com filtros avançados
-   - Containerizado via Docker
-
-3. Artuniverse — Rede Social (PHP, MySQL, Python, Tailwind CSS, JavaScript)
-   - Plataforma com gerenciamento de usuários, postagens e sistema de amizades
-
-4. API RESTful E-commerce (Python, Django, Django REST, MySQL, JWT)
-5. E-commerce Frontend (React, Tailwind CSS, JWT, Material UI)
-
-CERTIFICAÇÕES:
-HTML5, CSS3, JavaScript, GIT/GitHub, SQL, Bootstrap, TypeScript, PHP
-PHP avançado com banco de dados (B7Web)
-Desenvolvimento em Python com Django (Django Master)
-"""
+def _perfil_ctx(config: dict) -> str:
+    """Contexto completo do candidato (common/perfil.py) — substitui o bloco
+    estático antigo: a IA vê tudo que o usuário mantém na aba Perfil do Trivor
+    (config.yaml + .env), com a lista de exclusões e regras de resposta."""
+    return perfil.contexto_perfil(config)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -319,8 +260,8 @@ def _escolher_opcao_multipla_escolha(pergunta: str, opcoes: list[dict], config: 
     )
     prompt = f"""Você está respondendo uma pergunta de processo seletivo em nome de um candidato.
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (responda SOMENTE com base nele; a lista de exclusões vale):
+{_perfil_ctx(config)}
 
 PERGUNTA:
 {pergunta}
@@ -332,12 +273,10 @@ INSTRUÇÕES:
 - Escolha a opção que melhor representa o candidato com base no perfil acima
 - Responda APENAS com o número da opção (ex: "3")
 - Não escreva mais nada além do número
-- Se a pergunta pedir formação, o candidato está cursando Engenharia de Software (1º semestre)
-- Se pedir experiência na área de TI/informática/desenvolvimento, ele tem ~3 anos (desde nov/2022)
-- Se pedir sobre CNH, ele NÃO possui CNH — escolha "não possuo" ou equivalente
+- Formação, experiência, CNH, habilitação, senioridade → use SOMENTE o perfil acima
+  (itens da lista de exclusões → escolha a opção que nega experiência: "Nenhum", "Não", "0 anos")
 - Se pedir se já trabalhou na empresa, escolha "Não"
 - Se pedir confirmação/concordância (ex: "li e concordo"), escolha essa opção
-- Se pedir habilitação, escolha "Não possuo habilitação válida"
 
 Número da opção escolhida:"""
 
@@ -539,8 +478,8 @@ def responder_killer_questions(page: Page, config: dict) -> tuple[bool, dict]:
                     if not resposta_str:
                         prompt = f"""Responda APENAS com "Sim" ou "Não" (sem aspas, sem mais nada).
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (responda SOMENTE com base nele; a lista de exclusões vale):
+{_perfil_ctx(config)}
 
 PERGUNTA: {pergunta}
 
@@ -714,8 +653,8 @@ def responder_pergunta_aberta(pergunta: str, config: dict) -> str:
 
     prompt = f"""Você vai responder uma pergunta de processo seletivo em nome de um candidato de TI júnior.
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (responda SOMENTE com base nele; a lista de exclusões vale):
+{_perfil_ctx(config)}
 
 PERGUNTA:
 {pergunta}
@@ -814,8 +753,8 @@ def _fallback_local_carta(titulo: str, descricao: str) -> str:
 def gerar_carta_apresentacao(titulo: str, descricao: str, config: dict) -> str:
     prompt = f"""Escreva uma carta de apresentação para uma candidatura de emprego.
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (responda SOMENTE com base nele; a lista de exclusões vale):
+{_perfil_ctx(config)}
 
 VAGA:
 Título: {titulo}

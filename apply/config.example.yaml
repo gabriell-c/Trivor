@@ -17,6 +17,21 @@ candidato:
   pretensao_pj_mensal: "4500"
   pretensao_estagio: "1600"
   data_nascimento: "01/01/2000"
+  # ── Formação & experiência (a IA usa nas perguntas abertas dos portais) ──
+  formacao:
+    curso: "Engenharia de Software"
+    instituicao: "Nome da instituição"
+    ano_conclusao: "2026"
+    situacao: "Cursando"
+  certificacoes:
+    - "Nome da certificação: 2024"
+  experiencia:
+    - "O que fez (cargo/autônomo/projeto): 2022-2024"
+  idiomas:
+    - "Espanhol: Básico"
+  sobre: "Sua trajetória em 1-2 frases — para perguntas abertas como 'fale sobre você'."
+  inicio: "Imediata"
+  horas_semana: "40"
 
 endereco:
   pais: "Brasil"

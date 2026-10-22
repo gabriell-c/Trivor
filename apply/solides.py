@@ -54,6 +54,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import perfil
 from dotenv import load_dotenv
 from groq import Groq
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -139,15 +140,6 @@ def scroll_humano(page: Page) -> None:
 def horario_ok() -> bool:
     return 5 <= datetime.now(TZ).hour <= 23
 
-
-def _calcular_idade() -> int:
-    n = datetime.strptime(CANDIDATO["data_nascimento"], "%d/%m/%Y")
-    h = datetime.now()
-    return h.year - n.year - ((h.month, h.day) < (n.month, n.day))
-
-IDADE = _calcular_idade()
-
-
 # ═══════════════════════════════════════════════════════════════
 #  GROQ — LLM
 # ═══════════════════════════════════════════════════════════════
@@ -197,82 +189,27 @@ def _chamar_huggingface(prompt: str, max_tokens: int = 300, temperature: float =
 #  PERFIL COMPLETO DO CANDIDATO (para o LLM)
 # ═══════════════════════════════════════════════════════════════
 
-PERFIL_COMPLETO = f"""
-CANDIDATO: {CANDIDATO['nome']}
-IDADE: {IDADE} anos
-CIDADE: {CANDIDATO.get('cidade_uf', 'Ribeirão Preto - SP')}
-EMAIL: {CANDIDATO['email']}
-TELEFONE: {CANDIDATO['telefone']}
-LINKEDIN: {CANDIDATO['linkedin']}
-GITHUB: {CANDIDATO['github']}
-PORTFOLIO: {CANDIDATO.get('portfolio', '')}
-DATA NASCIMENTO: {CANDIDATO['data_nascimento']}
-CPF: {_DOC_CPF}
+def _perfil_extras_solides() -> str:
+    """O que o contexto comum não cobre: valores dos select do site Sólides.
+    O resto (identidade, formação, experiências, exclusões, pretensões) vem
+    do perfil completo — common/perfil.py — editado na aba Perfil do Trivor."""
+    pcd = DIVERSIDADE.get("pcd")
+    ind = str(DIVERSIDADE.get("indicacao") or "").lower()
+    return (
+        "── EXTRAS SÓLIDES (valores dos select do site) ──\n"
+        f"Gênero: {DIVERSIDADE.get('genero', 'Homem cisgênero')} → valor select: cisgenero\n"
+        f"Orientação sexual: {DIVERSIDADE.get('orientacao_sexual', 'Heterossexual')} → valor: heterossexual\n"
+        "Sexo: Masculino → valor select: male\n"
+        f"PCD: {'SIM' if pcd else 'NÃO'}\n"
+        f"Indicado: {'SIM' if ind and 'espont' not in ind else 'NÃO'}\n"
+        "Instagram: https://www.instagram.com/gabri3l.cardoso"
+    )
 
-FORMAÇÃO:
-- Engenharia de Software (cursando, 1º semestre) — Estácio de Sá (EAD)
-- Previsão de conclusão: 2029
-- NÃO tem ensino superior completo ainda (está no 1º semestre)
 
-EXPERIÊNCIA:
-- Desenvolvedor Web Freelancer desde novembro/2022 (~2-3 anos)
-- NUNCA teve emprego CLT formal
-- Empresa atual: Autônomo / Freelancer
-
-TECNOLOGIAS (nível real):
-- Python: avançado/intermediário (2-3 anos, Django, DRF, Flask, automações, IA/NLP)
-- PHP: avançado (2-3 anos, APIs RESTful, sistemas web)
-- JavaScript: avançado (2-3 anos, lógica, DOM, consumo de APIs)
-- React: intermediário (2-3 anos, frontend moderno)
-- HTML: avançado (certificação B7Web)
-- CSS: avançado (certificação B7Web, Tailwind, Bootstrap)
-- MySQL: avançado (2-3 anos, modelagem, queries)
-- PostgreSQL: básico/intermediário (uso em projetos)
-- Docker: básico (containerização)
-- TypeScript: básico
-- Flask: básico/intermediário
-- Django REST Framework: intermediário
-- NumPy: básico
-- Pandas: básico
-- Bootstrap: avançado
-- Tailwind CSS: avançado
-- API REST: avançado
-- Git/GitHub: avançado
-- Windows: avançado
-
-CONHECIMENTOS IMPLÍCITOS (desenvolvedor web full stack):
-- Performance de sites: avançado (desenvolvimento web)
-- Segurança de sites: intermediário/avançado
-- WordPress (plugins/temas PHP): intermediário (tem base PHP sólida)
-- SEO básico: básico/intermediário
-
-NÃO POSSUI:
-- .NET / C# / C++: nenhum
-- Java / Spring: nenhum
-- Mobile (iOS/Android/Flutter/Kotlin): nenhum
-- Ensino superior completo: NÃO (está no 1º semestre)
-
-IDIOMAS:
-- Português: nativo
-- Inglês: básico
-- Espanhol: básico
-- Outros: nenhum
-
-PRETENSÃO SALARIAL:
-- CLT: R$ {CANDIDATO.get('pretensao_clt', '3000')}/mês
-- PJ/hora: R$ {CANDIDATO.get('pretensao_pj_hora', '22')}/hora
-- PJ/mensal: R$ {CANDIDATO.get('pretensao_pj_mensal', '4500')}/mês
-- Estágio: R$ {CANDIDATO.get('pretensao_estagio', '1600')}/mês
-
-DIVERSIDADE:
-- Raça/Cor: {DIVERSIDADE.get('raca_cor', 'Pardo')}
-- Gênero: {DIVERSIDADE.get('genero', 'Homem cisgênero')} → valor select: cisgenero
-- Orientação sexual: {DIVERSIDADE.get('orientacao_sexual', 'Heterossexual')} → valor: heterossexual
-- Sexo: Masculino → valor select: male
-- PCD: NÃO
-- Indicado: NÃO
-- Instagram: https://www.instagram.com/gabri3l.cardoso
-"""
+PERFIL_COMPLETO = (
+    perfil.contexto_perfil(CONFIG)
+    + "\n\n" + _perfil_extras_solides()
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -306,6 +243,12 @@ def _nivel_para_texto(nivel: int) -> str:
 
 def ia_nivel_habilidade(nome_habilidade: str, contexto_vaga: str = "") -> int:
     nome_lower = nome_habilidade.lower().strip()
+
+    # Lista negativa: determinístico, não depende da IA — item excluído → Nenhum.
+    if perfil.tech_excluida(nome_habilidade, PALAVRAS_EXCLUIR):
+        log_info(f"    [HABILIDADE EXCLUÍDA] '{nome_habilidade}' → Nenhum (lista negativa)")
+        return 0
+
     for chave, nivel in NIVEL_HABILIDADE.items():
         if chave in nome_lower or nome_lower in chave:
             log_info(f"    [HABILIDADE DIRETA] '{nome_habilidade}' → {_nivel_para_texto(nivel)}")
@@ -319,7 +262,7 @@ def ia_nivel_habilidade(nome_habilidade: str, contexto_vaga: str = "") -> int:
         f"Avalie o nível do candidato nessa habilidade.\n"
         f"Considere conhecimentos implícitos: se é algo relacionado ao que ele já sabe,\n"
         f"como 'Performance de Sites' para um dev web, pode ser avançado.\n"
-        f"Se é algo que ele claramente NÃO sabe (ex: .NET, Java, C++), responda 0.\n\n"
+        f"A LISTA DE EXCLUSÕES do perfil vale: qualquer item dela → responda 0.\n\n"
         f"Responda APENAS com um número:\n"
         f"0 = Nenhum\n"
         f"1 = Básico\n"
@@ -366,11 +309,11 @@ def ia_responder_killer_question_radio(pergunta: str) -> str:
         f"PERFIL DO CANDIDATO:\n{PERFIL_COMPLETO}\n\n"
         f"PERGUNTA: {pergunta}\n\n"
         f"REGRAS:\n"
-        f"- Se a pergunta pede confirmação/ciência de condição da vaga → Sim\n"
-        f"- Se pede experiência/habilidade que o candidato TEM → Sim\n"
-        f"- Se pede formação superior completa → Não (está no 1º semestre)\n"
+        f"- Responda SOMENTE com base no perfil acima (identidade, formação, exclusões)\n"
+        f"- Se a pergunta pede experiência/habilidade que o candidato TEM → Sim\n"
+        f"- Item da LISTA DE EXCLUSÕES do perfil → Não (nunca se apresente com ele)\n"
         f"- Se pede experiência que NÃO TEM → Não\n"
-        f"- Em caso de dúvida → Sim (melhor tentar do que desistir)\n\n"
+        f"- Em caso de dúvida (sem tocar em exclusão) → Sim (melhor tentar do que desistir)\n\n"
         f"RESPOSTA (apenas Sim ou Não):"
     )
     try:

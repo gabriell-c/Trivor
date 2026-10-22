@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
+from common import perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -432,6 +433,12 @@ def _chamar_llm(prompt: str, config: dict, contexto: str = "",
 def resolver_nivel_tech(nome_tech: str, titulo_vaga: str, config: dict) -> str:
     tecnologias = config.get("tecnologias", {})
     chave = nome_tech.lower().strip()
+
+    # 0. Lista negativa: determinístico, não depende da IA — item excluído → Nenhum.
+    negativas = (config.get("busca") or {}).get("palavras_excluir") or []
+    if perfil.tech_excluida(nome_tech, negativas):
+        log(f"    🚫 '{nome_tech}' está na lista negativa → Nenhum")
+        return "Nenhum"
 
     # 1. Match exato
     for nome, nivel in tecnologias.items():

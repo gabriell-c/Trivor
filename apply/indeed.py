@@ -59,6 +59,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
+from common import perfil
 from dotenv import load_dotenv
 from groq import Groq
 from selenium.common.exceptions import (
@@ -140,16 +141,6 @@ def esperar(seconds: float, jitter: float = 0.3) -> None:
 
 def horario_ok() -> bool:
     return 3 <= datetime.now(TZ).hour <= 22
-
-
-def _calcular_idade() -> int:
-    n = datetime.strptime(CANDIDATO["data_nascimento"], "%d/%m/%Y")
-    h = datetime.now()
-    return h.year - n.year - ((h.month, h.day) < (n.month, n.day))
-
-
-IDADE = _calcular_idade()
-
 
 # ═══════════════════════════════════════════════════════════════
 #  EXCEÇÕES CUSTOMIZADAS
@@ -336,99 +327,41 @@ def _contem_pergunta_filiacao(texto: str) -> bool:
 # ═══════════════════════════════════════════════════════════════
 
 def _build_perfil_resumido() -> str:
+    """Contexto do LLM no Indeed: perfil completo (common/perfil.py — tudo
+    que o usuário mantém na aba Perfil do Trivor, com a lista de exclusões)
+    + regras específicas do site. Bloco estático antigo foi cortado:
+    formação, experiência e tecnologias agora vêm do config.yaml."""
     c    = CANDIDATO
     div  = DIVERSIDADE
     loc  = LOCALIZACAO
     hoje = datetime.now(TZ).strftime("%d/%m/%Y")
 
-    techs_detalhadas = "\n".join(
-        f"    - {tech}: {tempo}"
-        for tech, tempo in CONFIG.get("tecnologias", {}).items()
-    )
-
     fmt_remoto     = "SIM" if loc.get("aceita_remoto", False)     else "NÃO"
     fmt_hibrido    = "SIM" if loc.get("aceita_hibrido", False)    else "NÃO"
     fmt_presencial = "SIM" if loc.get("aceita_presencial", False) else "NÃO"
     fmt_mudanca    = "SIM" if loc.get("aceita_mudanca", False)    else "NÃO"
-    estados        = ", ".join(loc.get("estados_aceitos", ["SP"]))
 
-    return f"""
-NOME COMPLETO : {c['nome']}
-IDADE         : {IDADE} anos (nascido em {c['data_nascimento']})
-CIDADE ATUAL  : {c['cidade_uf']}
-NACIONALIDADE : Brasileiro — autorizado a trabalhar no Brasil, não precisa de visto
-EMAIL         : {c['email']}
-TELEFONE      : {c['telefone']}
-CPF           : {_DOC_CPF or '(não informado)'}
-LINKEDIN      : {c['linkedin']}
-GITHUB        : {c['github']}
-PORTFOLIO     : {c.get('portfolio', '')}
+    regra_pcd = ('"Qual sua deficiência?" → responda conforme a seção Diversidade do perfil (é PCD)'
+                 if div.get("pcd")
+                 else '"Qual sua deficiência?" → responder PULAR (não é PCD; não necessita de acessibilidade)')
 
-SITUAÇÃO PROFISSIONAL:
-  - Desenvolvedor Web Freelancer autônomo desde 2022 (~2-3 anos de experiência)
-  - NUNCA teve emprego CLT formal — toda experiência é como autônomo/freelancer
-  - Empresa atual: Autônomo / Freelancer (sem CNPJ registrado)
-  - NÃO foi indicado por ninguém para nenhuma vaga
-  - NÃO tem familiares, amigos íntimos ou conhecidos trabalhando em nenhuma empresa
-  - NÃO é ex-funcionário de nenhuma empresa
+    bloco_indeed = f"""
+════ INDEED — REGRAS ESPECÍFICAS DO SITE (somam-se ao contexto acima) ════
+SITUAÇÃO:
+  - Empresa aberta (CNPJ): {'SIM' if c.get('possui_pj') else 'NÃO'}
+  - Não foi indicado por ninguém; não tem familiares ou conhecidos trabalhando em nenhuma empresa; não é ex-funcionário
+  - Início: imediato (hoje é {hoje})
 
-FORMAÇÃO:
-  - Engenharia de Software (cursando) — Estácio de Sá
-  - Sem certificações formais além do curso
-
-TECNOLOGIAS (experiência real):
-{techs_detalhadas}
-
-IDIOMAS:
-  - Português: Nativo
-  - Inglês: Básico (entende frases simples, consegue se apresentar, NÃO é fluente)
-  - NENHUM outro idioma além de português e inglês básico
-  - Se perguntado sobre espanhol, francês, alemão ou qualquer outro idioma: NÃO possui
-
-PRETENSÃO SALARIAL:
-  - Modelo CLT          : R$ {c['pretensao_clt']}/mês
-  - Modelo PJ por hora  : R$ {c.get('pretensao_pj_hora', '22')}/hora
-  - Modelo PJ mensal    : R$ {c.get('pretensao_pj_mensal', '4500')}/mês
-  - Estágio             : R$ {c.get('pretensao_estagio', '1600')}/mês
-  - Salário atual/último: NÃO informar — deixar SEMPRE vazio / PULAR
-
-  REGRA CRÍTICA DE PRETENSÃO:
-    • Se a pergunta mencionar "PJ", "pessoa jurídica", "prestação de serviços",
-      "contrato PJ" ou "hora" → usar o valor PJ correspondente (mensal ou hora)
-    • Se mencionar "CLT", "carteira assinada", "regime CLT" → usar R$ {c['pretensao_clt']}/mês
-    • Se não especificar regime → usar R$ {c['pretensao_clt']}/mês (CLT como padrão)
-    • Se pedir número sem "R$" ou "mês" (apenas dígitos) → responder só o número: {c['pretensao_clt']}
-    • NUNCA confundir CLT com PJ
-
-DISPONIBILIDADE DE FORMATO DE TRABALHO:
-  - Trabalho REMOTO    : {fmt_remoto}
-  - Trabalho HÍBRIDO   : {fmt_hibrido}
-  - Trabalho PRESENCIAL: {fmt_presencial}
-  - Mudança de cidade  : {fmt_mudanca}
-  - Estados aceitos    : {estados}
-  - Início             : IMEDIATO (hoje, {hoje})
-
-  REGRA CRÍTICA DE DISPONIBILIDADE:
-    • "Disponibilidade para trabalhar remoto?" / "aceita home office?" → {fmt_remoto}
-    • "Disponibilidade para híbrido?" → {fmt_hibrido}
-    • "Disponibilidade para presencial?" → {fmt_presencial}
-    • Respostas de sim/não para formato de trabalho devem refletir EXATAMENTE os valores acima
-
-DIVERSIDADE E INCLUSÃO:
-  - Raça/Cor: {div.get('raca_cor', 'Pardo')} (parda)
-  - Gênero: {div.get('genero', 'Homem cisgênero')}
-  - Orientação sexual: {div.get('orientacao_sexual', 'Heterossexual')}
-  - Pessoa com Deficiência (PCD): NÃO
-  - LGBTQIAP+: NÃO
-  - Não necessita de nenhum tipo de acessibilidade
-
-REGRAS ABSOLUTAS PARA CAMPOS CONDICIONAIS:
-  - "Caso a resposta anterior seja Sim..." → responder PULAR (campo não se aplica)
-  - "Qual sua deficiência?" → responder PULAR (não é PCD)
-  - "Nome do indicador/familiar" → responder PULAR (não foi indicado, não tem familiar)
-  - "Salário atual" / "último salário" → responder PULAR (não revelar)
-  - Campos opcionais sem aplicação → responder PULAR
+REGRAS CRÍTICAS DESTE FORMULÁRIO:
+  • "Salário atual" / "último salário" → PULAR (NUNCA revelar)
+  • {regra_pcd}
+  • "Nome do indicador/familiar" → PULAR (candidatura espontânea)
+  • "Caso a resposta anterior seja Sim..." / subperguntas / campo opcional que não se aplica → PULAR
+  • Expectativa pedindo APENAS dígitos (sem "R$" nem "mês") → {c['pretensao_clt']}
+  • Formato de trabalho: remoto → {fmt_remoto} | híbrido → {fmt_hibrido} | presencial → {fmt_presencial} | mudança → {fmt_mudanca}
+  • Idiomas: use SOMENTE a seção IDIOMAS do perfil; idioma não listado → "Nenhum"
 """
+    return perfil.contexto_perfil(CONFIG) + bloco_indeed
 
 
 PERFIL_RESUMIDO = _build_perfil_resumido()

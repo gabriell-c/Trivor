@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
+from common import perfil
 from common.browser import SESSIONS_DIR, Browser, BrowserUnavailable, find_adaptive
 from dotenv import load_dotenv
 from playwright.sync_api import Page
@@ -87,42 +88,14 @@ DADOS_PESSOAIS = {
 #  PERFIL DO CANDIDATO
 # ══════════════════════════════════════════════════════════════════════════════
 
-PERFIL_CANDIDATO = """
-Nome: (candidato — definido em apply/config.yaml)
-Localização: (cidade/UF — config.yaml → cidade_uf)
-LinkedIn: (perfil do candidato — config.yaml)
-GitHub: (perfil do candidato — config.yaml)
-Portfolio: (site do candidato — config.yaml)
-Formação: Engenharia de Software (EAD) — Estácio de Sá, desde fev/2026
+def _perfil_ctx(config: dict) -> str:
+    """Contexto completo do candidato (common/perfil.py) — injetado nos prompts.
 
-Experiência:
-- Freelancer desde 2022 com desenvolvimento web
-- Projetos principais:
-  * Chatbot com IA (reduziu 80% do atendimento manual)
-  * GoMoney — app de controle financeiro pessoal
-  * Artuniverse — plataforma de conteúdo criativo
-  * API E-commerce com integração de pagamentos
-
-Tecnologias (2-3 anos): Python, Django, React, PHP, JavaScript, MySQL, HTML, CSS, Git
-Tecnologias (até 6 meses): PostgreSQL, TypeScript, Flask, Docker
-
-Perfil: Desenvolvedor júnior proativo, aprende rápido, focado em entregar resultado real.
-Pretensão: (valores no config.yaml → candidato — as regras proíbem mencionar salário em respostas)
-Inglês: Básico
-
-Diversidade:
-- Raça/Cor: Pardo
-- Gênero: Homem cisgênero
-- Orientação sexual: Heterossexual
-- Pessoa com deficiência: Não
-- Indicação: candidatura espontânea, sem indicação
-"""
-
-HABILIDADES_PERFIL = [
-    "Python", "Django", "React", "PHP", "JavaScript", "MySQL",
-    "PostgreSQL", "TypeScript", "Flask", "Docker", "HTML5", "CSS3",
-    "Git", "GitHub", "Clean Code", "React (software)"
-]
+    Substitui o bloco estático antigo: agora a IA enxerga TUDO que o usuário
+    mantém na aba Perfil do Trivor (config.yaml + .env), incluindo a lista de
+    exclusões (busca.palavras_excluir) com regras de resposta obrigatórias.
+    """
+    return perfil.contexto_perfil(config)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONFIGURAÇÃO
@@ -681,8 +654,8 @@ def responder_pergunta_aberta(pergunta: str, contexto_vaga: str = "") -> str:
 
     prompt = f"""Responda essa pergunta de candidatura de emprego de forma direta e humana.
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (responda SOMENTE com base nele; a lista de exclusões vale):
+{perfil.contexto_perfil(config)}
 
 CONTEXTO DA VAGA:
 {contexto_vaga[:400] if contexto_vaga else "Não informado"}
@@ -718,8 +691,8 @@ def gerar_apresentacao(titulo: str, descricao: str) -> str:
 
     prompt = f"""Escreva uma apresentação pessoal para candidatura de emprego.
 
-PERFIL DO CANDIDATO:
-{PERFIL_CANDIDATO}
+PERFIL DO CANDIDATO (não cite itens da lista de exclusões como habilidade sua):
+{_perfil_ctx(config)}
 
 VAGA:
 Título: {titulo}
@@ -762,6 +735,13 @@ Vaga: {titulo}
 Descrição: {descricao[:300]}
 
 Habilidades disponíveis: {habilidades_str}
+
+CONTEXTO DO CANDIDATO (respeite a lista de exclusões — nunca escolha um item dela):
+{perfil.perfil_compacta(config, limite=400)}
+
+Regras:
+- NUNCA escolha uma habilidade que esteja na lista de exclusões acima.
+- Escolha apenas nomes que estejam literalmente na lista de disponíveis.
 
 Responda SOMENTE com os nomes exatos das 3 habilidades separados por vírgula.
 Exemplo: Python, Django, Git
@@ -1148,21 +1128,22 @@ def etapa_perguntas_empresa(page: Page, titulo: str, descricao: str,
 
                 # ── Default: usa LLM para decidir (com lista de opções) ───────────
                 else:
+                    config_llm = carregar_config()
                     lista_ops = " | ".join(t for _, t in opcoes_texto)
                     prompt_radio = f"""Você está respondendo uma pergunta de seleção em nome de um candidato.
 
-PERFIL: {PERFIL_CANDIDATO[:300]}
+PERFIL (contexto completo; a lista de exclusões vale): {perfil.perfil_compacta(config_llm, limite=500)}
 
 PERGUNTA: {pergunta}
 OPÇÕES DISPONÍVEIS: {lista_ops}
 
 Responda APENAS com o texto EXATO de uma das opções acima — nada mais.
 Escolha a opção que melhor representa o candidato.
+Se a pergunta tocare em item da lista de exclusões, escolha a opção que nega experiência ("Nenhum", "Não", "0 anos").
 Se for pergunta sobre trabalho anterior na empresa, responda com a opção de "Não".
 Se for sobre disponibilidade presencial, prefira "Sim".
 
 Opção escolhida:"""
-                    config_llm = carregar_config()
                     resp_llm = _chamar_llm(prompt_radio, config_llm,
                                            contexto="radio_default", temperatura=0.0,
                                            max_tokens=50)
