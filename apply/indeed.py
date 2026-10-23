@@ -3977,37 +3977,58 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
             resultado["status"] = "botao_nao_clicavel"
             return resultado
 
-        MAX_ITERACOES  = 20
-        MAX_REVISAO    = 3
-        revisao_count  = 0
-        etapa_anterior = ""
-        repeticoes     = 0
-        MAX_REPETICOES = 4
+        MAX_ITERACOES    = 20
+        MAX_BLOQUEIO     = 3
+        MAX_REVISAO      = 3
+        revisao_count    = 0
+        etapa_anterior   = ""
+        repeticoes       = 0
+        MAX_REPETICOES   = 4
+        bloqueios_seguidos = 0
 
         for iteracao in range(MAX_ITERACOES):
             esperar(1.5)
             fechar_popup_saida(driver)
 
-            # Supervisor de tela: overlay/modal bloqueando? Checar é ~5ms (sem
-            # LLM); o LLM só entra quando HÁ overlay visível — ele decide fechar,
-            # ignorar ou sinalizar captcha. É aqui que o bot "lê a tela".
+            # Supervisor de tela: overlay/modal bloqueando? Escalonamento
+            # barato→caro: texto conhecido/captcha (SEM LLM) → LLM propõe até
+            # 3 seletores (2 rodadas) → iframe/ESC. É aqui que o bot lê a tela.
             bloqueio = pagelens.tratar_bloqueio(
                 driver,
-                chamar=lambda prompt, max_tokens=200: chamar_llm(
+                chamar=lambda prompt, max_tokens=300: chamar_llm(
                     [{"role": "user", "content": prompt}],
                     max_tokens=max_tokens, temperature=0.05),
                 log=log_info,
             )
-            if bloqueio["tipo"] == "fechou" and bloqueio["el"] is not None:
-                if _click(driver, bloqueio["el"]):
-                    log_info(f"  [bloqueio] modal fechado: {bloqueio['detalhe'][:80]}")
-                    esperar(1.5)
+            if bloqueio["tipo"] == "fechou":
+                if bloqueio["el"] is not None:
+                    if _click(driver, bloqueio["el"]):
+                        log_info(f"  [bloqueio] modal fechado: {bloqueio['detalhe'][:80]}")
+                        esperar(1.5)
+                    else:
+                        log_warn(f"  [bloqueio] clique no botão falhou: {bloqueio['detalhe'][:80]}")
+                else:
+                    log_info(f"  [bloqueio] fechado via iframe/ESC: {bloqueio['detalhe'][:80]}")
+                    esperar(1.0)
                 continue  # reprocessa a etapa — o modal estava cobrindo a tela
             if bloqueio["tipo"] == "captcha":
                 log_warn(f"  [bloqueio] desafio humano — aguardando resolução: {bloqueio['detalhe'][:80]}")
                 if not aguardar_resolucao_captcha(driver):
                     resultado["status"] = "captcha_nao_resolvido"
                     break
+                continue
+            if bloqueio["detalhe"]:
+                # "indeciso" ou "nada" com overlay ainda presente: sem progresso
+                bloqueios_seguidos += 1
+                log_warn(f"  [bloqueio] tela bloqueada ({bloqueios_seguidos} seguidas): "
+                         f"{bloqueio['detalhe'][:80]}")
+                if bloqueios_seguidos >= MAX_BLOQUEIO:
+                    log_err("  [bloqueio] modal sem resolução após 3 tentativas — "
+                            "parando a vaga (modal_nao_resolvido)")
+                    resultado["status"] = "modal_nao_resolvido"
+                    break
+                continue
+            bloqueios_seguidos = 0
 
             if verificar_enviada(driver):
                 resultado["status"] = "enviado"

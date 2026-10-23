@@ -31,23 +31,62 @@ class _El:
         return self.visivel
 
 
+class _Corpo:
+    """body fake — grava quantas vezes a tecla ESC foi 'pressionada'."""
+    def __init__(self):
+        self.escapes = 0
+
+    def send_keys(self, tecla: str) -> None:
+        self.escapes += 1
+
+
+class _Switch:
+    """switch_to fake — grava a trilha de frames e mantém frame_atual no driver."""
+    def __init__(self, fake: "_DriverFake"):
+        self._fake = fake
+        self.log: list[str] = []
+
+    def frame(self, target) -> None:
+        self.log.append(f'frame:{target}')
+        self._fake.frame_atual = target
+
+    def default_content(self) -> None:
+        self.log.append('default')
+        self._fake.frame_atual = None
+
+
 class _DriverFake:
     def __init__(self, mapa: dict | None = None, digest: dict | None = None,
-                 bloqueio: str | None = None):
+                 bloqueio: str | None = None, close_el: object | None = None,
+                 close_por_frame: dict | None = None,
+                 iframes: list | None = None):
         self.mapa = mapa or {}
         self.digest = digest
         self.bloqueio = bloqueio
+        # qual botão de fechamento "existe" em cada frame (None = main)
+        self.close_map = close_por_frame if close_por_frame is not None \
+            else ({None: close_el} if close_el is not None else {})
+        self.frame_atual = None
+        self.iframes = iframes or []
+        self.switch_to = _Switch(self)
         self.sel_tentados: list[str] = []
 
     def find_element(self, by: str, value: str):
         self.sel_tentados.append(value)
         return self.mapa.get(value)
 
+    def find_elements(self, by: str, value: str) -> list:
+        if value == 'iframe':
+            return self.iframes
+        return []
+
     def execute_script(self, js: str, *args):
         if js == pagelens.DIGEST_JS:
             return self.digest
         if js == pagelens.BLOCKER_JS:
             return self.bloqueio
+        if js == pagelens._CLOSE_BTN_JS:
+            return self.close_map.get(self.frame_atual)
         return self.digest
 
 
@@ -212,6 +251,89 @@ def test_bloqueio_sem_llm_nao_quebra():
     r = pagelens.tratar_bloqueio(d, chamar=None)
     assert r["tipo"] == "indeciso"
     assert "algo apareceu" in r["detalhe"]
+
+
+def test_bloqueio_texto_rapido_fecha_sem_llm():
+    # Camada 1: overlay com botão "OK" visível → fecha SEM LLM (o caso que
+    # travava antes, mesmo com provedor fora do ar)
+    el = _El()
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT,
+                    bloqueio="modal :: Aviso: candidaturas encerram em breve",
+                    close_el=el)
+    chamadas: list[str] = []
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: chamadas.append(p) or "{}")
+    assert r["tipo"] == "fechou"
+    assert r["el"] is el
+    assert not chamadas  # nem LLM nem segunda camada precisou
+
+
+def test_bloqueio_captcha_por_keyword_sem_llm():
+    # Gate determinístico: palavra-chave já sinaliza humano, sem LLM
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT,
+                    bloqueio="overlay :: Turnstile: I am not a robot")
+    r = pagelens.tratar_bloqueio(d, chamar=None)
+    assert r["tipo"] == "captcha"
+
+
+def test_bloqueio_llm_miltiplos_candidatos_no_erro():
+    # Camada 3: 1º seletor falha, 2º acerta — na mesma rodada
+    el = _El()
+    d = _DriverFake(mapa={"#certo": el}, digest=_SNAPSHOT,
+                    bloqueio="modal :: aviso de privacidade")
+    resp = json.dumps({"humano": False, "seletores": ["#errado", "#certo"],
+                       "texto": "modal de aviso"})
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: resp)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is el
+    # _encontrar faz polling (3 verif./seletor) — confira ordem, não contagem
+    assert d.sel_tentados.index("#certo") > d.sel_tentados.index("#errado")
+
+
+def test_parse_bloqueio_aceita_formatos_antigo_e_novo():
+    novo = json.dumps({"humano": False, "seletores": ["#a", "#b"], "texto": "x"})
+    p = pagelens.parse_bloqueio(novo)
+    assert p["seletores"] == ["#a", "#b"] and not p["humano"]
+    antigo = json.dumps({"acao": "clicar", "seletor": "#fechar", "texto": "y"})
+    p2 = pagelens.parse_bloqueio(antigo)
+    assert p2["seletores"] == ["#fechar"] and not p2["humano"]
+    p3 = pagelens.parse_bloqueio(json.dumps({"acao": "humano", "texto": "recaptcha"}))
+    assert p3["humano"] and p3["seletores"] == []
+    p4 = pagelens.parse_bloqueio("garbage")
+    assert p4 == {"humano": False, "seletores": [], "texto": ""}
+
+
+def test_bloqueio_esc_pressionado_quando_nada_fecha():
+    corpo = _Corpo()
+    d = _DriverFake(mapa={"body": corpo}, digest=_SNAPSHOT,
+                    bloqueio="modal :: aviso sem botão conhecido")
+    r = pagelens.tratar_bloqueio(d, chamar=None)
+    assert r["tipo"] == "indeciso"
+    assert corpo.escapes == 1  # último recurso determinístico
+
+
+def test_bloqueio_iframe_fecha_modal_dentro_de_frame():
+    # O botão "OK" existe SÓ dentro do iframe (cookie notice de fornecedor
+    # externo) — a camada de texto do frame principal não o vê.
+    el = _El()
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT,
+                    bloqueio="modal :: cookie notice",
+                    close_por_frame={"cookie-frame": el},
+                    iframes=["cookie-frame"])
+    r = pagelens.tratar_bloqueio(d, chamar=None)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is None  # fechado no próprio frame, nada pra _click fora
+    assert "frame:cookie-frame" in d.switch_to.log
+    assert "default" in d.switch_to.log
+
+
+def test_bloqueio_llm_julga_inofensivo_retorna_nada():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT,
+                    bloqueio="overlay :: erro de campo: preencha o email")
+    resp = json.dumps({"humano": False, "seletores": [],
+                       "texto": "só erro de validação, some sozinho"})
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: resp)
+    assert r["tipo"] == "nada"
+    assert "erro de validação" in r["detalhe"]
 
 
 def test_bloqueio_llm_excecao_nao_lanca():

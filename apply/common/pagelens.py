@@ -29,6 +29,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from contextlib import suppress
 
 _BY_CSS = "css selector"
 _BY_XPATH = "xpath"
@@ -191,18 +192,169 @@ def detecta_bloqueio(driver) -> str | None:
     return bruto if isinstance(bruto, str) and bruto else None
 
 
+# Botões de fechamento reconhecíveis sem LLM (texto exato, minúsculo).
+# Restrito a palavras de fechamento unívocas — nunca "continuar"/"avançar"
+# (isso é botão de formulário, não de modal).
+_CLOSE_BTN_JS = """(() => {
+  const vis = el => { try { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4; } catch (e) { return false; } };
+  const fech = { ok:1, okay:1, 'got it':1, understood:1, entendi:1, 'entendido':1,
+                 aceito:1, aceitei:1, aceitar:1, concordo:1, 'fechar':1, close:1,
+                 dismiss:1, 'li e aceito':1, x:1, '×':1 };
+  let ov = null;
+  for (const sel of ['[role="dialog"]', '[aria-modal="true"]',
+                     '[class*="modal" i]', '[class*="popup" i]']) {
+    for (const el of document.querySelectorAll(sel)) { if (vis(el)) { ov = el; break; } }
+    if (ov) break;
+  }
+  const escopo = ov || document;
+  for (const el of escopo.querySelectorAll('button, a, [role="button"]')) {
+    if (el.disabled || !vis(el)) continue;
+    const t = ((el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase());
+    const aria = ((el.getAttribute('aria-label') || '').trim().toLowerCase());
+    if (fech[t] || fech[aria]) return el;
+  }
+  return null;
+})()"""
+
+
+def fechar_por_texto(driver) -> object | None:
+    """Camada 1 (SEM LLM): overlay com botão visível de fechamento conhecido.
+
+    Procura DENTRO do overlay primeiro (nunca clica em botão de formulário
+    que esteja atrás dele). Retorna o elemento pronto pra `_click` ou None."""
+    try:
+        el = driver.execute_script(_CLOSE_BTN_JS)
+    except Exception:
+        return None
+    if el is None or isinstance(el, (str, dict, list, int, float, bool)):
+        return None
+    return el
+
+
+_KEYWORDS_CAPTCHA = ("robot", "captcha", "cf-turnstile", "recaptcha",
+                     "verifying you are human", "verificação humana",
+                     "i am not a robot")
+
+
+def parse_bloqueio(resposta: str) -> dict:
+    """Extrai {humano, seletores (máx 3), texto} da resposta do supervisor.
+
+    Aceita o formato antigo ({"acao": "clicar"|"humano"|"nada", "seletor"})
+    e o novo ({"humano": bool, "seletores": [...], "texto"})."""
+    dados = _primeiro_json(resposta) or {}
+    if "acao" in dados:  # formato antigo
+        acao = str(dados.get("acao", "nada")).lower()
+        if acao == "humano":
+            return {"humano": True, "seletores": [],
+                    "texto": str(dados.get("texto", ""))[:240]}
+        if acao == "clicar" and dados.get("seletor"):
+            return {"humano": False, "seletores": [str(dados["seletor"])],
+                    "texto": str(dados.get("texto", ""))[:240]}
+        return {"humano": False, "seletores": [],
+                "texto": str(dados.get("texto", ""))[:240]}
+    itens = dados.get("seletores")
+    if not isinstance(itens, list):
+        itens = []
+    sels = [str(x).strip() for x in itens
+            if isinstance(x, (str, int)) and str(x).strip()][:3]
+    return {"humano": bool(dados.get("humano")), "seletores": sels,
+            "texto": str(dados.get("texto", ""))[:240]}
+
+
+def _prompt_bloqueio(bloqueio: str, resumo: str, erro_anterior: str = "") -> str:
+    base = (
+        f"Durante uma candidatura automatizada, um BLOQUEIO/overlay apareceu na tela:\n{bloqueio}\n\n"
+        f"ELEMENTOS VISÍVEIS AGORA (snapshot; t=tipo, txt=texto, id/tid/aria/n=atributos):\n{resumo}\n\n"
+        "REGRAS DE DECISÃO:\n"
+        "1. Modal de aviso/informação/consentimento/marketing com botão 'ok', 'entendi', "
+        "'aceitar', 'concordo', 'fechar', 'x', 'continue' → proponha ATÉ 3 seletores candidatos "
+        "desse botão, feitos dos ATRIBUTOS do snapshot: id → '#id'; "
+        "tid → \"[data-testid='x']\"; aria → \"[aria-label='x']\"; "
+        "texto → \"//button[normalize-space(.)='Texto']\" (XPath).\n"
+        "2. Captcha / 'I am not a robot' / desafio de verificação → humano: true.\n"
+        "3. Mensagem de erro de campo ou algo que se resolve sozinho → NÃO proponha seletores; "
+        "explique em 'texto'.\n"
+        "4. Em dúvida → NÃO proponha seletores.\n"
+        "NUNCA proponha campo de formulário, botões 'Voltar'/'Cancelar' ou seletor genérico "
+        "('button', 'div').\n\n"
+        'RESPOSTA: SOMENTE um JSON válido, sem markdown: '
+        '{"humano": false, "seletores": ["até 3 seletores de fechamento"], '
+        '"texto": "o que está aparecendo (máx 60 palavras)"}'
+    )
+    if erro_anterior:
+        base += f"\nTENTATIVA ANTERIOR FALHOU: {erro_anterior}\n"
+    return base
+
+
+def _tecla_esc(driver) -> bool:
+    try:
+        corpo = driver.find_element(by="tag name", value="body")
+        if corpo is None:
+            return False
+        corpo.send_keys("\ue007")  # tecla ESC
+        time.sleep(0.8)
+        return True
+    except Exception:
+        return False
+
+
+def _tenta_iframe(driver, diz) -> bool:
+    """Muitos modais vivem dentro de iframe: repete a camada de texto + ESC lá dentro."""
+    try:
+        iframes = driver.find_elements(by="tag name", value="iframe")
+    except Exception:
+        return False
+    if not iframes:
+        return False
+    for fr in iframes:
+        try:
+            driver.switch_to.frame(fr)
+        except Exception:
+            continue
+        try:
+            bloqueio = detecta_bloqueio(driver)
+            if not bloqueio:
+                continue
+            el = fechar_por_texto(driver)
+            if el is not None:
+                with suppress(Exception):
+                    driver.execute_script("arguments[0].click();", el)
+                diz(f'    [bloqueio] modal fechado em iframe: {bloqueio[:80]}')
+                time.sleep(1.0)
+                return True
+            if _tecla_esc(driver) and not detecta_bloqueio(driver):
+                diz('    [bloqueio] modal de iframe fechado via ESC')
+                return True
+        finally:
+            with suppress(Exception):
+                driver.switch_to.default_content()
+    return False
+
+
 def tratar_bloqueio(driver, chamar: Callable[[str, int], str] | None = None,
                     log: Callable[[str], None] | None = None) -> dict:
-    """Supervisor de tela: modal apareceu? O LLM decide o que fazer.
+    """Supervisor de tela em escalonamento (mais barato → mais caro):
+
+    0. Checar overlay (~5ms, SEM LLM) — tela livre → `nada`.
+    1. Captcha por palavras-chave (determinístico, SEM LLM).
+    2. Fechamento rápido por texto (SEM LLM): overlay com botão "ok",
+       "fechar", "aceitar"... — cobre o caso comum até com provedor fora.
+    3. LLM (1–2 rodadas): lê o snapshot e propõe ATÉ 3 seletores de
+       fechamento por rodada; erro da rodada N alimenta a N+1.
+    4. Iframe + tecla ESC (o modal pode estar em outro frame).
+    5. Ainda aberto → `indeciso` — quem chama conta repetições e para
+       a vaga com status claro (3 seguidas).
 
     Retorna `{"tipo": "nada"|"captcha"|"fechou"|"indeciso", "detalhe": str,
     "el": element|None}`:
-      - `nada`     → tela livre (ou bloqueio considerado inofensivo pelo LLM)
+      - `nada`     → tela livre OU LLM julgou o overlay inofensivo
+                     (`detalhe` vazio = tela livre; preenchido = ignorado)
       - `captcha`  → verificação humana → quem chama resolve manualmente
-      - `fechou`   → LLM indicou o botão; `el` pronto pra `_click` do bot
-      - `indeciso` → bloqueio detectado e LLM ausente/falhou — loga e segue
+      - `fechou`   → `el` pronto pra `_click` (None se fechado em iframe/ESC)
+      - `indeciso` → detectado e nada resolveu — loga e segue
 
-    LLM é chamado APENAS quando um overlay visível existe (0 custo no happy path)."""
+    LLM é chamado APENAS quando um overlay visível existe e a camada de
+    texto não fechou (0 custo no happy path)."""
     def diz(msg: str) -> None:
         if log:
             log(msg)
@@ -210,44 +362,56 @@ def tratar_bloqueio(driver, chamar: Callable[[str, int], str] | None = None,
     bloqueio = detecta_bloqueio(driver)
     if not bloqueio:
         return {'tipo': 'nada', 'detalhe': '', 'el': None}
-    if chamar is None:
-        diz(f'    [bloqueio] overlay detectado (sem LLM): {bloqueio[:80]}')
-        return {'tipo': 'indeciso', 'detalhe': bloqueio[:200], 'el': None}
 
-    resumo = resumo_pagina(driver)
-    if not resumo:
-        return {'tipo': 'indeciso', 'detalhe': 'overlay sem snapshot', 'el': None}
-    prompt = (
-        f"Durante uma candidatura automatizada, um BLOQUEIO/overlay apareceu na tela:\n{bloqueio}\n\n"
-        f"ELEMENTOS VISÍVEIS AGORA (snapshot; t=tipo, txt=texto, id/tid/aria/n=atributos):\n{resumo}\n\n"
-        "REGRAS DE DECISÃO:\n"
-        "1. Modal de aviso/informação/marketing com botão 'entendi', 'ok', 'continuar', "
-        "'aceitar', 'fechar', 'x' → acao 'clicar' com o seletor desse botão (feito dos atributos do snapshot).\n"
-        "2. Captcha / 'I am not a robot' / desafio de verificação → acao 'humano'.\n"
-        "3. Mensagem de erro de campo (dados faltando) ou algo inofensivo → acao 'nada'; descreva em 'texto'.\n"
-        "4. Não conseguir decidir → acao 'nada'.\n"
-        "NUNCA indique preencher campos — só fechar/avançar. NUNCA seletor genérico.\n\n"
-        'RESPOSTA: SOMENTE um JSON: {"acao": "clicar"|"humano"|"nada", '
-        '"seletor": "apenas se acao=clicar", "texto": "o que está aparecendo (máx 120 palavras)"}'
-    )
-    try:
-        resp = chamar(prompt, 200)
-    except Exception as exc:
-        diz(f'    [bloqueio] LLM falhou: {exc}')
-        return {'tipo': 'indeciso', 'detalhe': f'overlay: {bloqueio[:120]}', 'el': None}
-    acao = parse_acao(resp)
-    if acao['acao'] == 'humano':
-        diz(f'    [bloqueio] captcha/desafio — aguardando humano: {acao["texto"][:80]}')
-        return {'tipo': 'captcha', 'detalhe': acao['texto'] or bloqueio[:200], 'el': None}
-    if acao['acao'] == 'clicar' and acao['seletor']:
-        el = _encontrar(driver, acao['seletor'])
-        if el is not None:
-            diz(f'    [bloqueio] fechando via LLM: {acao["seletor"][:70]}')
-            return {'tipo': 'fechou', 'detalhe': acao['texto'] or acao['seletor'], 'el': el}
-        diz(f'    [bloqueio] seletor {acao["seletor"][:60]} não achou elemento visível')
-        return {'tipo': 'indeciso', 'detalhe': f'{acao["seletor"]} falhou: {acao["texto"][:120]}', 'el': None}
-    diz(f'    [bloqueio] LLM: ignorar — {acao["texto"][:80]}')
-    return {'tipo': 'nada', 'detalhe': acao['texto'], 'el': None}
+    # Camada 1: captcha determinístico (sem LLM)
+    if any(k in bloqueio.lower() for k in _KEYWORDS_CAPTCHA):
+        diz(f'    [bloqueio] captcha/desafio detectado — aguardando humano: {bloqueio[:80]}')
+        return {'tipo': 'captcha', 'detalhe': bloqueio[:200], 'el': None}
+
+    # Camada 2: fechamento rápido por texto (sem LLM)
+    el = fechar_por_texto(driver)
+    if el is not None:
+        diz(f'    [bloqueio] fechamento rápido por texto (sem LLM): {bloqueio[:80]}')
+        return {'tipo': 'fechou', 'detalhe': f'botão de fechamento por texto — {bloqueio[:80]}',
+                'el': el}
+
+    # Camada 3: LLM com múltiplos candidatos (2 rodadas, erro retroalimenta)
+    if chamar is not None:
+        erro_anterior = ''
+        for rodada in (1, 2):
+            resumo = resumo_pagina(driver)
+            if not resumo:
+                break
+            try:
+                resp = chamar(_prompt_bloqueio(bloqueio, resumo, erro_anterior), 300)
+            except Exception as exc:
+                diz(f'    [bloqueio] LLM falhou na rodada {rodada}: {exc}')
+                break
+            p = parse_bloqueio(resp)
+            if p['humano']:
+                diz(f'    [bloqueio] captcha/desafio — aguardando humano: {p["texto"][:80]}')
+                return {'tipo': 'captcha', 'detalhe': p['texto'] or bloqueio[:200], 'el': None}
+            if not p['seletores']:
+                diz(f'    [bloqueio] LLM: ignorar — {p["texto"][:80]}')
+                return {'tipo': 'nada', 'detalhe': p['texto'], 'el': None}
+            falhas = []
+            for sel in p['seletores']:
+                diz(f'    [bloqueio] tentando seletor de fechamento (rodada {rodada}): {sel[:70]}')
+                el = _encontrar(driver, sel)
+                if el is not None:
+                    diz(f'    [bloqueio] ✅ fechado via LLM: {sel[:70]}')
+                    return {'tipo': 'fechou', 'detalhe': p['texto'] or sel, 'el': el}
+                falhas.append(f'{sel[:70]} não achou elemento visível')
+            erro_anterior = '; '.join(falhas)
+
+    # Camada 4: iframe + ESC (com re-checagem: ESC pode ter fechado o modal)
+    if _tenta_iframe(driver, diz):
+        return {'tipo': 'fechou', 'detalhe': f'fechado em iframe — {bloqueio[:80]}', 'el': None}
+    if _tecla_esc(driver) and not detecta_bloqueio(driver):
+        diz('    [bloqueio] ESC pressionado — overlay fechou')
+        return {'tipo': 'fechou', 'detalhe': f'fechado via ESC — {bloqueio[:80]}', 'el': None}
+    diz(f'    [bloqueio] sem fechamento: {bloqueio[:80]}')
+    return {'tipo': 'indeciso', 'detalhe': bloqueio[:200], 'el': None}
 
 
 # ── Localização (Selenium) ──────────────────────────────────────────────────
