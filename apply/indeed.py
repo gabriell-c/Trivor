@@ -3949,6 +3949,27 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
             esperar(1.5)
             fechar_popup_saida(driver)
 
+            # Supervisor de tela: overlay/modal bloqueando? Checar é ~5ms (sem
+            # LLM); o LLM só entra quando HÁ overlay visível — ele decide fechar,
+            # ignorar ou sinalizar captcha. É aqui que o bot "lê a tela".
+            bloqueio = pagelens.tratar_bloqueio(
+                driver,
+                chamar=lambda prompt, max_tokens=200: chamar_llm(
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens, temperature=0.05),
+                log=log_info,
+            )
+            if bloqueio["tipo"] == "fechou" and bloqueio["el"] is not None:
+                if _click(driver, bloqueio["el"]):
+                    log_info(f"  [bloqueio] modal fechado: {bloqueio['detalhe'][:80]}")
+                    esperar(1.5)
+                continue  # reprocessa a etapa — o modal estava cobrindo a tela
+            if bloqueio["tipo"] == "captcha":
+                log_warn(f"  [bloqueio] desafio humano — aguardando resolução: {bloqueio['detalhe'][:80]}")
+                if not aguardar_resolucao_captcha(driver):
+                    resultado["status"] = "captcha_nao_resolvido"
+                    break
+
             if verificar_enviada(driver):
                 resultado["status"] = "enviado"
                 log_ok("  ✅ Candidatura enviada com sucesso!")

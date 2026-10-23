@@ -103,6 +103,23 @@ def resumo_pagina_pw(page, limite: int = 2800) -> str:
 
 # ── Prompt + parsing ────────────────────────────────────────────────────────
 
+def _primeiro_json(texto: str) -> dict | None:
+    """Extrai o primeiro objeto JSON de `texto` (tolerante a cercas de
+    markdown/prosador ao redor). Falha → None."""
+    s = (texto or '').strip()
+    if s.startswith('```'):
+        s = re.sub(r'^```[a-zA-Z]*\s*', '', s)
+        s = re.sub(r'\s*```$', '', s)
+    i, j = s.find('{'), s.rfind('}')
+    if i == -1 or j <= i:
+        return None
+    try:
+        dados = json.loads(s[i:j + 1])
+    except json.JSONDecodeError:
+        return None
+    return dados if isinstance(dados, dict) else None
+
+
 def montar_prompt(objetivo: str, resumo: str, regras: str = '',
                   erro_anterior: str = '') -> str:
     """Prompt enxuto: objetivo + snapshot + regras de perfil + tentativa anterior."""
@@ -127,23 +144,110 @@ def montar_prompt(objetivo: str, resumo: str, regras: str = '',
 
 
 def parse_seletores(resposta: str) -> list[str]:
-    """Extrai a lista de seletores da resposta do LLM (tolerante a cercas de
-    markdown/JSON extra). Falha → [] (o bot segue o fluxo normal de erro)."""
-    s = (resposta or '').strip()
-    if s.startswith('```'):
-        s = re.sub(r'^```[a-zA-Z]*\s*', '', s)
-        s = re.sub(r'\s*```$', '', s)
-    i, j = s.find('{'), s.rfind('}')
-    if i == -1 or j <= i:
-        return []
-    try:
-        dados = json.loads(s[i:j + 1])
-    except json.JSONDecodeError:
-        return []
-    itens = dados.get('seletores') if isinstance(dados, dict) else None
+    """Extrai a lista de seletores da resposta do LLM. Falha → []."""
+    dados = _primeiro_json(resposta) or {}
+    itens = dados.get('seletores')
     if not isinstance(itens, list):
         return []
     return [str(x).strip() for x in itens if isinstance(x, (str, int)) and str(x).strip()][:3]
+
+
+def parse_acao(resposta: str) -> dict:
+    """Extrai {acao, seletor, texto} da resposta de tratar_bloqueio (desconhecido → 'nada')."""
+    dados = _primeiro_json(resposta) or {}
+    acao = str(dados.get('acao', 'nada')).lower()
+    if acao not in ('clicar', 'humano', 'nada'):
+        acao = 'nada'
+    return {'acao': acao,
+            'seletor': str(dados.get('seletor') or '').strip(),
+            'texto': str(dados.get('texto') or '')[:240]}
+
+
+# ── Supervisor de bloqueios (modal/overlay/captcha) ─────────────────────────
+# Checagem barata (~5ms, SEM LLM): existe overlay visível na tela? Só quando
+# SIM e o modal não foi fechado pelos seletores conhecidos do bot, o LLM lê o
+# snapshot e decide: fechar (qual botão), esperar humano (captcha) ou ignorar.
+
+BLOCKER_JS = """(() => {
+  const vis = el => { try { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4; } catch (e) { return false; } };
+  const cands = document.querySelectorAll(
+    '[role="dialog"], [aria-modal="true"], [class*="modal" i], [class*="popup" i], [class*="overlay" i]');
+  for (const el of cands) {
+    if (!vis(el)) continue;
+    const t = (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
+    const rot = String(el.getAttribute('role') || el.className || 'overlay').slice(0, 40);
+    return rot + (t ? ' :: ' + t : '');
+  }
+  return null;
+})()"""
+
+
+def detecta_bloqueio(driver) -> str | None:
+    """Descrição curta do overlay visível, ou None (tela livre). Não usa LLM."""
+    try:
+        bruto = driver.execute_script(BLOCKER_JS)
+    except Exception:
+        return None
+    return bruto if isinstance(bruto, str) and bruto else None
+
+
+def tratar_bloqueio(driver, chamar: Callable[[str, int], str] | None = None,
+                    log: Callable[[str], None] | None = None) -> dict:
+    """Supervisor de tela: modal apareceu? O LLM decide o que fazer.
+
+    Retorna `{"tipo": "nada"|"captcha"|"fechou"|"indeciso", "detalhe": str,
+    "el": element|None}`:
+      - `nada`     → tela livre (ou bloqueio considerado inofensivo pelo LLM)
+      - `captcha`  → verificação humana → quem chama resolve manualmente
+      - `fechou`   → LLM indicou o botão; `el` pronto pra `_click` do bot
+      - `indeciso` → bloqueio detectado e LLM ausente/falhou — loga e segue
+
+    LLM é chamado APENAS quando um overlay visível existe (0 custo no happy path)."""
+    def diz(msg: str) -> None:
+        if log:
+            log(msg)
+
+    bloqueio = detecta_bloqueio(driver)
+    if not bloqueio:
+        return {'tipo': 'nada', 'detalhe': '', 'el': None}
+    if chamar is None:
+        diz(f'    [bloqueio] overlay detectado (sem LLM): {bloqueio[:80]}')
+        return {'tipo': 'indeciso', 'detalhe': bloqueio[:200], 'el': None}
+
+    resumo = resumo_pagina(driver)
+    if not resumo:
+        return {'tipo': 'indeciso', 'detalhe': 'overlay sem snapshot', 'el': None}
+    prompt = (
+        f"Durante uma candidatura automatizada, um BLOQUEIO/overlay apareceu na tela:\n{bloqueio}\n\n"
+        f"ELEMENTOS VISÍVEIS AGORA (snapshot; t=tipo, txt=texto, id/tid/aria/n=atributos):\n{resumo}\n\n"
+        "REGRAS DE DECISÃO:\n"
+        "1. Modal de aviso/informação/marketing com botão 'entendi', 'ok', 'continuar', "
+        "'aceitar', 'fechar', 'x' → acao 'clicar' com o seletor desse botão (feito dos atributos do snapshot).\n"
+        "2. Captcha / 'I am not a robot' / desafio de verificação → acao 'humano'.\n"
+        "3. Mensagem de erro de campo (dados faltando) ou algo inofensivo → acao 'nada'; descreva em 'texto'.\n"
+        "4. Não conseguir decidir → acao 'nada'.\n"
+        "NUNCA indique preencher campos — só fechar/avançar. NUNCA seletor genérico.\n\n"
+        'RESPOSTA: SOMENTE um JSON: {"acao": "clicar"|"humano"|"nada", '
+        '"seletor": "apenas se acao=clicar", "texto": "o que está aparecendo (máx 120 palavras)"}'
+    )
+    try:
+        resp = chamar(prompt, 200)
+    except Exception as exc:
+        diz(f'    [bloqueio] LLM falhou: {exc}')
+        return {'tipo': 'indeciso', 'detalhe': f'overlay: {bloqueio[:120]}', 'el': None}
+    acao = parse_acao(resp)
+    if acao['acao'] == 'humano':
+        diz(f'    [bloqueio] captcha/desafio — aguardando humano: {acao["texto"][:80]}')
+        return {'tipo': 'captcha', 'detalhe': acao['texto'] or bloqueio[:200], 'el': None}
+    if acao['acao'] == 'clicar' and acao['seletor']:
+        el = _encontrar(driver, acao['seletor'])
+        if el is not None:
+            diz(f'    [bloqueio] fechando via LLM: {acao["seletor"][:70]}')
+            return {'tipo': 'fechou', 'detalhe': acao['texto'] or acao['seletor'], 'el': el}
+        diz(f'    [bloqueio] seletor {acao["seletor"][:60]} não achou elemento visível')
+        return {'tipo': 'indeciso', 'detalhe': f'{acao["seletor"]} falhou: {acao["texto"][:120]}', 'el': None}
+    diz(f'    [bloqueio] LLM: ignorar — {acao["texto"][:80]}')
+    return {'tipo': 'nada', 'detalhe': acao['texto'], 'el': None}
 
 
 # ── Localização (Selenium) ──────────────────────────────────────────────────

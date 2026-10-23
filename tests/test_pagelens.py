@@ -32,9 +32,11 @@ class _El:
 
 
 class _DriverFake:
-    def __init__(self, mapa: dict | None = None, digest: dict | None = None):
+    def __init__(self, mapa: dict | None = None, digest: dict | None = None,
+                 bloqueio: str | None = None):
         self.mapa = mapa or {}
         self.digest = digest
+        self.bloqueio = bloqueio
         self.sel_tentados: list[str] = []
 
     def find_element(self, by: str, value: str):
@@ -42,6 +44,10 @@ class _DriverFake:
         return self.mapa.get(value)
 
     def execute_script(self, js: str, *args):
+        if js == pagelens.DIGEST_JS:
+            return self.digest
+        if js == pagelens.BLOCKER_JS:
+            return self.bloqueio
         return self.digest
 
 
@@ -161,3 +167,63 @@ def test_resumo_corta_para_limite():
     s = pagelens.resumo_pagina(_DriverFake(mapa={}, digest=grande), limite=500)
     assert len(s) <= 500
     assert '"titulo"' in s  # título/passo sobrevivem ao corte
+
+
+# ── Supervisor de bloqueios (modal/overlay/captcha) ─────────────────────────
+
+def test_bloqueio_tela_livre_nao_chama_llm():
+    chamadas: list[str] = []
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT, bloqueio=None)  # sem overlay
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: chamadas.append(p) or "{}")
+    assert r["tipo"] == "nada"
+    assert not chamadas  # checar é barato; LLM só com overlay de fato
+
+
+def test_bloqueio_llm_fecha_modal():
+    el = _El()
+    d = _DriverFake(mapa={"#fechar-modal": el}, digest=_SNAPSHOT,
+                    bloqueio="modal :: Aviso: as candidaturas encerram em breve. [Fechar]")
+    resp = json.dumps({"acao": "clicar", "seletor": "#fechar-modal",
+                       "texto": "modal informativo com botão fechar"})
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: resp)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is el
+    assert "#fechar-modal" in d.sel_tentados
+
+
+def test_bloqueio_llm_captcha_sinaliza_humano():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT,
+                    bloqueio="overlay :: I am not a robot — Verificação de segurança")
+    resp = json.dumps({"acao": "humano", "seletor": "", "texto": "reCAPTCHA"})
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: resp)
+    assert r["tipo"] == "captcha"
+    assert r["el"] is None
+
+
+def test_bloqueio_llm_ignora_inofensivo():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT, bloqueio="overlay :: texto de rodapé")
+    resp = json.dumps({"acao": "nada", "seletor": "", "texto": "só é rodapé, não bloqueia"})
+    r = pagelens.tratar_bloqueio(d, chamar=lambda p, m: resp)
+    assert r["tipo"] == "nada"
+
+
+def test_bloqueio_sem_llm_nao_quebra():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT, bloqueio="modal :: algo apareceu")
+    r = pagelens.tratar_bloqueio(d, chamar=None)
+    assert r["tipo"] == "indeciso"
+    assert "algo apareceu" in r["detalhe"]
+
+
+def test_bloqueio_llm_excecao_nao_lanca():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT, bloqueio="modal :: x")
+
+    def boom(p, m):
+        raise RuntimeError("provedor fora do ar")
+
+    r = pagelens.tratar_bloqueio(d, chamar=boom)
+    assert r["tipo"] == "indeciso"
+
+
+def test_parse_acao_invalido_vira_nada():
+    assert pagelens.parse_acao('{"acao": "pular-mundo"}')["acao"] == "nada"
+    assert pagelens.parse_acao("garbage") == {"acao": "nada", "seletor": "", "texto": ""}
