@@ -59,7 +59,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
-from common import perfil
+from common import pagelens, perfil
 from dotenv import load_dotenv
 from groq import Groq
 from selenium.common.exceptions import (
@@ -3353,6 +3353,25 @@ def clicar_continuar(driver: Driver) -> bool:
 
     if clicou:
         log_info(f"  [continuar] clicou via JS: '{clicou}'")
+        esperar(random.uniform(1.5, 2.5))
+        return True
+
+    # Estratégia 5: resgate semântico — o LLM lê a página viva (snapshot
+    # compacto) e escolhe o botão que avança. Só roda se 1–4 falharam, então
+    # o happy path não ganha latência; em página redesenhada, ganha resiliência.
+    el = pagelens.achar(
+        driver,
+        seletores=[],  # estratégias 1–4 já testaram os conhecidos
+        objetivo=("o botão que AVANÇA para o próximo passo do formulário de "
+                  "candidatura (ex.: 'Continuar', 'Next', 'Apply', 'Review application'). "
+                  "NUNCA 'Voltar', 'Back', 'Fechar', 'Cancel', 'Salvar e fechar' ou 'Ver mais'."),
+        regras=perfil.perfil_compacta(CONFIG, limite=220),
+        chamar=lambda prompt, max_tokens=260: chamar_llm(
+            [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.05),
+        log=log_info,
+    )
+    if el is not None and _click(driver, el):
+        log_info("  [continuar] clicou via resgate semântico (o LLM leu a página)")
         esperar(random.uniform(1.5, 2.5))
         return True
 
