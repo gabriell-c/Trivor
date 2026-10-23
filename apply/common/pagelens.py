@@ -401,3 +401,109 @@ def achar_pw(
                 return el
             erro_anterior = f'o seletor {sel[:70]} não achou elemento visível'
     return None
+
+
+# ── Agente de passo: o LLM responde TODOS os campos em 1 chamada ────────────
+# Substitui o "campo por campo" quando as regras determinísticas não resolveram:
+# uma única chamada lê todas as perguntas do passo de uma vez → respostas
+# consistentes entre si (mesmo nível, mesma pretensão salarial) e cobertura de
+# tipos de pergunta que a tabela de regras não conhece. Contrato de resposta:
+# radio/select → índice int; checkbox → lista de índices; texto → string curta
+# ou "PULAR". Item inválido é omitido → o bot faz fallback per-field ali.
+
+def _linha_campo(idx: int, c: dict) -> str:
+    partes = [f'[{idx}] ID={c["id"]}', f'tipo={c["tipo"]}']
+    if c.get("pergunta"):
+        partes.append(f'pergunta="{c["pergunta"][:120]}"')
+    if c.get("opcoes"):
+        ops = " / ".join(f'{j}:{o[:40]}' for j, o in enumerate(c["opcoes"][:12]))
+        partes.append(f'opcoes=[{ops}{" ..." if len(c["opcoes"]) > 12 else ""}]')
+    return " ".join(partes)
+
+
+def montar_prompt_agente(campos: list[dict], contexto_vaga: str,
+                         regras: str = "") -> str:
+    """Prompt do agente: todos os campos do passo + regras do perfil."""
+    linhas = "\n".join(_linha_campo(i, c) for i, c in enumerate(campos))
+    base = (
+        "Você opera um navegador automatizado em um formulário de candidatura a emprego.\n"
+        f"VAGA: {contexto_vaga[:200]}\n"
+        f"CAMPOS DO PASSO ATUAL:\n{linhas}\n"
+    )
+    if regras:
+        base += f"\nPERFIL DO CANDIDATO E REGRAS:\n{regras}\n"
+    base += (
+        "\nREGRAS DE RESPOSTA:\n"
+        "1. radio/select: use o ÍNDICE (o número antes do texto em opcoes) da opção correta.\n"
+        "2. checkbox: use uma LISTA de índices de TODAS as opções corretas "
+        "(lista vazia se nenhuma se aplica).\n"
+        "3. texto: resposta curta e direta (máx 15 palavras), com base no perfil. "
+        "Se pedir salário atual/último ou for campo condicional que não se aplica → \"PULAR\".\n"
+        "4. Respeite as regras de exclusão: tecnologia/senioridade excluída → NÃO/NENHUM.\n"
+        "5. Seja consistente entre os campos (mesmo nível, mesma pretensão, mesma disponibilidade).\n\n"
+        'RESPOSTA: SOMENTE um JSON válido, sem markdown: '
+        '{"respostas": {"<ID>": valor}} — um item por campo, com o MESMO ID da lista acima.'
+    )
+    return base
+
+
+def parse_batch(campos: list[dict], resposta: str) -> dict:
+    """Extrai {id: valor} da resposta do agente. Itens inválidos são omitidos
+    (o bot faz fallback per-field neles — nunca vira resposta errada)."""
+    dados = _primeiro_json(resposta) or {}
+    bruto = dados.get("respostas")
+    if not isinstance(bruto, dict):
+        return {}
+    out: dict = {}
+    for campo in campos:
+        cid = campo["id"]
+        if cid not in bruto:
+            continue
+        v = bruto[cid]
+        if campo["tipo"] in ("radio", "select"):
+            try:
+                idx = int(v)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= idx < len(campo.get("opcoes") or []):
+                out[cid] = idx
+        elif campo["tipo"] == "checkbox":
+            if isinstance(v, list):
+                nums = [int(x) for x in v if str(x).strip().isdigit()]
+            else:
+                nums = [int(x) for x in re.findall(r"\d+", str(v))]
+            out[cid] = nums  # [] = "nenhuma se aplica" (o aplicador trata)
+        else:
+            out[cid] = str(v).strip()
+    return out
+
+
+def agente_campos(
+    campos: list[dict],
+    contexto_vaga: str,
+    regras: str = "",
+    chamar: Callable[[str, int], str] | None = None,
+    log: Callable[[str], None] | None = None,
+) -> dict:
+    """Agente de passo: responde `campos` em UMA chamada de LLM.
+
+    `campos` no formato dos bots: {"id","tipo","pergunta","opcoes":[...]} (mesmo
+    formato que ia_processar_formulario usa). Retorna {id: valor} no contrato
+    de `parse_batch`; {} quando não há LLM ou a chamada falhou — quem chama
+    aplica o clássico per-field nesses casos (o agente nunca piora o estado).
+    Custo: 1 chamada (~3-6s com Groq) no lugar de N chamadas campo a campo."""
+    def diz(msg: str) -> None:
+        if log:
+            log(msg)
+
+    if not campos or chamar is None:
+        return {}
+    prompt = montar_prompt_agente(campos, contexto_vaga, regras)
+    try:
+        resp = chamar(prompt, 900)
+    except Exception as exc:
+        diz(f'    [agente] LLM falhou: {exc}')
+        return {}
+    obtidas = parse_batch(campos, resp)
+    diz(f'    [agente] {len(obtidas)}/{len(campos)} campo(s) resolvido(s) em 1 chamada')
+    return obtidas

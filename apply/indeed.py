@@ -1234,6 +1234,45 @@ def ia_processar_formulario(campos: list[dict], contexto_vaga: str) -> dict[str,
     if not campos_para_ia:
         return resultado
 
+    # ── AGENTE DE PASSO: o LLM lê TODOS os campos restantes de uma vez ──
+    # (1 chamada no lugar de N; respostas consistentes + perguntas que a
+    #  tabela de regras não conhece). Falhou → fallback per-field clássico,
+    #  que nunca fica pior que hoje.
+    agente = pagelens.agente_campos(
+        campos_para_ia, contexto_vaga,
+        regras=_get_system_form(),
+        chamar=lambda prompt, max_tokens=900: chamar_llm(
+            [{"role": "user", "content": prompt}],
+            max_tokens=max_tokens, temperature=0.1),
+    )
+    if agente:
+        for campo in campos_para_ia:
+            cid = campo["id"]
+            if cid not in agente:
+                continue
+            val = agente[cid]
+            if campo["tipo"] in ("radio", "select"):
+                resultado[cid] = val
+                ops = campo.get("opcoes") or []
+                log_ok(f"    [AGENTE] '{campo['pergunta'][:50]}' → {val}: "
+                       f"'{ops[val][:40] if val < len(ops) else ''}'")
+            elif campo["tipo"] == "checkbox":
+                resultado[cid] = val
+                log_ok(f"    [AGENTE] '{campo['pergunta'][:50]}' → índices {val}")
+            else:
+                v = "" if isinstance(val, str) and val.strip().upper() == "PULAR" else val
+                resultado[cid] = v
+                log_ok(f"    [AGENTE] '{campo['pergunta'][:50]}' → {repr(v)[:50] if v else '[PULADO]'}")
+
+        restantes = [c for c in campos_para_ia if c["id"] not in resultado]
+        if restantes:
+            log_info(f"  [AGENTE] {len(campos_para_ia) - len(restantes)} campo(s) em 1 chamada; "
+                     f"{len(restantes)} sem resposta → fallback campo a campo")
+            campos_para_ia = restantes
+        else:
+            log_ok(f"  🤖 [AGENTE] {len(campos_para_ia)} campo(s) resolvido(s) em 1 chamada de LLM")
+            return resultado
+
     for campo in campos_para_ia:
         try:
             val = _ia_resolver_campo(campo, contexto_vaga)

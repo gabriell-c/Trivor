@@ -227,3 +227,69 @@ def test_bloqueio_llm_excecao_nao_lanca():
 def test_parse_acao_invalido_vira_nada():
     assert pagelens.parse_acao('{"acao": "pular-mundo"}')["acao"] == "nada"
     assert pagelens.parse_acao("garbage") == {"acao": "nada", "seletor": "", "texto": ""}
+
+
+# ── Agente de passo (todos os campos em 1 chamada de LLM) ──────────────────
+
+_CAMPOS = [
+    {"id": "r_0", "tipo": "radio", "pergunta": "Qual seu nível?",
+     "opcoes": ["Estágio", "Júnior", "Pleno", "Sênior"]},
+    {"id": "t_1", "tipo": "texto", "pergunta": "Quantos anos de experiência?",
+     "opcoes": []},
+    {"id": "cb_2", "tipo": "checkbox", "pergunta": "Quais tecnologias você domina?",
+     "opcoes": ["Python", "Java", "React", "Go"]},
+]
+
+
+def test_montar_prompt_agente_inclui_todos_campos():
+    p = pagelens.montar_prompt_agente(_CAMPOS, "Cargo: Dev Jr | Empresa: X")
+    for esperado in ["r_0", "t_1", "cb_2", "1:Júnior", "Dev Jr", "PULAR", '"respostas"']:
+        assert esperado in p, f'falta no prompt: {esperado!r}'
+
+
+def test_parse_batch_coercao_por_tipo():
+    resp = json.dumps({"respostas": {"r_0": 1, "t_1": "2 a 3 anos", "cb_2": [0, 2]}})
+    got = pagelens.parse_batch(_CAMPOS, resp)
+    assert got == {"r_0": 1, "t_1": "2 a 3 anos", "cb_2": [0, 2]}
+    assert isinstance(got["r_0"], int)
+
+
+def test_parse_batch_indice_fora_de_faixa_e_omite():
+    resp = json.dumps({"respostas": {"r_0": 99, "t_1": "ok"}})
+    assert pagelens.parse_batch(_CAMPOS, resp) == {"t_1": "ok"}
+
+
+def test_parse_batch_checkbox_aceita_string_de_numeros():
+    resp = json.dumps({"respostas": {"cb_2": "0, 2"}})
+    assert pagelens.parse_batch(_CAMPOS, resp)["cb_2"] == [0, 2]
+    # checkbox com "nenhuma se aplica" vira lista vazia (resposta válida)
+    resp2 = json.dumps({"respostas": {"cb_2": "não se aplica"}})
+    assert pagelens.parse_batch(_CAMPOS, resp2)["cb_2"] == []
+
+
+def test_parse_batch_json_invalido_vira_vazio():
+    assert pagelens.parse_batch(_CAMPOS, "isso não é JSON") == {}
+    assert pagelens.parse_batch(_CAMPOS, '{"respostas": [1,2]}') == {}
+
+
+def test_agente_campos_faz_uma_sola_chamada():
+    chamadas: list[str] = []
+    def llm(prompt: str, max_tokens: int) -> str:
+        chamadas.append(prompt)
+        return json.dumps({"respostas": {"r_0": 1, "t_1": "PULAR", "cb_2": [0]}})
+    got = pagelens.agente_campos(_CAMPOS, "cargo x",
+                                 chamar=llm)
+    assert len(chamadas) == 1
+    assert got == {"r_0": 1, "t_1": "PULAR", "cb_2": [0]}
+
+
+def test_agente_campos_sem_llm_nao_chama():
+    assert pagelens.agente_campos(_CAMPOS, "cargo x") == {}
+    assert pagelens.agente_campos([], "cargo x",
+                                   chamar=lambda p, m: "{}") == {}
+
+
+def test_agente_campos_llm_falha_retorna_vazio():
+    def boom(p, m):
+        raise RuntimeError("provedor fora do ar")
+    assert pagelens.agente_campos(_CAMPOS, "cargo x", chamar=boom) == {}
