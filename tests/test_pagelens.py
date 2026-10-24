@@ -59,7 +59,7 @@ class _DriverFake:
     def __init__(self, mapa: dict | None = None, digest: dict | None = None,
                  bloqueio: str | None = None, close_el: object | None = None,
                  close_por_frame: dict | None = None,
-                 iframes: list | None = None):
+                 iframes: list | None = None, campos: dict | None = None):
         self.mapa = mapa or {}
         self.digest = digest
         self.bloqueio = bloqueio
@@ -68,6 +68,7 @@ class _DriverFake:
             else ({None: close_el} if close_el is not None else {})
         self.frame_atual = None
         self.iframes = iframes or []
+        self.campos = campos or {}
         self.switch_to = _Switch(self)
         self.sel_tentados: list[str] = []
 
@@ -87,6 +88,8 @@ class _DriverFake:
             return self.bloqueio
         if js == pagelens._CLOSE_BTN_JS:
             return self.close_map.get(self.frame_atual)
+        if js == pagelens.CAMPOS_JS:
+            return self.campos
         return self.digest
 
 
@@ -415,3 +418,227 @@ def test_agente_campos_llm_falha_retorna_vazio():
     def boom(p, m):
         raise RuntimeError("provedor fora do ar")
     assert pagelens.agente_campos(_CAMPOS, "cargo x", chamar=boom) == {}
+
+
+# ── Rótulo de campo (layout mudou → LLM infere a pergunta) ──────────────────
+
+def test_rotulo_irresolvido_casos():
+    assert pagelens.rotulo_irresolvido("") is True
+    assert pagelens.rotulo_irresolvido("   ") is True
+    assert pagelens.rotulo_irresolvido("campo") is True
+    assert pagelens.rotulo_irresolvido("q_123") is True
+    assert pagelens.rotulo_irresolvido("input-q_456") is True
+    assert pagelens.rotulo_irresolvido("question_7") is True
+    assert pagelens.rotulo_irresolvido("CPF") is False
+    assert pagelens.rotulo_irresolvido("Qual seu nível?") is False
+    assert pagelens.rotulo_irresolvido(None) is True
+
+
+def test_resumo_campos_json_com_k_e_opcoes():
+    campos = {"passo": "Etapa 2: Dados",
+              "campos": [{"k": "q_1", "t": "text", "ph": "", "opt": []},
+                         {"k": "q_2", "t": "select", "ph": "",
+                          "opt": ["a", "b"]}]}
+    d = _DriverFake(campos=campos)
+    s = pagelens.resumo_campos(d)
+    assert '"q_1"' in s and '"q_2"' in s and '"Etapa 2' in s
+    assert '"a"' in s  # opções de select entram no snapshot
+    # vazio → '' (não existe resumo pra LLM)
+    assert pagelens.resumo_campos(_DriverFake()) == ""
+    assert pagelens.resumo_campos(_DriverFake(campos={"passo": "", "campos": []})) == ""
+
+
+def test_agente_rotulos_resposta_valida():
+    desc = json.dumps({"passo": "", "campos": [{"k": "q_9", "t": "text",
+                                                  "ph": "", "opt": []}]})
+    got = pagelens.agente_rotulos(desc, "vaga de dev jr",
+                                  chamar=lambda p, m=500: json.dumps(
+                                      {"respostas": {"q_9": "Qual seu CPF?"}}))
+    assert got == {"q_9": "Qual seu CPF?"}
+
+
+def test_agente_rotulos_garbage_e_sem_llm_vira_vazio():
+    desc = json.dumps({"passo": "", "campos": [{"k": "q_9", "t": "text",
+                                                  "ph": "", "opt": []}]})
+    assert pagelens.agente_rotulos(desc, "v",
+                                   chamar=lambda p, m=500: "não é json") == {}
+    assert pagelens.agente_rotulos(desc, "v") == {}
+    assert pagelens.agente_rotulos("", "v",
+                                   chamar=lambda p, m=500: "{}") == {}
+
+
+# ── Deteção de envio semântica (tela de sucesso nova) ───────────────────────
+
+def test_montar_prompt_enviada_avisa_que_revisao_nao_e_envio():
+    p = pagelens.montar_prompt_enviada(json.dumps(_SNAPSHOT))
+    assert "REVISÃO" in p and '"enviada"' in p
+
+
+def test_parse_enviada_varias_respostas():
+    assert pagelens.parse_enviada(json.dumps({"enviada": True, "motivo": "ok"})) is True
+    assert pagelens.parse_enviada(json.dumps({"enviada": "sim"})) is True
+    assert pagelens.parse_enviada(json.dumps({"enviada": False})) is False
+    assert pagelens.parse_enviada("garbage") is False
+    assert pagelens.parse_enviada("") is False
+
+
+# ── Supervisor de bloqueio (Playwright) ──────────────────────────────────────
+
+class _HandleFake:
+    """ElementHandle fake — `click()` do botão de fechamento."""
+    def __init__(self):
+        self.clicou = False
+
+    def click(self) -> None:
+        self.clicou = True
+
+
+class _LocatorFake:
+    def __init__(self, alvo):
+        self._alvo = alvo
+        self.clicou = False
+
+    @property
+    def first(self):
+        return self
+
+    def wait_for(self, state, timeout) -> None:
+        if self._alvo is None:
+            raise RuntimeError("elemento não apareceu")
+        self._alvo = None  # consumido
+
+    def click(self) -> None:
+        self.clicou = True
+
+
+class _FrameFake:
+    """Frame child (cookie notice) — `evaluate` por script."""
+    def __init__(self, por_script: dict):
+        self.por_script = por_script
+
+    def evaluate(self, js: str, *args):
+        return self.por_script.get(js)
+
+
+class _PageFake:
+    """Page fake do Playwright: locator/evaluate/keyboard/frames duck-typed."""
+    def __init__(self, mapa: dict | None = None, digest: dict | None = None,
+                 bloqueio: str | None = None, close_el: object | None = None,
+                 campos: dict | None = None, esc_fecha: bool = False,
+                 frames: list | None = None):
+        self.mapa = mapa or {}
+        self.digest = digest
+        self.bloqueio = bloqueio
+        self.close_el = close_el
+        self.campos = campos or {}
+        self.escapes = 0
+        self.esc_fecha = esc_fecha
+        self.sel_tentados: list[str] = []
+        main = object()
+        self.main_frame = main
+        self.frames = [main] + (frames or [])
+        self.keyboard = self  # `page.keyboard.press(...)` cai em `page.press`
+
+    def evaluate(self, js: str, *args):
+        if js == pagelens.DIGEST_JS:
+            return self.digest
+        if js == pagelens.BLOCKER_JS:
+            return self.bloqueio
+        if js == pagelens._CLOSE_BTN_JS:
+            return self.close_el
+        if js == pagelens.CAMPOS_JS:
+            return self.campos
+        return self.digest
+
+    def locator(self, sel: str) -> _LocatorFake:
+        self.sel_tentados.append(sel)
+        return _LocatorFake(self.mapa.get(sel))
+
+    def press(self, tecla: str) -> None:
+        """page.keyboard.press(...) — `keyboard` aponta pra própria page."""
+        if tecla == "Escape":
+            self.escapes += 1
+            if self.esc_fecha:
+                self.bloqueio = None
+
+
+def test_pw_tela_livre_nao_chama_llm():
+    chamadas: list[str] = []
+    p = _PageFake(bloqueio=None)
+    r = pagelens.tratar_bloqueio_pw(p, chamar=lambda a, b: chamadas.append(a) or "{}")
+    assert r["tipo"] == "nada"
+    assert not chamadas
+
+
+def test_pw_captcha_por_keyword_sem_llm():
+    p = _PageFake(bloqueio="overlay :: Turnstile: I am not a robot")
+    r = pagelens.tratar_bloqueio_pw(p, chamar=None)
+    assert r["tipo"] == "captcha"
+    assert r["el"] is None
+
+
+def test_pw_texto_rapido_fecha_sem_llm():
+    h = _HandleFake()
+    p = _PageFake(bloqueio="modal :: Aviso: candidaturas encerram em breve",
+                   close_el=h)
+    chamadas: list[str] = []
+    r = pagelens.tratar_bloqueio_pw(p, chamar=lambda a, b: chamadas.append(a) or "{}")
+    assert r["tipo"] == "fechou"
+    assert r["el"] is h
+    assert not chamadas
+
+
+def test_pw_llm_multiplos_candidatos():
+    h = _HandleFake()
+    p = _PageFake(mapa={"#certo": h}, digest=_SNAPSHOT,
+                   bloqueio="modal :: aviso de privacidade")
+    resp = json.dumps({"humano": False, "seletores": ["#errado", "#certo"],
+                       "texto": "modal de aviso"})
+    r = pagelens.tratar_bloqueio_pw(p, chamar=lambda a, b: resp)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is not None  # locator do '#certo' (o wrapper do fake)
+    r["el"].click()
+    assert p.sel_tentados.index("#certo") > p.sel_tentados.index("#errado")
+
+
+def test_pw_esc_pressionado_quando_nada_fecha():
+    p = _PageFake(bloqueio="modal :: aviso sem botão", esc_fecha=True)
+    r = pagelens.tratar_bloqueio_pw(p, chamar=None)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is None
+    assert p.escapes == 1
+
+
+def test_pw_indeciso_quando_esc_nao_fecha():
+    p = _PageFake(bloqueio="modal :: aviso sem botão")
+    r = pagelens.tratar_bloqueio_pw(p, chamar=None)
+    assert r["tipo"] == "indeciso"
+    assert p.escapes == 1
+
+
+def test_pw_iframe_cookie_notice():
+    h = _HandleFake()
+    frame = _FrameFake({pagelens.BLOCKER_JS: "cookie :: use e aceite cookies",
+                        pagelens._CLOSE_BTN_JS: h})
+    p = _PageFake(bloqueio="modal :: cookie notice", frames=[frame])
+    r = pagelens.tratar_bloqueio_pw(p, chamar=None)
+    assert r["tipo"] == "fechou"
+    assert r["el"] is None
+
+
+def test_pw_llm_sem_resposta_nao_ignora_overlay():
+    # Provedor devolve None/vazio (ex.: `_chamar_llm` da Gupy em falha) —
+    # NÃO pode virar "nada" (tela livre): o overlay continua na tela.
+    p = _PageFake(mapa={}, digest=_SNAPSHOT, bloqueio="modal :: aviso")
+    r = pagelens.tratar_bloqueio_pw(p, chamar=lambda a, b: "")
+    assert r["tipo"] == "indeciso"
+    assert p.escapes == 1
+
+
+def test_resumo_campos_pw_via_evaluate():
+    campos = {"passo": "p", "campos": [{"k": "q_1", "t": "text", "ph": "",
+                                          "opt": []}]}
+    p = _PageFake(campos=campos)
+    s = pagelens.resumo_campos_pw(p)
+    assert '"q_1"' in s
+    assert pagelens.resumo_campos_pw(_PageFake()) == ""

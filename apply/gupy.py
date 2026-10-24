@@ -45,7 +45,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
-from common import perfil
+from common import pagelens, perfil
 from common.browser import SESSIONS_DIR, Browser, BrowserUnavailable, find_adaptive
 from dotenv import load_dotenv
 from playwright.sync_api import Page
@@ -1537,6 +1537,7 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
         max_etapas = 15
         etapa_num  = 0
         finalizado = False
+        bloqueios_seguidos = 0
 
         while etapa_num < max_etapas:
             etapa_num += 1
@@ -1589,6 +1590,44 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
                 log("  → Modal de apresentação pessoal (prioridade)...")
                 etapa_apresentacao(nova_aba, vaga["titulo"], descricao, respostas_salvas)
                 continue
+
+            # ── Supervisor de tela: overlay que os tratadores específicos da
+            #    Gupy não cobriram (layout mudou, modal novo). Escalonamento:
+            #    texto conhecido (SEM LLM) → LLM (2 rodadas) → ESC → parada.
+            bloqueio = pagelens.tratar_bloqueio_pw(
+                nova_aba,
+                chamar=lambda prompt, max_tokens=300: _chamar_llm(
+                    prompt, config, contexto=vaga.get("titulo", ""),
+                    temperatura=0.05, max_tokens=max_tokens),
+                log=log,
+            )
+            if bloqueio["tipo"] == "fechou":
+                if bloqueio["el"] is not None:
+                    with contextlib.suppress(Exception):
+                        bloqueio["el"].click()
+                log(f"  [bloqueio] modal fechado: {bloqueio['detalhe'][:80]}")
+                esperar(nova_aba, 1.5)
+                continue
+            if bloqueio["tipo"] == "captcha":
+                log(f"  [bloqueio] desafio humano: {bloqueio['detalhe'][:80]}")
+                bloqueios_seguidos += 1
+                if bloqueios_seguidos >= 3:
+                    log("  [bloqueio] captcha sem resolução — parando a vaga")
+                    resultado["status"] = "captcha_nao_resolvido"
+                    break
+                esperar(nova_aba, 8)  # dá chance de um humano resolver (headed)
+                continue
+            if bloqueio["detalhe"]:
+                # "indeciso" ou overlay que o LLM mandou ignorar
+                bloqueios_seguidos += 1
+                log(f"  [bloqueio] tela bloqueada ({bloqueios_seguidos} seguidas): "
+                    f"{bloqueio['detalhe'][:80]}")
+                if bloqueios_seguidos >= 3:
+                    log("  [bloqueio] modal sem resolução — parando a vaga")
+                    resultado["status"] = "modal_nao_resolvido"
+                    break
+                continue
+            bloqueios_seguidos = 0
 
             # ── Perguntas da empresa (só quando modal NÃO está aberto) ────────
             tem_perguntas = (
@@ -1702,7 +1741,7 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
 
         resultado["respostas"] = respostas_salvas
 
-        if not finalizado:
+        if not finalizado and resultado["status"] not in ("modal_nao_resolvido", "captcha_nao_resolvido"):
             if verificar_candidatura_finalizada(nova_aba):
                 resultado["status"] = "enviado"
             else:

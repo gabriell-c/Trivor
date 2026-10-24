@@ -102,6 +102,137 @@ def resumo_pagina_pw(page, limite: int = 2800) -> str:
     return _digeste_para_texto(bruto, limite)
 
 
+# ── Rótulo de campo (layout mudou → LLM inferiu a pergunta) ────────────────
+# Se o site redesenha o formulário, os rótulos somem e o bot coleta campos
+# com `pergunta` vazia ou parecendo identificador ("q_123", "input-q_456").
+# O CAMPOS_JS lista os campos visíveis com atributos/opções; o agente devolve
+# a pergunta inferida de cada um. Execução continua no DOM do bot (verdade).
+
+def rotulo_irresolvido(lbl: str) -> bool:
+    """True se `lbl` é vazio ou parece identificador técnico, não pergunta."""
+    s = (lbl or '').strip()
+    if not s or s.lower() in ('campo', 'q_'):
+        return True
+    # Identificador técnico: só [a-z0-9_-] com pelo menos um dígito
+    # ("q_123", "input-q_456", "question_7", "a-1-b2"). Pergunta de verdade
+    # tem espaços/acentos — "Qual seu nível?" não cai aqui.
+    return bool(re.fullmatch(r'[a-z0-9_-]+', s, re.IGNORECASE)
+                 and re.search(r'\d', s))
+
+
+CAMPOS_JS = """(() => {
+  const vis = el => { try { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4; } catch (e) { return false; } };
+  const out = { passo: '', campos: [] };
+  const head = (document.querySelector('h1') || document.querySelector('h2') || {}).innerText || '';
+  const grp = (document.querySelector('[data-testid*="stepper"], [data-testid*="step"], [role="progressbar"]') || {}).innerText || '';
+  out.passo = (head + ' ' + grp).replace(/\\s+/g, ' ').trim().slice(0, 140);
+  const vistos = {};
+  const rotuloOpcao = el => {
+    try {
+      if (el.id) {
+        const l = document.querySelector('label[for="' + el.id + '"]');
+        if (l) { const t = (l.innerText || '').replace(/\\s+/g, ' ').trim(); if (t) return t; }
+      }
+      return (el.getAttribute('aria-label') || el.value || '').trim();
+    } catch (e) { return ''; }
+  };
+  const jaVisto = el => {
+    const k = el.id || el.name || '';
+    if (k && vistos[k]) return true;
+    if (k) vistos[k] = 1;
+    return false;
+  };
+  const addInput = el => {
+    if (!el || out.campos.length >= 20 || !vis(el) || jaVisto(el)) return;
+    out.campos.push({ k: String(el.id || el.name || '').slice(0, 40),
+      t: el.type || 'campo',
+      ph: (el.getAttribute('placeholder') || '').slice(0, 50), opt: [] });
+  };
+  document.querySelectorAll('input[type="text"],input[type="number"],input[type="email"],input[type="tel"],input[type="url"],input[type="date"]').forEach(addInput);
+  document.querySelectorAll('textarea').forEach(addInput);
+  document.querySelectorAll('select').forEach(el => {
+    if (!el || out.campos.length >= 20 || !vis(el) || jaVisto(el)) return;
+    const opcoes = Array.from(el.options || []).map(o => (o.textContent || '').trim()).filter(Boolean).slice(0, 8);
+    out.campos.push({ k: String(el.id || el.name || '').slice(0, 40),
+      t: 'select', ph: '', opt: opcoes });
+  });
+  document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(el => {
+    if (!el || out.campos.length >= 20 || !vis(el)) return;
+    const key = el.name || el.id || '';
+    if (jaVisto(el)) return;
+    const ty = el.type;
+    const opcoes = Array.from(document.querySelectorAll('input[type="' + ty + '"]'))
+      .filter(r => (r.name || r.id) === key)
+      .map(r => rotuloOpcao(r) || (r.value || '')).filter(Boolean).slice(0, 8);
+    out.campos.push({ k: String(key).slice(0, 40), t: ty, ph: '', opt: opcoes });
+  });
+  return out;
+})()"""
+
+
+def resumo_campos(driver, limite: int = 2600) -> str:
+    """Snapshot de campos (Selenium): passo atual + campos visíveis com
+    id/name, tipo, placeholder e opções. JSON — ou '' se vazio."""
+    try:
+        bruto = driver.execute_script(CAMPOS_JS)
+    except Exception:
+        return ''
+    if not isinstance(bruto, dict) or not bruto.get('campos'):
+        return ''
+    return json.dumps(bruto, ensure_ascii=False)[:limite]
+
+
+def resumo_campos_pw(page, limite: int = 2600) -> str:
+    """Snapshot de campos (Playwright) — mesmo JS via evaluate."""
+    try:
+        bruto = page.evaluate(CAMPOS_JS)
+    except Exception:
+        return ''
+    if not isinstance(bruto, dict) or not bruto.get('campos'):
+        return ''
+    return json.dumps(bruto, ensure_ascii=False)[:limite]
+
+
+def agente_rotulos(desc: str, contexto: str, chamar: Callable[[str, int], str] | None = None,
+                   log: Callable[[str], None] | None = None,
+                   passo: str = '') -> dict:
+    """Agente de rótulos: 1 chamada de LLM infere a pergunta de CADA campo
+    sem rótulo a partir do snapshot (passo, tipo, opções, contexto da vaga).
+
+    `desc` vem de `resumo_campos`/`resumo_campos_pw`. Retorna {k: pergunta}
+    (chave = id/name do campo); {} sem LLM ou em falha — o chamador segue o
+    fluxo clássico (o agente nunca piora o estado)."""
+    def diz(msg: str) -> None:
+        if log:
+            log(msg)
+
+    if not desc or chamar is None:
+        return {}
+    prompt = (
+        "Você lê a tela de um navegador durante uma candidatura automatizada. "
+        "O layout do site mudou e os campos ficaram SEM RÓTULO legível.\n"
+        f"PASSO ATUAL: {passo or '(desconhecido)'}\n"
+        f"VAGA: {contexto[:200]}\n"
+        f"CAMPOS VISÍVEIS (k=id/name, t=tipo, ph=placeholder, opt=opções visíveis):\n{desc}\n\n"
+        "TAREFA: para CADA campo, escreva a PERGUNTA que ele está fazendo, inferida do "
+        "passo, da vaga, das opções e da ordem. Idioma do site. Máx 12 palavras cada.\n"
+        'RESPOSTA: SOMENTE JSON válido, sem markdown: {"respostas": {"<k>": "pergunta"}} — '
+        "uma chave por campo, usando o MESMO k de cada item acima."
+    )
+    try:
+        resp = chamar(prompt, 500)
+    except Exception as exc:
+        diz(f'    [rotulos] LLM falhou: {exc}')
+        return {}
+    dados = _primeiro_json(resp) or {}
+    bruto = dados.get('respostas')
+    if not isinstance(bruto, dict):
+        return {}
+    gotas = {str(k): str(v).strip()[:80] for k, v in bruto.items() if str(v).strip()}
+    diz(f'    [rotulos] {len(gotas)} rótulo(s) inferido(s) pelo LLM')
+    return gotas
+
+
 # ── Prompt + parsing ────────────────────────────────────────────────────────
 
 def _primeiro_json(texto: str) -> dict | None:
@@ -286,6 +417,30 @@ def _prompt_bloqueio(bloqueio: str, resumo: str, erro_anterior: str = "") -> str
     return base
 
 
+def montar_prompt_enviada(resumo: str) -> str:
+    """Pergunta ao LLM se a tela atual é confirmação de candidatura enviada.
+
+    O passo é necessário quando o site mudou o texto/seletores da tela de
+    sucesso e `verificar_enviada` (regras determinísticas) não reconhece.
+    Tela de REVISÃO com botão "Enviar" NÃO conta como enviada."""
+    return (
+        "Você lê a tela de um navegador durante uma candidatura automatizada.\n"
+        f"SNAPSHOT (t=tipo, txt=texto, id/tid/aria/n=atributos):\n{resumo}\n\n"
+        "ESTA PÁGINA INDICA QUE A CANDIDATURA JÁ FOI ENVIADA/CONCLUÍDA "
+        "(mensagem de obrigado/sucesso, 'application submitted', tela pós-envio, "
+        "pedido de avaliação da empresa)?"
+        " ATENÇÃO: uma tela de REVISÃO final que ainda tem botão 'Enviar/Submit' "
+        "NÃO significa enviada.\n\n"
+        'RESPOSTA: SOMENTE JSON válido, sem markdown: '
+        '{"enviada": true|false, "motivo": "máx 20 palavras"}'
+    )
+
+
+def parse_enviada(resposta: str) -> bool:
+    dados = _primeiro_json(resposta) or {}
+    return str(dados.get('enviada', '')).lower() in ('true', 'sim', 'yes', '1')
+
+
 def _tecla_esc(driver) -> bool:
     try:
         corpo = driver.find_element(by="tag name", value="body")
@@ -329,6 +484,48 @@ def _tenta_iframe(driver, diz) -> bool:
             with suppress(Exception):
                 driver.switch_to.default_content()
     return False
+
+
+def _rodadas_llm(tentar, resumo_fn, bloqueio: str,
+                 chamar: Callable[[str, int], str],
+                 diz: Callable[[str], None]) -> tuple:
+    """Rodadas LLM do supervisor de bloqueio (compartilhado Selenium/Playwright).
+
+    `tentar(sel)` → elemento/locator ou None; `resumo_fn()` → snapshot.
+    Retorna (situação, detalhe, el): 'fechou' | 'captcha' | 'nada' | 'falhou'."""
+    erro_anterior = ''
+    for rodada in (1, 2):
+        resumo = resumo_fn()
+        if not resumo:
+            return ('falhou', '', None)
+        try:
+            resp = chamar(_prompt_bloqueio(bloqueio, resumo, erro_anterior), 300)
+        except Exception as exc:
+            diz(f'    [bloqueio] LLM falhou na rodada {rodada}: {exc}')
+            return ('falhou', '', None)
+        if not str(resp or '').strip():
+            # Provedor sem resposta (ex.: `_chamar_llm` → None) — não é "julgou
+            # inofensivo", é rodar de novo: tratar vazio como "nada" faria o
+            # bot acreditar que a tela abriu quando o overlay continua lá.
+            erro_anterior = ('chamada anterior voltou vazia — proponha os '
+                            'seletores de fechamento mesmo assim')
+            continue
+        p = parse_bloqueio(resp)
+        if p['humano']:
+            diz(f'    [bloqueio] captcha/desafio — aguardando humano: {p["texto"][:80]}')
+            return ('captcha', p['texto'] or bloqueio[:200], None)
+        if not p['seletores']:
+            diz(f'    [bloqueio] LLM: ignorar — {p["texto"][:80]}')
+            return ('nada', p['texto'], None)
+        falhas = []
+        for sel in p['seletores']:
+            diz(f'    [bloqueio] tentando seletor de fechamento (rodada {rodada}): {sel[:70]}')
+            el = tentar(sel)
+            if el is not None:
+                return ('fechou', p['texto'] or sel, el)
+            falhas.append(f'{sel[:70]} não achou elemento visível')
+        erro_anterior = '; '.join(falhas)
+    return ('falhou', '', None)
 
 
 def tratar_bloqueio(driver, chamar: Callable[[str, int], str] | None = None,
@@ -377,37 +574,151 @@ def tratar_bloqueio(driver, chamar: Callable[[str, int], str] | None = None,
 
     # Camada 3: LLM com múltiplos candidatos (2 rodadas, erro retroalimenta)
     if chamar is not None:
-        erro_anterior = ''
-        for rodada in (1, 2):
-            resumo = resumo_pagina(driver)
-            if not resumo:
-                break
-            try:
-                resp = chamar(_prompt_bloqueio(bloqueio, resumo, erro_anterior), 300)
-            except Exception as exc:
-                diz(f'    [bloqueio] LLM falhou na rodada {rodada}: {exc}')
-                break
-            p = parse_bloqueio(resp)
-            if p['humano']:
-                diz(f'    [bloqueio] captcha/desafio — aguardando humano: {p["texto"][:80]}')
-                return {'tipo': 'captcha', 'detalhe': p['texto'] or bloqueio[:200], 'el': None}
-            if not p['seletores']:
-                diz(f'    [bloqueio] LLM: ignorar — {p["texto"][:80]}')
-                return {'tipo': 'nada', 'detalhe': p['texto'], 'el': None}
-            falhas = []
-            for sel in p['seletores']:
-                diz(f'    [bloqueio] tentando seletor de fechamento (rodada {rodada}): {sel[:70]}')
-                el = _encontrar(driver, sel)
-                if el is not None:
-                    diz(f'    [bloqueio] ✅ fechado via LLM: {sel[:70]}')
-                    return {'tipo': 'fechou', 'detalhe': p['texto'] or sel, 'el': el}
-                falhas.append(f'{sel[:70]} não achou elemento visível')
-            erro_anterior = '; '.join(falhas)
+        situacao, detalhe, el = _rodadas_llm(
+            lambda sel: _encontrar(driver, sel),
+            lambda: resumo_pagina(driver),
+            bloqueio, chamar, diz,
+        )
+        if situacao == 'fechou':
+            diz('    [bloqueio] ✅ fechado via LLM')
+            return {'tipo': 'fechou', 'detalhe': detalhe, 'el': el}
+        if situacao == 'captcha':
+            return {'tipo': 'captcha', 'detalhe': detalhe, 'el': None}
+        if situacao == 'nada':
+            return {'tipo': 'nada', 'detalhe': detalhe, 'el': None}
+        # 'falhou' → camadas 4 (iframe + ESC)
 
     # Camada 4: iframe + ESC (com re-checagem: ESC pode ter fechado o modal)
     if _tenta_iframe(driver, diz):
         return {'tipo': 'fechou', 'detalhe': f'fechado em iframe — {bloqueio[:80]}', 'el': None}
     if _tecla_esc(driver) and not detecta_bloqueio(driver):
+        diz('    [bloqueio] ESC pressionado — overlay fechou')
+        return {'tipo': 'fechou', 'detalhe': f'fechado via ESC — {bloqueio[:80]}', 'el': None}
+    diz(f'    [bloqueio] sem fechamento: {bloqueio[:80]}')
+    return {'tipo': 'indeciso', 'detalhe': bloqueio[:200], 'el': None}
+
+
+# ── Bloqueio (Playwright) ────────────────────────────────────────────────────
+# Versão de `tratar_bloqueio` para `page` do Playwright (gupy/infojobs/
+# solides/nerdin): mesmos lances escalonados, mesmo contrato de retorno —
+# só a mecânica muda (locator em vez de WebElement, ESC via
+# `page.keyboard`, `page.frames` em vez de `switch_to`).
+
+def detecta_bloqueio_pw(page) -> str | None:
+    """Mesma detecção de overlay de `detecta_bloqueio`, para Playwright."""
+    try:
+        bruto = page.evaluate(BLOCKER_JS)
+    except Exception:
+        return None
+    return bruto if isinstance(bruto, str) and bruto else None
+
+
+def fechar_por_texto_pw(page) -> object | None:
+    """Camada 1 (SEM LLM) para Playwright.
+
+    `page.evaluate` devolve um ElementHandle quando acha o botão — quem chama
+    fecha com `el.click()` (mesmo contrato de `fechar_por_texto`)."""
+    try:
+        el = page.evaluate(_CLOSE_BTN_JS)
+    except Exception:
+        return None
+    if el is None or isinstance(el, (str, dict, list, int, float, bool)):
+        return None
+    return el
+
+
+def _tecla_esc_pw(page) -> bool:
+    try:
+        page.keyboard.press('Escape')
+        time.sleep(0.8)
+        return True
+    except Exception:
+        return False
+
+
+def _tenta_iframe_pw(page, diz: Callable[[str], None]) -> bool:
+    """Igual a `_tenta_iframe`: modal costuma morar em iframe (cookie etc.)."""
+    try:
+        frames = [f for f in page.frames if f is not page.main_frame]
+    except Exception:
+        return False
+    for fr in frames:
+        try:
+            bloqueio = fr.evaluate(BLOCKER_JS)
+        except Exception:
+            continue
+        if not (isinstance(bloqueio, str) and bloqueio):
+            continue
+        try:
+            el = fr.evaluate(_CLOSE_BTN_JS)
+        except Exception:
+            el = None
+        if el is not None:
+            with suppress(Exception):
+                el.click()
+            diz(f'    [bloqueio] modal fechado em iframe: {bloqueio[:80]}')
+            time.sleep(1.0)
+            return True
+        with suppress(Exception):
+            page.keyboard.press('Escape')
+        time.sleep(0.8)
+        try:
+            if not fr.evaluate(BLOCKER_JS):
+                diz('    [bloqueio] modal de iframe fechado via ESC')
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def tratar_bloqueio_pw(page, chamar: Callable[[str, int], str] | None = None,
+                       log: Callable[[str], None] | None = None) -> dict:
+    """Supervisor de bloqueio para Playwright — mesmo contrato de `tratar_bloqueio`.
+
+    Camadas: 0) checar overlay (~5ms, SEM LLM); 1) captcha por palavras-
+    chave; 2) fechamento rápido por texto (SEM LLM); 3) LLM (2 rodadas,
+    até 3 seletores cada, erro retroalimenta); 4) iframe + ESC.
+
+    Retorna `{"tipo", "detalhe", "el"}`: `el` é um Locator/ElementHandle
+    pronto para `.click()` quando a camada 2 ou 3 encontrou o botão
+    (None quando fechado em iframe/ESC ou quando não há nada a clicar).
+    """
+    def diz(msg: str) -> None:
+        if log:
+            log(msg)
+
+    bloqueio = detecta_bloqueio_pw(page)
+    if not bloqueio:
+        return {'tipo': 'nada', 'detalhe': '', 'el': None}
+
+    if any(k in bloqueio.lower() for k in _KEYWORDS_CAPTCHA):
+        diz(f'    [bloqueio] captcha/desafio detectado — aguardando humano: {bloqueio[:80]}')
+        return {'tipo': 'captcha', 'detalhe': bloqueio[:200], 'el': None}
+
+    el = fechar_por_texto_pw(page)
+    if el is not None:
+        diz(f'    [bloqueio] fechamento rápido por texto (sem LLM): {bloqueio[:80]}')
+        return {'tipo': 'fechou', 'detalhe': f'botão de fechamento por texto — {bloqueio[:80]}',
+                'el': el}
+
+    if chamar is not None:
+        situacao, detalhe, el = _rodadas_llm(
+            lambda sel: _encontrar_pw(page, sel),
+            lambda: resumo_pagina_pw(page),
+            bloqueio, chamar, diz,
+        )
+        if situacao == 'fechou':
+            diz('    [bloqueio] ✅ fechado via LLM')
+            return {'tipo': 'fechou', 'detalhe': detalhe, 'el': el}
+        if situacao == 'captcha':
+            return {'tipo': 'captcha', 'detalhe': detalhe, 'el': None}
+        if situacao == 'nada':
+            return {'tipo': 'nada', 'detalhe': detalhe, 'el': None}
+        # 'falhou' → camada 4 (iframe + ESC)
+
+    if _tenta_iframe_pw(page, diz):
+        return {'tipo': 'fechou', 'detalhe': f'fechado em iframe — {bloqueio[:80]}', 'el': None}
+    if _tecla_esc_pw(page) and not detecta_bloqueio_pw(page):
         diz('    [bloqueio] ESC pressionado — overlay fechou')
         return {'tipo': 'fechou', 'detalhe': f'fechado via ESC — {bloqueio[:80]}', 'el': None}
     diz(f'    [bloqueio] sem fechamento: {bloqueio[:80]}')

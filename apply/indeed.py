@@ -3155,6 +3155,39 @@ def preencher_campos(
 
     log_info(f"  {len(campos_ia)} campo(s) → chamando IA...")
 
+    # ── Resgate de rótulos: o site trocou o layout e o rótulo do campo sumou
+    #    ("" , "campo", "q_123"). Uma chamada de LLM infere a pergunta de cada
+    #    campo pelo snapshot (id/name, tipo, opções, passo) — só corre quando
+    #    existe rótulo irresolvido, zero custo no happy path.
+    sem_rotulo = [c for c in campos_ia if pagelens.rotulo_irresolvido(c["pergunta"])]
+    if sem_rotulo:
+        desc = pagelens.resumo_campos(driver)
+        gotas = pagelens.agente_rotulos(
+            desc, ctx,
+            chamar=lambda prompt, max_tokens=500: chamar_llm(
+                [{"role": "user", "content": prompt}],
+                max_tokens=max_tokens, temperature=0.1,
+            ),
+            log=log_info,
+        )
+        if gotas:
+            def chave_do_campo(cid: str) -> str:
+                item = elementos[cid]
+                if item[0] == "select":  # select não guarda name na tupla
+                    with suppress(Exception):
+                        return item[1].get_attribute("id") or item[1].get_attribute("name") or ""
+                    return ""
+                return item[2] or ""
+
+            resolvidos = 0
+            for campo in sem_rotulo:
+                rotulo = gotas.get(chave_do_campo(campo["id"]))
+                if rotulo:
+                    campo["pergunta"] = rotulo
+                    resolvidos += 1
+            log_info(f"  [rotulos] {resolvidos}/{len(sem_rotulo)} campo(s) sem rótulo → "
+                     f"pergunta inferida pelo LLM")
+
     # ia_processar_formulario já faz a checagem de idioma internamente
     respostas = ia_processar_formulario(campos_ia, ctx)
 
@@ -3713,6 +3746,41 @@ def _clicar_submit_com_retry(driver: Driver, tentativas: int = 3) -> bool:
         log_warn(f"  Submit: clicou mas página não mudou (tentativa {t+1})")
         esperar(2)
 
+    # ── Resgate semântico: o site trocou o layout e o botão de submit sumou
+    #    (ou não é o que `_encontrar_btn_submit` conhece). O LLM lê a página
+    #    viva e propõe o botão que ENVIA/CONFIRMA — só roda após as 3
+    #    tentativas clássicas falharem (zero custo no happy path).
+    log_warn("  Submit: resgate semântico do botão (LLM lê a página)")
+    btn_ia = pagelens.achar(
+        driver, [],
+        objetivo=("botão que ENVIA/CONFIRMA a candidatura ('Enviar', 'Submit', "
+                  "'Confirmar', 'Apply', 'Finalizar') — NUNCA 'Voltar', 'Back', "
+                  "'Cancelar' ou 'Salvar e fechar'"),
+        chamar=lambda prompt, max_tokens=260: chamar_llm(
+            [{"role": "user", "content": prompt}], max_tokens=max_tokens,
+        ),
+        log=log_info,
+    )
+    if not btn_ia:
+        return False
+
+    with suppress(Exception):
+        _js(driver, "arguments[0].scrollIntoView({block:'center', behavior:'smooth'});", btn_ia)
+    clicou_ia = False
+    with suppress(Exception):
+        btn_ia.click()
+        clicou_ia = True
+    if not clicou_ia:
+        with suppress(Exception):
+            _js(driver, "arguments[0].click();", btn_ia)
+    esperar(3)
+    if verificar_enviada(driver):
+        log_info("  Submit: ✅ enviado via resgate semântico")
+        return True
+    if _url(driver) != url_antes:
+        log_info("  Submit: ✅ URL mudou via resgate semântico")
+        return True
+    log_warn("  Submit: resgate semântico não confirmou envio")
     return False
 
 
@@ -3896,6 +3964,53 @@ def _identificar_etapa(url: str) -> str:
     return "desconhecida"
 
 
+def _resgate_avancar(driver: Driver) -> str:
+    """Resgate de parada "invisível": o bot não avança e não sabe por quê
+    (layout trocou, campo novo apareceu, botão mudou de nome). Três
+    camadas — nunca chute:
+
+    1. LLM lê a tela viva (`montar_prompt_enviada`): se a candidatura JÁ
+       ESTÁ ENVIADA → "enviada" (o `verificar_enviada` determinístico não
+       reconheceu o novo texto/tela de sucesso).
+    2. LLM propõe o elemento que AVANÇA a candidatura neste passo (botão
+       de continuar/enviar/confirmar ou campo pendente que impede o avanço)
+       → `achar` clica → "progresso".
+    3. Nada resolveu → "falha" (quem chama decide; 1 tentativa por travamento).
+
+    Só roda quando não há progresso — o caminho normal nem o conhece."""
+    resumo = pagelens.resumo_pagina(driver)
+    if resumo:
+        try:
+            resp = chamar_llm(
+                [{"role": "user", "content": pagelens.montar_prompt_enviada(resumo)}],
+                max_tokens=150,
+            )
+            if pagelens.parse_enviada(resp):
+                log_info("  [resgate] LLM: a tela indica que a candidatura JÁ foi enviada")
+                return "enviada"
+        except Exception as exc:
+            log_warn(f"  [resgate] LLM falhou no julgamento de envio: {exc}")
+    el = pagelens.achar(
+        driver, [],
+        objetivo=("elemento que AVANÇA/CONCLUI a candidatura neste passo "
+                  "(botão 'Continuar', 'Next', 'Enviar', 'Confirmar', 'Finalizar' "
+                  "ou o campo pendente que impede o avanço — NUNCA 'Voltar'/'Cancelar'"),
+        chamar=lambda prompt, max_tokens=260: chamar_llm(
+            [{"role": "user", "content": prompt}], max_tokens=max_tokens,
+        ),
+        log=log_info,
+    )
+    if el is None:
+        return "falha"
+    if _click(driver, el):
+        log_info("  [resgate] LLM encontrou o elemento de avanço — clicou")
+        esperar(2)
+        if verificar_enviada(driver):
+            return "enviada"
+        return "progresso"
+    return "falha"
+
+
 def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
     now = datetime.now(TZ)
     resultado: dict = {
@@ -4041,7 +4156,19 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
             if etapa == etapa_anterior:
                 repeticoes += 1
                 if repeticoes >= MAX_REPETICOES:
-                    log_err(f"  Anti-loop: etapa '{etapa}' repetida {repeticoes}x — abortando")
+                    log_warn(f"  Anti-loop: etapa '{etapa}' repetida {repeticoes}x — "
+                             f"resgate semântico antes de abortar")
+                    saida = _resgate_avancar(driver)
+                    if saida == "progresso":
+                        repeticoes    = 0
+                        etapa_anterior = ""
+                        continue
+                    if saida == "enviada":
+                        resultado["status"] = "enviado"
+                        log_ok("  ✅ Candidatura enviada (detectada pelo resgate semântico)!")
+                        break
+                    log_err(f"  Anti-loop: etapa '{etapa}' repetida {repeticoes}x "
+                            f"e o resgate não avançou — abortando")
                     resultado["status"] = "travado"
                     break
             else:
@@ -4077,7 +4204,15 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
                         break
                 elif etapa == "desconhecida":
                     if not clicar_continuar(driver):
-                        log_warn("  Etapa desconhecida e sem botão continuar — abortando")
+                        log_warn("  Etapa desconhecida e sem botão continuar — resgate semântico")
+                        saida = _resgate_avancar(driver)
+                        if saida == "enviada":
+                            resultado["status"] = "enviado"
+                            log_ok("  ✅ Candidatura enviada (detectada pelo resgate semântico)!")
+                            break
+                        if saida == "progresso":
+                            continue
+                        log_warn("  Resgate não avançou — abortando a vaga")
                         break
 
             except _PerguntaFiliacaoDetectada as exc:

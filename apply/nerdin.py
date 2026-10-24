@@ -25,6 +25,7 @@ VERSÃO v1.0:
   - Resolução de nível de tecnologia via config.yaml + LLM fallback
 """
 
+import contextlib
 import datetime as _dt
 import json
 import os
@@ -36,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
-from common import perfil
+from common import pagelens, perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -855,11 +856,34 @@ def candidatar_vaga_nerdin(page: Page, vaga: dict, config: dict) -> dict:
         page.goto(url_form, timeout=15000)
         esperar(page, 2)
 
+        def _chamar_resgate(prompt: str, max_tokens: int = 300) -> str:
+            return _chamar_llm(prompt, config,
+                               contexto=vaga.get("titulo", ""),
+                               temperatura=0.05) or ""
+
+        def _supervisar() -> None:
+            b = pagelens.tratar_bloqueio_pw(page, chamar=_chamar_resgate, log=log)
+            if b["tipo"] == "fechou":
+                if b["el"] is not None:
+                    with contextlib.suppress(Exception):
+                        b["el"].click()
+                log(f"  [bloqueio] modal fechado: {b['detalhe'][:80]}")
+                esperar(page, 1.5)
+            elif b["tipo"] == "captcha":
+                log(f"  [bloqueio] desafio humano — aguardando 10s: {b['detalhe'][:80]}")
+                esperar(page, 10)
+            elif b["detalhe"]:
+                log(f"  [bloqueio] overlay não resolvido: {b['detalhe'][:80]}")
+
+        _supervisar()  # overlay antes do formulário
+
         preencher_etapa1(page, config)
         preencher_etapa2(page, vaga["titulo"], descricao, config, respostas)
         preencher_etapa3(page, vaga["titulo"], descricao, arquivo_curriculo, config, respostas)
 
         resultado["respostas"] = respostas
+
+        _supervisar()  # overlay entre as etapas e o submit
 
         esperar(page, 0.5)
         try:
@@ -870,8 +894,32 @@ def candidatar_vaga_nerdin(page: Page, vaga: dict, config: dict) -> dict:
                 log("  ✅ Candidatura enviada!")
                 resultado["status"] = "enviado"
             else:
-                log("  ⚠️  Botão de envio não encontrado")
-                resultado["status"] = "preenchido_sem_envio"
+                # Resgate semântico: o site trocou o id do botão de envio —
+                # o LLM lê a tela viva e acha o botão que ENVIA/CONFIRMA.
+                btn_ia = pagelens.achar_pw(
+                    page, [],
+                    objetivo=("botão que ENVIA/CONFIRMA a candidatura ('Enviar', "
+                               "'Confirmar', 'Finalizar' — NUNCA 'Voltar'/'Cancelar')"),
+                    chamar=_chamar_resgate,
+                    log=log,
+                )
+                if btn_ia:
+                    with contextlib.suppress(Exception):
+                        btn_ia.click()
+                    esperar(page, 3)
+                # Julgamento semântico: a tela de sucesso pode ter mudado de
+                # layout — `verificar_enviada` clássica não existe aqui.
+                com_envio = False
+                with contextlib.suppress(Exception):
+                    resumo = pagelens.resumo_pagina_pw(page)
+                    resp = _chamar_resgate(pagelens.montar_prompt_enviada(resumo), 150)
+                    com_envio = pagelens.parse_enviada(resp)
+                if com_envio:
+                    log("  ✅ Candidatura enviada (detecida na tela pelo LLM)!")
+                    resultado["status"] = "enviado"
+                else:
+                    log("  ⚠️  Botão de envio não encontrado e envio não confirmado")
+                    resultado["status"] = "preenchido_sem_envio"
         except Exception as e:
             log(f"  ⚠️  Erro ao enviar: {e}")
             resultado["status"] = f"erro_envio: {e}"

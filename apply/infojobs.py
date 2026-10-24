@@ -26,6 +26,7 @@ VERSÃO v1.1/1.2:
   - Fallback local para múltipla escolha
 """
 
+import contextlib
 import datetime as _dt
 import json
 import os
@@ -37,7 +38,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from common import llm as _llm_lib
-from common import perfil
+from common import pagelens, perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -996,6 +997,26 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
         _, respostas_kq      = responder_killer_questions(page, config)
         resultado["respostas"] = respostas_kq
 
+        # Supervisor de tela: overlay que o flow clássico não conhece (layout
+        # mudou, modal novo apareceu entre KQ e submit). Camada de texto e
+        # captcha correm SEM LLM; só overlay "estranho" chama o LLM.
+        def _chamar_resgate(prompt: str, max_tokens: int = 300) -> str:
+            return _chamar_llm(prompt, config,
+                               contexto=vaga.get("titulo", ""),
+                               temperatura=0.4) or ""
+
+        bloqueio = pagelens.tratar_bloqueio_pw(page, chamar=_chamar_resgate, log=log)
+        if bloqueio["tipo"] == "fechou":
+            if bloqueio["el"] is not None:
+                with contextlib.suppress(Exception):
+                    bloqueio["el"].click()
+            log(f"  [bloqueio] modal fechado antes do submit: {bloqueio['detalhe'][:80]}")
+            esperar(page, 1.5)
+        elif bloqueio["tipo"] == "captcha":
+            log(f"  [bloqueio] desafio humano no meio do flow — aguardando: "
+                f"{bloqueio['detalhe'][:80]}")
+            esperar(page, 10)
+
         btn_concluir = page.query_selector("#btnKillerQuestionsAccept")
         if btn_concluir and btn_concluir.is_visible():
             btn_concluir.click()
@@ -1017,8 +1038,31 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
             fechar_modal_se_existir(page)
             resultado["carta"] = tentar_enviar_carta(page, vaga["titulo"], descricao, config)
         else:
-            log("  ⚠️  Candidatura pode ter sido enviada — sem confirmação clara")
-            resultado["status"] = "preenchido_sem_confirmacao"
+            # Parada "invisível": sem confirmação e sem botão — tenta o
+            # supervisor de novo (overlay pode estar escondendo a tela de ok).
+            bloqueio2 = pagelens.tratar_bloqueio_pw(page, chamar=_chamar_resgate, log=log)
+            if bloqueio2["tipo"] == "fechou":
+                if bloqueio2["el"] is not None:
+                    with contextlib.suppress(Exception):
+                        bloqueio2["el"].click()
+                esperar(page, 3)
+                for seletor in ["div.text-success h3", "h3:has-text('Você se candidatou')"]:
+                    with contextlib.suppress(Exception):
+                        if page.query_selector(seletor):
+                            log("  ✅ Candidatura enviada (após resgate do overlay)!")
+                            resultado["status"] = "enviado"
+                            break
+            else:
+                log(f"  [bloqueio] sem confirmação após resgate: "
+                    f"{bloqueio2['detalhe'][:80] or 'tela livre (mudou o layout?)'}")
+            if resultado["status"] != "enviado":
+                if bloqueio2["tipo"] in ("indeciso", "captcha"):
+                    resultado["status"] = ("modal_nao_resolvido"
+                                            if bloqueio2["tipo"] == "indeciso"
+                                            else "captcha_nao_resolvido")
+                else:
+                    log("  ⚠️  Candidatura pode ter sido enviada — sem confirmação clara")
+                    resultado["status"] = "preenchido_sem_confirmacao"
             fechar_modal_se_existir(page)
 
     except Exception as e:

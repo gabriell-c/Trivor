@@ -54,7 +54,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
-from common import perfil
+from common import pagelens, perfil
 from dotenv import load_dotenv
 from groq import Groq
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -1672,6 +1672,7 @@ def candidatar_vaga(page: Page, vaga: dict) -> dict:
         MAX_ITERACOES = 20
         etapa_anterior = ""
         repeticoes = 0
+        bloqueios_seguidos = 0
 
         for iteracao in range(MAX_ITERACOES):
             esperar(page, 1.5)
@@ -1690,6 +1691,41 @@ def candidatar_vaga(page: Page, vaga: dict) -> dict:
                 log_err("  Erro de servidor / sessão expirada no loop")
                 resultado["status"] = "sessao_expirada"
                 return resultado
+
+            # ── Supervisor de tela: overlay que o flow não conhece (layout
+            #    mudou, modal novo). Texto/captcha correm SEM LLM; só
+            #    overlay "estranho" chama o LLM.
+            bloqueio = pagelens.tratar_bloqueio_pw(
+                page,
+                chamar=lambda p, m=300: chamar_llm(p, max_tokens=m, temperature=0.05),
+                log=log_info,
+            )
+            if bloqueio["tipo"] == "fechou":
+                if bloqueio["el"] is not None:
+                    with suppress(Exception):
+                        bloqueio["el"].click()
+                log_info(f"  [bloqueio] modal fechado: {bloqueio['detalhe'][:80]}")
+                esperar(page, 1.5)
+                continue
+            if bloqueio["tipo"] == "captcha":
+                log_warn(f"  [bloqueio] desafio humano — aguardando: {bloqueio['detalhe'][:80]}")
+                bloqueios_seguidos += 1
+                if bloqueios_seguidos >= 3:
+                    log_err("  [bloqueio] captcha sem resolução — parando a vaga")
+                    resultado["status"] = "captcha_nao_resolvido"
+                    return resultado
+                esperar(page, 8)
+                continue
+            if bloqueio["detalhe"]:
+                bloqueios_seguidos += 1
+                log_warn(f"  [bloqueio] tela bloqueada ({bloqueios_seguidos} seguidas): "
+                         f"{bloqueio['detalhe'][:80]}")
+                if bloqueios_seguidos >= 3:
+                    log_err("  [bloqueio] modal sem resolução — parando a vaga")
+                    resultado["status"] = "modal_nao_resolvido"
+                    return resultado
+                continue
+            bloqueios_seguidos = 0
 
             eh_review = (
                 "aba=review" in url_atual
@@ -1716,7 +1752,40 @@ def candidatar_vaga(page: Page, vaga: dict) -> dict:
             if etapa_id == etapa_anterior:
                 repeticoes += 1
                 if repeticoes >= 4:
-                    log_err("  Anti-loop: etapa travada 4x — abortando")
+                    # Parada "invisível": antes de abortar, o LLM julga se a
+                    # candidatura JÁ foi enviada (tela de sucesso nova que
+                    # `verificar_sucesso_modal` não conhece) ou acha o
+                    # elemento que faz a vaga avançar. 1 tentativa só.
+                    url_antes = url_atual
+                    avancou = False
+                    with suppress(Exception):
+                        resumo = pagelens.resumo_pagina_pw(page)
+                        resp = chamar_llm(
+                            pagelens.montar_prompt_enviada(resumo),
+                            max_tokens=150, temperature=0.05,
+                        )
+                        if pagelens.parse_enviada(resp):
+                            log_ok("  ✅ Candidatura enviada (LLM detectou tela de sucesso nova)!")
+                            resultado["status"] = "enviado"
+                            return resultado
+                        el = pagelens.achar_pw(
+                            page, [],
+                            objetivo=("elemento que AVANÇA/CONCLUI a candidatura neste passo "
+                                       "(botão de continuar/salvar/finalizar ou campo pendente "
+                                       "que impede o avanço — NUNCA 'Voltar'/'Cancelar'"),
+                            chamar=lambda p, m=260: chamar_llm(p, max_tokens=m, temperature=0.05),
+                            log=log_info,
+                        )
+                        if el is not None:
+                            with suppress(Exception):
+                                el.click()
+                            esperar(page, 2)
+                            avancou = verificar_sucesso_modal(page) or page.url != url_antes
+                    if avancou:
+                        repeticoes = 0
+                        etapa_anterior = ""
+                        continue
+                    log_err("  Anti-loop: etapa travada 4x e resgate não avançou — abortando")
                     resultado["status"] = "travado"
                     return resultado
             else:
