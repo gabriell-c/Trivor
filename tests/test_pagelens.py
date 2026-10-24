@@ -721,3 +721,17 @@ def test_habilitar_leitor_nulo_desliga():
     assert pagelens._LEITOR_CDP is not None
     pagelens.habilitar_leitor(None)
     assert pagelens._LEITOR_CDP is None
+
+
+def test_leitor_sem_url_da_pagina_nao_anexa():
+    # Page sem atributo `url` (fakes antigos, página em navegação) →
+    # a seção estrutural não entra, digest sai intacto
+    estado = _instalar_leitor_fake(resumo_retorno="seções")
+    try:
+        p = _PageFake(digest=_SNAPSHOT)
+        assert not hasattr(p, "url")
+        s_ligado = pagelens.resumo_pagina_pw(p)
+    finally:
+        _restaurar_leitor_fake(estado)
+    s_desligado = pagelens.resumo_pagina_pw(_PageFake(digest=_SNAPSHOT))
+    assert s_ligado == s_desligado

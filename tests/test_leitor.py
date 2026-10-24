@@ -204,3 +204,72 @@ def test_motor_roda_em_thread_separada_do_chamador():
     assert leitura.ok is True
     assert vistos["motor"] != vistos["chamador"], "o motor do leitor é thread própria"
 
+
+# ── Mapa de seções (inteligência estrutural pro LLM) ─────────────────────────
+
+def test_leitura_extrai_mapa_de_secoes():
+    md = "# Portal de Candidaturas\n## Etapa 2: Dados pessoais\n### Dados bancários\n## Revisão"
+    crawler = _CrawlerFake([_ResFake(markdown=_MarkdownFake(md))])
+    leitura = leitor.leitura_estruturada("u", "c", factory=lambda u: crawler)
+    assert leitura.secoes == ("# Portal de Candidaturas", "## Etapa 2: Dados pessoais",
+                               "### Dados bancários", "## Revisão")
+    resumo = leitor.resumo_para_llm(leitura)
+    assert "[mapa de seções]" in resumo
+    assert "## Etapa 2: Dados pessoais" in resumo
+
+
+def test_mapa_ignora_arrovo_dentro_de_frase():
+    md = "texto normal\nprêmio #2 da lista\n# Título de verdade"
+    crawler = _CrawlerFake([_ResFake(markdown=_MarkdownFake(md))])
+    leitura = leitor.leitura_estruturada("u", "c", factory=lambda u: crawler)
+    assert leitura.secoes == ("# Título de verdade",)
+
+
+def test_mapa_com_teto_e_ordem_preservada():
+    md = "\n".join(f"## seção {i}" for i in range(40))
+    crawler = _CrawlerFake([_ResFake(markdown=_MarkdownFake(md))])
+    leitura = leitor.leitura_estruturada("u", "c", factory=lambda u: crawler)
+    assert len(leitura.secoes) == 15, "teto do mapa: 15 seções"
+    assert leitura.secoes[0] == "## seção 0" and leitura.secoes[-1] == "## seção 14"
+
+
+def test_resumo_sem_secoes_nao_anexa_mapa():
+    leitura = leitor.Leitura(url="u", ok=True, texto="corpo")
+    assert "[mapa de seções]" not in leitor.resumo_para_llm(leitura, "fb")
+
+
+def test_limite_zero_vira_falha_markdown_vazio():
+    # limite<=0 corta o texto a vazio → leitura não pode passar como ok
+    crawler = _CrawlerFake([_ResFake(markdown=_MarkdownFake("conteudo"))])
+    leitura = leitor.leitura_estruturada("u", "c", limite=0, factory=lambda u: crawler)
+    assert leitura.ok is False
+    assert "vazio" in leitura.erro
+
+
+def test_links_com_items_objeto_nao_dict():
+    class _LinkObj:
+        def __init__(self, href: str):
+            self.href = href
+
+    crawler = _CrawlerFake([_ResFake(
+        markdown=_MarkdownFake("x"),
+        links={"internal": [_LinkObj("https://site/interna")], "external": []},
+    )])
+    leitura = leitor.leitura_estruturada("u", "c", factory=lambda u: crawler)
+    assert "https://site/interna" in leitura.links
+
+
+def test_container_sem_atributo_results_vira_falha():
+    class _ContVazio:
+        pass  # nem o atributo _results existe
+
+    crawler = _CrawlerFake()
+
+    async def arun_cru(url, config=None):
+        return _ContVazio()
+
+    crawler.arun = arun_cru
+    leitura = leitor.leitura_estruturada("u", "c", factory=lambda u: crawler)
+    assert leitura.ok is False
+    assert "sem resultado" in leitura.erro
+

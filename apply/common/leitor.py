@@ -30,6 +30,10 @@ log = logging.getLogger(__name__)
 # Limite de links devolvidas: exceder não ajuda o LLM e infla o prompt.
 _LIMITE_LINKS = 30
 
+# Teto do mapa de seções: os títulos de uma página inteira cabem nisso,
+# e exceder só polui o prompt.
+_LIMITE_SECOES = 15
+
 
 @dataclass(frozen=True)
 class Leitura:
@@ -40,6 +44,7 @@ class Leitura:
     texto: str = ""             # markdown da página (já cortado no limite)
     referencias: str = ""       # seção de citações/links gerada pelo markdown
     links: tuple[str, ...] = () # links interno+externo (dedup, com teto)
+    secoes: tuple[str, ...] = () # mapa da página: títulos (#/##/...) na ordem
     fonte: str = ""             # "c4a" | "falha_c4a" | "indisponivel"
     erro: str = ""
 
@@ -164,6 +169,21 @@ def _links_do_resultado(res: Any) -> tuple[str, ...]:
     return tuple(vistos)[:_LIMITE_LINKS]
 
 
+def _secoes_do_markdown(markdown: str) -> tuple[str, ...]:
+    """Mapa da página: linhas de título (#, ##, ...) na ordem de leitura.
+
+    É o atalho de inteligência pra LLM entender a estrutura: antes de ler
+    o texto inteiro, ele vê a hierarquia de seções (etapas, formulários,
+    avisos). Extrai do texto já cortado — seções além do limite não
+    importam pro resgate do passo atual. Só linhas que COMEÇAM com '#'
+    (um '#' dentro de frase, tipo "prêmio #2", não conta)."""
+    mapa: tuple[str, ...] = tuple(
+        linha.strip() for linha in markdown.splitlines()
+        if linha.lstrip().startswith("#")
+    )
+    return mapa[:_LIMITE_SECOES]
+
+
 def leitura_estruturada(
     url: str,
     cdp_url: str,
@@ -206,7 +226,8 @@ def leitura_estruturada(
     dump = markdown.model_dump() if callable(getattr(markdown, "model_dump", None)) else {}
     referencias = str(dump.get("references_markdown") or "")[: max(0, limite) // 2]
     return Leitura(url=url, ok=True, texto=texto, referencias=referencias,
-                   links=_links_do_resultado(res), fonte="c4a")
+                   links=_links_do_resultado(res), secoes=_secoes_do_markdown(texto),
+                   fonte="c4a")
 
 
 def resumo_para_llm(leitura: Leitura, fallback: str = "") -> str:
@@ -218,6 +239,10 @@ def resumo_para_llm(leitura: Leitura, fallback: str = "") -> str:
     if not (leitura.ok and leitura.texto.strip()):
         return fallback
     partes = [leitura.texto]
+    if leitura.secoes:
+        # O mapa de seções vem ANTES dos links: o LLM primeiro entende a
+        # estrutura (hierarquia) e só depois a navegação da página.
+        partes.append("\n\n[mapa de seções]\n" + "\n".join(leitura.secoes))
     if leitura.referencias.strip():
         partes.append(f"\n\n[referências de links]\n{leitura.referencias}")
     if leitura.links:
