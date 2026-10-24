@@ -1828,6 +1828,15 @@ def _encontrar_brave() -> str | None:
     return None
 
 
+def _cdp_url_do_driver(driver) -> str | None:
+    """Porta CDP que o driver UC abriu (options.debugger_address).
+
+    O UC sorteia uma porta livre; ler a que ele usou evita colisão com
+    outro Chrome da máquina. None (driver sem CDP) → leitor fica off."""
+    addr = getattr(getattr(driver, "options", None), "debugger_address", None)
+    return f"http://{addr}" if addr else None
+
+
 def _novo_driver() -> Driver:
     brave = _encontrar_brave()
     if brave:
@@ -1837,6 +1846,10 @@ def _novo_driver() -> Driver:
         log_warn("  Brave não encontrado — usando Chrome")
         driver = Driver(uc=True)
     driver.maximize_window()
+    cdp_url = _cdp_url_do_driver(driver)
+    pagelens.habilitar_leitor(cdp_url)
+    log_info(f"  🔎 Leitor estrutural: CDP {cdp_url}" if cdp_url
+             else "  🔎 Leitor estrutural: desligado (driver sem CDP)")
     return driver
 
 

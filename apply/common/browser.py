@@ -56,12 +56,17 @@ class Browser:
 
     def __init__(self, profile: str | None = None, headless: bool = False,
                  engines: tuple[str, ...] = ENGINES, channel: str | None = None,
-                 timeout_ms: int = 60000):
+                 timeout_ms: int = 60000, cdp_port: int | None = None):
         self.profile = profile
         self.headless = headless
         self.engines = tuple(e for e in ENGINES if e in tuple(engines))
         self.channel = channel
         self.timeout_ms = timeout_ms
+        self.cdp_port = cdp_port
+        # Porta CDP exposta pro leitor estrutural (crawl4ai se anexa aqui e
+        # lê a página viva numa aba nova). Nula p/ camoufox (Firefox sem CDP)
+        # ou quando o bot não pediu porta.
+        self.cdp_url: str | None = f"http://127.0.0.1:{cdp_port}" if cdp_port else None
         self.page = None
         self.engine: str | None = None
         self.tried: list[tuple[str, str]] = []
@@ -81,8 +86,11 @@ class Browser:
     def _launch_chromium_like(self, sync_playwright, family: str) -> None:
         """patchright e playwright têm a mesma API — diferença é o stealth."""
         pw = sync_playwright().start()
+        args = self._stealth_args()
+        if self.cdp_port:
+            args.append(f'--remote-debugging-port={self.cdp_port}')
         kwargs = {'user_data_dir': self._profile_dir(family),
-                  'headless': self.headless, 'args': self._stealth_args()}
+                  'headless': self.headless, 'args': args}
         if self.channel:
             kwargs['channel'] = self.channel
         ctx = pw.chromium.launch_persistent_context(**kwargs)
@@ -119,6 +127,11 @@ class Browser:
         opts = Chrome.Options()
         opts.add_argument(f'--user-data-dir={self._profile_dir("uc")}')
         opts.add_argument('--disable-blink-features=AutomationControlled')
+        if self.cdp_port:
+            # debugger_address (não a flag crua): o pacote escolhe essa
+            # porta no lugar de sortear — sem flag --remote-debugging-port
+            # duplicada no Chrome
+            opts.debugger_address = f'127.0.0.1:{self.cdp_port}'
         if self.headless:
             opts.add_argument('--headless=new')
         driver = Chrome(options=opts)
@@ -142,6 +155,8 @@ class Browser:
                 else:  # undetected
                     self._start_undetected()
                 self.engine = name
+                if name == 'camoufox':
+                    self.cdp_url = None  # Firefox não expõe CDP — leitor fica off
                 return self
             except Exception as exc:
                 self.tried.append((name, f'{type(exc).__name__}: {exc}'))

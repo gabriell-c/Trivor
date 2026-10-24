@@ -116,6 +116,10 @@ automacao:
   delay_entre_vagas: 8
   max_candidaturas_por_dia: 2000
   headless: false
+  # Porta CDP que o Chrome do bot expõe pro leitor estrutural (crawl4ai
+  # lê a página viva e entrega a estrutura dela pro LLM nos resgates).
+  # O Indeed lê a porta sorteada pelo driver UC automaticamente.
+  cdp_port: 9333
 
 gupy:
   url_login:    "https://login.gupy.io/candidates/signin"

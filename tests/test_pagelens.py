@@ -7,6 +7,8 @@ cumprem (sem LLM) e quando o resgate semântico precisa do LLM.
 """
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -642,3 +644,80 @@ def test_resumo_campos_pw_via_evaluate():
     s = pagelens.resumo_campos_pw(p)
     assert '"q_1"' in s
     assert pagelens.resumo_campos_pw(_PageFake()) == ""
+
+
+# ── Leitor estrutural (crawl4ai via CDP) — seção extra do digest ─────────────
+# O `common.leitor` é fake em sys.modules: nenhum crawl4ai/Chrome entra.
+# A regra testada: com o leitor ligado, a seção estrutural é ANEXADA ao
+# digest clássico; em falha, o digest sai intacto (nunca pior).
+
+def _instalar_leitor_fake(resumo_retorno: str):
+    fake_leitor = types.ModuleType("common.leitor")
+    fake_leitor.leitura_estruturada = lambda url, cdp, limite=1200: object()
+    fake_leitor.resumo_para_llm = lambda leitura, fallback="": resumo_retorno
+    fake_common = types.ModuleType("common")
+    fake_common.leitor = fake_leitor
+    antigo_common = sys.modules.get("common")
+    antigo_cdp = pagelens._LEITOR_CDP
+    sys.modules["common"] = fake_common
+    pagelens.habilitar_leitor("http://127.0.0.1:9333")
+    return (antigo_common, antigo_cdp)
+
+
+def _restaurar_leitor_fake(estado) -> None:
+    antigo_common, antigo_cdp = estado
+    if antigo_common is None:
+        sys.modules.pop("common", None)
+    else:
+        sys.modules["common"] = antigo_common
+    pagelens._LEITOR_CDP = antigo_cdp
+
+
+def test_leitor_desligado_mantem_fluxo_classico():
+    d = _DriverFake(mapa={}, digest=_SNAPSHOT)
+    s = pagelens.resumo_pagina(d)
+    assert "next-btn" in s
+    assert "[estrutura da página" not in s  # sem CDP, digest sai como antes
+
+
+def test_leitor_ligado_anexa_secao_estrutural():
+    estado = _instalar_leitor_fake(resumo_retorno="## seções\n- formulário (12 campos)\n[links]\nhttps://vaga")
+    try:
+        d = _DriverFake(mapa={}, digest=_SNAPSHOT)
+        d.current_url = "https://portal/etapa2"
+        s = pagelens.resumo_pagina(d)
+        assert "next-btn" in s             # DOM vivo continua a verdade
+        assert "[estrutura da página" in s  # seção do c4a anexada
+        assert "https://vaga" in s         # estrutura (seções + links) presente
+    finally:
+        _restaurar_leitor_fake(estado)
+
+
+def test_leitor_pw_anexa_secao_estrutural():
+    estado = _instalar_leitor_fake(resumo_retorno="seções do portal")
+    try:
+        p = _PageFake(digest=_SNAPSHOT)
+        p.url = "https://portal/etapa2"
+        s = pagelens.resumo_pagina_pw(p)
+        assert "next-btn" in s and "seções do portal" in s
+    finally:
+        _restaurar_leitor_fake(estado)
+
+
+def test_leitor_em_falha_devolve_digest_intacto():
+    # resumo_para_llm com fallback="" retorna "" → leitor não contribuiu
+    estado = _instalar_leitor_fake(resumo_retorno="")
+    try:
+        d = _DriverFake(mapa={}, digest=_SNAPSHOT)
+        s_ligado = pagelens.resumo_pagina(d)
+    finally:
+        _restaurar_leitor_fake(estado)
+    s_desligado = pagelens.resumo_pagina(_DriverFake(mapa={}, digest=_SNAPSHOT))
+    assert s_ligado == s_desligado  # falha do c4a nunca muda o resultado
+
+
+def test_habilitar_leitor_nulo_desliga():
+    pagelens.habilitar_leitor("http://127.0.0.1:9333")
+    assert pagelens._LEITOR_CDP is not None
+    pagelens.habilitar_leitor(None)
+    assert pagelens._LEITOR_CDP is None

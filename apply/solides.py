@@ -469,11 +469,14 @@ def _fazer_login_automatico(page: Page) -> bool:
 
 
 def fazer_login(p) -> tuple:
+    cdp_port = int(CONFIG.get("automacao", {}).get("cdp_port", 9333))
     browser = p.chromium.launch(
         headless=False,
         channel="chrome",
-        args=["--start-maximized"],
+        args=["--start-maximized", f"--remote-debugging-port={cdp_port}"],
     )
+    # Leitor estrutural (crawl4ai anexa nesta porta e lê a página viva)
+    pagelens.habilitar_leitor(f"http://127.0.0.1:{cdp_port}")
 
     if SESSION_FILE.exists():
         log_info("🔑 Sessão encontrada, carregando...")

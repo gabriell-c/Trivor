@@ -1057,8 +1057,15 @@ def main():
     ja_candidatados = links_ja_candidatados()
     print(f"  📋 Links já candidatados na blacklist: {len(ja_candidatados)}")
 
+    cdp_port = int(config.get("automacao", {}).get("cdp_port", 9333))
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=config["automacao"]["headless"])
+        browser = p.chromium.launch(
+            headless=config["automacao"]["headless"],
+            args=[f"--remote-debugging-port={cdp_port}"],
+        )
+        # Leitor estrutural (crawl4ai anexa nesta porta e lê a página viva)
+        pagelens.habilitar_leitor(f"http://127.0.0.1:{cdp_port}")
+        print(f"  Leitor estrutural: CDP porta {cdp_port}")
         context = browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0"

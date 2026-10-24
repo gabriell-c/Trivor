@@ -1878,7 +1878,8 @@ def main():
     ja_candidatados = links_ja_candidatados_gupy()
     log(f"📋 {len(ja_candidatados)} vagas já candidatadas anteriormente")
 
-    b = Browser(profile="gupy", headless=False)
+    cdp_port = int(config["automacao"].get("cdp_port", 9333))
+    b = Browser(profile="gupy", headless=False, cdp_port=cdp_port)
     try:
         b.start()
     except BrowserUnavailable as e:
@@ -1886,6 +1887,10 @@ def main():
         return
     page = b.page
     log(f"🌐 Engine no uso: {b.engine} (fallback tentado: {[n for n, _ in b.tried] or 'nenhum'})")
+    # Leitor estrutural (crawl4ai lê a página viva via CDP) — só quando a
+    # engine é Chromium; camoufox (Firefox) segue o fluxo clássico.
+    pagelens.habilitar_leitor(b.cdp_url)
+    log(f"🔎 Leitor estrutural: {'CDP ' + b.cdp_url if b.cdp_url else 'desligado (engine Firefox)'}")
 
     if not verificar_sessao_valida(page):
         log("🔑 Sem sessão válida. Login manual necessário...")

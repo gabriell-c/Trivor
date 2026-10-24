@@ -34,6 +34,39 @@ from contextlib import suppress
 _BY_CSS = "css selector"
 _BY_XPATH = "xpath"
 
+# ── Leitor estrutural (crawl4ai via CDP) — camada opcional ──────────────────
+# O digest abaixo é a fonte da verdade (DOM vivo da aba do bot). A leitura
+# do crawl4ai entra como SEÇÃO EXTRA, nunca como substituta: ela descreve
+# a estrutura da página (seções, rótulos, links) pro LLM, mas modais e
+# estados que só existem na aba do bot só o DOM vivo mostra. Sem cdp_url
+# (ou falha do c4a), tudo segue exatamente como o fluxo clássico.
+_LEITOR_CDP: str | None = None
+
+
+def habilitar_leitor(cdp_url: str | None) -> None:
+    """Liga/desliga a seção extra do crawl4ai em todos os resgates do pagelens.
+
+    Chamado 1x no start do bot, com a porta CDP do Chrome dele
+    (http://127.0.0.1:9333). `None` desativa (comportamento clássico).
+    """
+    global _LEITOR_CDP
+    _LEITOR_CDP = cdp_url
+
+
+def _estrutura_extra(url: str | None, limite: int = 1200) -> str:
+    """Seção estrutural do crawl4ai; "" quando desligado, indisponível ou em falha."""
+    if not _LEITOR_CDP or not url:
+        return ''
+    try:
+        from common import leitor
+    except ImportError:
+        return ''  # c4a não instalado — fluxo clássico intacto
+    try:
+        leitura = leitor.leitura_estruturada(url, _LEITOR_CDP, limite=limite)
+    except Exception:
+        return ''  # regra de ouro: nunca pior que o fluxo clássico
+    return leitor.resumo_para_llm(leitura, fallback='')
+
 
 # ── Snapshot compacto da página (roda no DOM) ──────────────────────────────
 # Sem `value` de input (PII digitada no formulário não vai ao LLM).
@@ -85,21 +118,35 @@ def _digeste_para_texto(bruto, limite: int) -> str:
 
 
 def resumo_pagina(driver, limite: int = 2800) -> str:
-    """Snapshot compacto (Selenium) — JSON: título, passo atual, elementos."""
+    """Snapshot compacto (Selenium) — JSON: título, passo atual, elementos.
+
+    Com o leitor ligado, anexa a seção estrutural do crawl4ai (seções,
+    rótulos, links da página) — o DOM vivo continua sendo a verdade."""
     try:
         bruto = driver.execute_script(DIGEST_JS)
     except Exception:
         return ''
-    return _digeste_para_texto(bruto, limite)
+    texto = _digeste_para_texto(bruto, limite)
+    extra = _estrutura_extra(getattr(driver, 'current_url', None))
+    if texto and extra:
+        texto += f"\n\n[estrutura da página — {getattr(driver, 'current_url', '')}]\n{extra}"
+    return texto
 
 
 def resumo_pagina_pw(page, limite: int = 2800) -> str:
-    """Snapshot compacto (Playwright) — mesmo JS, via evaluate."""
+    """Snapshot compacto (Playwright) — mesmo JS, via evaluate.
+
+    Com o leitor ligado, anexa a seção estrutural do crawl4ai (mesma regra
+    do resumo_pagina: extra é complemento, o DOM vivo é a verdade)."""
     try:
         bruto = page.evaluate(DIGEST_JS)
     except Exception:
         return ''
-    return _digeste_para_texto(bruto, limite)
+    texto = _digeste_para_texto(bruto, limite)
+    extra = _estrutura_extra(getattr(page, 'url', None))
+    if texto and extra:
+        texto += f"\n\n[estrutura da página — {getattr(page, 'url', '')}]\n{extra}"
+    return texto
 
 
 # ── Rótulo de campo (layout mudou → LLM inferiu a pergunta) ────────────────
