@@ -1,0 +1,98 @@
+"""Estado de sessão dos 5 bots — stdlib puro (sem browser, sem LLM).
+
+Alimenta a UI do Trivor (GET /api/apply/sesoes): diz por provedor se há
+sessão local ou credenciais válidas. NUNCA devolve valor de sessão,
+cookie ou senha — apenas existência, timestamp e um detalhe legível.
+
+Módulo de propósito independente (`from . import` não é usado): o backend
+carrega pelo caminho do arquivo para não puxar a camada de browser.
+
+Onde cada bot guarda "logado":
+- gupy:    perfil persistente em apply/sessions/gupy/<engine>/
+- indeed:  indeed_session.pkl + google_session.pkl
+- solides: solides_session.json (storage_state do Playwright)
+- infojobs/nerdin: sem persistência — credenciais no .env (só checa-se
+                   a EXISTÊNCIA da chave, nunca o valor)
+"""
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from pathlib import Path
+
+BOTS = ("gupy", "indeed", "infojobs", "nerdin", "solides")
+
+NOMES = {
+    "gupy": "GUPY", "indeed": "Indeed", "infojobs": "InfoJobs",
+    "nerdin": "Nerdin", "solides": "Sólides",
+}
+
+# Bots sem persistência de sessão: "logado" = credenciais presentes no .env
+_ENV_CREDENCIAIS = {
+    "infojobs": ("INFOJOBS_EMAIL", "INFOJOBS_SENHA"),
+    "nerdin": ("NERDIN_EMAIL", "NERDIN_SENHA"),
+}
+
+
+def _chave_no_env(apply_dir: Path, chave: str) -> bool:
+    """`.env` define `chave`? (só existência — valor nunca sai daqui)"""
+    try:
+        conteudo = (apply_dir / ".env").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return bool(re.search(rf"^{re.escape(chave)}=", conteudo, re.M))
+
+
+def _mtime_iso(caminho: Path) -> str | None:
+    try:
+        return datetime.fromtimestamp(caminho.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+    except OSError:
+        return None
+
+
+def _estado_gupy(apply_dir: Path) -> tuple[bool, str, str | None]:
+    base = apply_dir / "sessions" / "gupy"
+    perfis = [d for d in base.iterdir() if d.is_dir() and any(d.iterdir())] if base.is_dir() else []
+    if not perfis:
+        return False, "sem sessão local — rode o login uma vez", None
+    ultimo = max(perfis, key=lambda d: d.stat().st_mtime)
+    return True, f"perfil persistente ({ultimo.name})", _mtime_iso(ultimo)
+
+
+def _estado_arquivo(apply_dir: Path, nome: str, detalhe: str) -> tuple[bool, str, str | None]:
+    arq = apply_dir / nome
+    if not arq.exists():
+        return False, f"sem sessão local ({nome} ausente)", None
+    return True, detalhe, _mtime_iso(arq)
+
+
+def estados(apply_dir: Path) -> list[dict]:
+    """Cartão de status dos 5 bots. `ultima_atualizacao` = quando a sessão
+    local mudou (None para credenciais, que não têm timestamp)."""
+    apply_dir = Path(apply_dir)
+    out: list[dict] = []
+    for bot in BOTS:
+        if bot == "gupy":
+            tem, detalhe, ts = _estado_gupy(apply_dir)
+        elif bot == "indeed":
+            tem, detalhe, ts = _estado_arquivo(apply_dir, "indeed_session.pkl",
+                                                "pickles de sessão (Google + Indeed)")
+            if tem and not (apply_dir / "google_session.pkl").exists():
+                tem, detalhe, ts = False, "sessão parcial (só Indeed, sem Google)", None
+        elif bot == "solides":
+            tem, detalhe, ts = _estado_arquivo(apply_dir, "solides_session.json",
+                                                "sessão Sólides (storage_state)")
+        else:  # infojobs / nerdin
+            chaves = _ENV_CREDENCIAIS[bot]
+            tem = all(_chave_no_env(apply_dir, c) for c in chaves)
+            detalhe = (f"credenciais no .env ({' / '.join(chaves)})" if tem
+                       else f"credenciais ausentes: {', '.join(chaves)}")
+            ts = None
+        out.append({
+            "bot": bot,
+            "nome": NOMES[bot],
+            "tem_sessao": tem,
+            "detalhe": detalhe,
+            "ultima_atualizacao": ts,
+        })
+    return out

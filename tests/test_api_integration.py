@@ -167,3 +167,31 @@ class TestJSearch:
         r = requests.get(f"{BASE}/api/jsearch/keys", timeout=5)
         # Pode retornar 200 (com keys) ou 500 (sem env configurado) — desde que não crash
         assert r.status_code in (200, 500)
+
+
+# ============================================================================
+# Logins & sessões (cartão de Logins da UI) — só operações SEM EFEITO:
+# o GET /sesoes é read-only; os POSTs abaixo usam bot desconhecido ou
+# login inexistente, então nenhum processo real é disparado.
+# ============================================================================
+
+class TestApplyLogins:
+    def test_sesoes_lista_os_cinco_bots(self):
+        r = requests.get(f"{BASE}/api/apply/sesoes", timeout=5)
+        assert r.status_code == 200
+        dados = r.json()
+        assert {item["bot"] for item in dados} == {
+            "gupy", "indeed", "infojobs", "nerdin", "solides"}
+        # contrato: só existência/timestamp — nunca valor de PII
+        for item in dados:
+            assert set(item) == {
+                "bot", "nome", "tem_sessao", "detalhe", "ultima_atualizacao"}
+
+    def test_status_de_bot_desconhecido_da_404(self):
+        r = requests.get(f"{BASE}/api/apply/login/naoexiste", timeout=5)
+        assert r.status_code == 404
+
+    def test_inicio_de_login_de_bot_desconhecido_da_400(self):
+        r = requests.post(
+            f"{BASE}/api/apply/login", json={"bot": "xpto"}, timeout=5)
+        assert r.status_code == 400

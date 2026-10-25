@@ -64,6 +64,26 @@ export interface BotRun {
   log_tail: string[]
 }
 
+/* Card de Logins — status de sessão por bot (GET /api/apply/sesoes) */
+export interface BotSessao {
+  bot: string
+  nome: string
+  tem_sessao: boolean
+  detalhe: string
+  ultima_atualizacao: string | null
+}
+
+/* Login-só (POST /api/apply/login + GET /api/apply/login/{bot}) — o processo
+ * fica 'aguardando' enquanto a janela do browser espera o usuário logar. */
+export type EstadoLogin = 'inativo' | 'aguardando' | 'concluido' | 'falhou' | 'indeterminado'
+export interface LoginState {
+  bot: string
+  estado: EstadoLogin
+  pid?: number
+  exit_code?: number
+  reconstruido?: boolean
+}
+
 export const BOT_NAMES = ['gupy', 'infojobs', 'nerdin', 'indeed', 'solides'] as const
 
 export interface IaProvider {

@@ -79,3 +79,7 @@ desktop.ini
 
 # Screenshots/relatórios locais do Playwright MCP (contém PII — nunca commitar)
 .playwright-mcp/
+
+# Estado local do runner/dry-run e screenshots com PII
+apply/downloaded_files/
+apply/preview.png

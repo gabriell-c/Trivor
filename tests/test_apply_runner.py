@@ -126,3 +126,88 @@ def test_pidfile_legivel(fake_apply):
     os.kill(pid, signal.SIGTERM)
     time.sleep(0.5)
     assert not ar.is_process_alive(pid)
+
+
+# ── Login-só (botão "Logar" da UI) ─────────────────────────────────────────
+
+FAKE_BOT_OK = """import os, time
+print('flag=', os.environ.get('TRIVOR_LOGIN_ONLY'))
+print('poll=', os.environ.get('TRIVOR_LOGIN_POLL'))
+time.sleep(3)
+"""
+FAKE_BOT_FAIL = "import sys\nprint('login faliu')\nsys.exit(1)\n"
+
+
+def _esperar_login(bot, espera_s):
+    """Dorme o suficiente pra o fake terminar e devolve o estado."""
+    time.sleep(espera_s)
+    return ar.login_status(bot)
+
+
+def test_login_ciclo_completo(fake_apply):
+    (fake_apply / 'gupy.py').write_text(FAKE_BOT_OK, encoding='utf-8')
+    ar.start_login('gupy')
+    assert ar.login_status('gupy')['estado'] == 'aguardando'
+    try:
+        # porta 9333 ocupada: outro bot do grupo fica bloqueado (409 na rota)
+        with pytest.raises(ar.ApplyRunError, match='em uso'):
+            ar.start_login('infojobs')
+        st = _esperar_login('gupy', 4)
+        assert st['estado'] == 'concluido' and st['exit_code'] == 0
+        # o env TRIVOR_LOGIN_ONLY=1 chegou no subprocess
+        log = (fake_apply / 'relatorio' / 'runs' / 'gupy-login.log').read_text()
+        assert 'flag= 1' in log
+        # TRIVOR_LOGIN_POLL: login-só nunca tem TTY — o bot precisa pola a
+        # janela em vez de travar em input()
+        assert 'poll= 1' in log
+    finally:
+        if ar.login_status('gupy')['estado'] == 'aguardando':
+            ar.stop_login('gupy')
+
+
+def test_login_falha_vira_estado(fake_apply):
+    (fake_apply / 'gupy.py').write_text(FAKE_BOT_FAIL, encoding='utf-8')
+    ar.start_login('gupy')
+    st = _esperar_login('gupy', 4)
+    assert st['estado'] == 'falhou' and st['exit_code'] == 1
+
+
+def test_login_sem_pidfile_e_stop_vazio(fake_apply):
+    assert ar.login_status('indeed')['estado'] == 'inativo'
+    with pytest.raises(ar.ApplyRunError, match='Não há login'):
+        ar.stop_login('indeed')
+    with pytest.raises(ar.ApplyRunError, match='desconhecido'):
+        ar.start_login('xpto')
+
+
+def test_login_veredito_persiste_no_pidfile(fake_apply):
+    """Após 'concluido', o veredito vem do pidfile (o proc em memória é
+    descartado no primeiro poll) — os próximos polls não podem degradar
+    para 'indeterminado': o cartão usa isso para manter a luz verde."""
+    (fake_apply / 'gupy.py').write_text(FAKE_BOT_OK, encoding='utf-8')
+    ar.start_login('gupy')
+    st = _esperar_login('gupy', 4)
+    assert st['estado'] == 'concluido'
+    for _ in range(3):
+        st = ar.login_status('gupy')
+        assert st['estado'] == 'concluido'
+        assert st.get('exit_code') == 0
+
+
+def test_run_completa_bloqueia_login_do_mesmo_bot(fake_apply):
+    """Run completa em execução impede login-só do MESMO bot (e do grupo da
+    porta 9333) — 409 na rota; o usuário precisa parar a run antes."""
+    (fake_apply / 'gupy.py').write_text(FAKE_BOT, encoding='utf-8')
+    info = ar.start_bot('gupy')
+    try:
+        for _ in range(40):
+            if ar.bot_status('gupy')['running']:
+                break
+            time.sleep(0.25)
+        with pytest.raises(ar.ApplyRunError, match='pare antes'):
+            ar.start_login('gupy')
+        with pytest.raises(ar.ApplyRunError, match='em uso'):
+            ar.start_login('infojobs')
+    finally:
+        if ar.is_process_alive(info['pid']):
+            os.kill(info['pid'], signal.SIGTERM)

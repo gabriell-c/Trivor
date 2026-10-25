@@ -1,9 +1,10 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Play, Square, Loader2, FileTerminal, Pin } from 'lucide-react'
+import { Play, Square, Loader2, FileTerminal, Pin, KeyRound, LogIn } from 'lucide-react'
 import {
   applyFetch, applyMethod, BOT_NAMES,
-  type BotRun, cardCls, btnPrimary, btnDanger,
+  type BotRun, type BotSessao, type LoginState,
+  cardCls, btnPrimary, btnDanger,
 } from './apply-api'
 
 export default function ExecutarTab() {
@@ -13,6 +14,9 @@ export default function ExecutarTab() {
   const [focusBot, setFocusBot] = useState<string>('gupy')
   const [log, setLog] = useState<string[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
+  const [sesoes, setSesoes] = useState<Record<string, BotSessao> | null>(null)
+  const [logins, setLogins] = useState<Record<string, LoginState>>({})
+  const [busyLogin, setBusyLogin] = useState<string | null>(null)
   const preRef = useRef<HTMLPreElement>(null)
   const anyRunning = !!runs && Object.values(runs).some(r => r.running)
 
@@ -54,6 +58,44 @@ export default function ExecutarTab() {
     return () => { vivo = false; clearInterval(id) }
   }, [focus, anyRunning])
 
+  /* status de sessão dos 5 bots (cartão de Logins) — mesmo ritmo do poll de runs */
+  useEffect(() => {
+    let vivo = true
+    const tick = async () => {
+      try {
+        const d = await applyFetch<BotSessao[]>('/api/apply/sesoes')
+        if (vivo) setSesoes(Object.fromEntries(d.map(s => [s.bot, s])))
+      } catch {
+        // backend offline nesse tick — mantém o último estado conhecido
+      }
+    }
+    tick()
+    const id = setInterval(tick, anyRunning ? 3000 : 8000)
+    return () => { vivo = false; clearInterval(id) }
+  }, [anyRunning])
+
+  /* login-só em andamento → poll do estado até concluir/falhar */
+  const aguardandoChave = Object.entries(logins)
+    .filter(([, l]) => l?.estado === 'aguardando')
+    .map(([bot]) => bot).join(',')
+  useEffect(() => {
+    if (!aguardandoChave) return
+    let vivo = true
+    const tick = async () => {
+      for (const bot of aguardandoChave.split(',')) {
+        try {
+          const l = await applyFetch<LoginState>(`/api/apply/login/${bot}`)
+          if (vivo) setLogins(prev => ({ ...prev, [bot]: l }))
+        } catch {
+          // mantém o último estado — o próximo tick tenta de novo
+        }
+      }
+    }
+    tick()
+    const id = setInterval(tick, 4000)
+    return () => { vivo = false; clearInterval(id) }
+  }, [aguardandoChave])
+
   useEffect(() => {
     if (autoScroll && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
   }, [log, autoScroll])
@@ -75,8 +117,103 @@ export default function ExecutarTab() {
     }
   }
 
+  const logar = async (bot: string) => {
+    setBusyLogin(bot)
+    setMsg(null)
+    try {
+      await applyMethod('/api/apply/login', 'POST', { bot })
+      setLogins(prev => ({ ...prev, [bot]: { bot, estado: 'aguardando' } }))
+      setMsg({ kind: 'ok', text: `${bot}: login iniciado — uma janela do browser vai abrir nesta máquina; finalize o login nela.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: `${bot}: ${e instanceof Error ? e.message : 'falha ao iniciar o login'}` })
+    } finally {
+      setBusyLogin(null)
+    }
+  }
+
+  const pararLogin = async (bot: string) => {
+    setBusyLogin(bot)
+    setMsg(null)
+    try {
+      await applyMethod('/api/apply/login/stop', 'POST', { bot })
+      setLogins(prev => ({ ...prev, [bot]: { bot, estado: 'inativo' } }))
+      setMsg({ kind: 'ok', text: `${bot}: login cancelado.` })
+    } catch (e) {
+      setMsg({ kind: 'err', text: `${bot}: ${e instanceof Error ? e.message : 'falha ao cancelar o login'}` })
+    } finally {
+      setBusyLogin(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {/* Logins — botão garante a sessão (login-só: não busca, não candidata) */}
+      <div className={cardCls}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[13px] font-medium text-slate-400 uppercase tracking-wider">
+            <KeyRound className="w-4 h-4 text-indigo-300" />
+            Logins
+          </div>
+          <span className="text-[13px] text-slate-500">garante a sessão — não envia candidatura</span>
+        </div>
+        {sesoes === null ? (
+          <div className="mt-3 space-y-2">
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-12 rounded-xl bg-slate-800/40 animate-pulse" />)}
+          </div>
+        ) : (
+        <div className="mt-3 space-y-2">
+          {BOT_NAMES.map(name => {
+            const s = sesoes[name]
+            const l = logins[name]
+            const aguardando = l?.estado === 'aguardando'
+            const ocupado = busyLogin === name
+            const texto = aguardando
+              ? '⏳ janela do browser aberta — finalize o login nela'
+              : l?.estado === 'concluido'
+                ? 'login concluído — sessão atualizada'
+                : l?.estado === 'falhou'
+                  ? `login falhou (código ${l.exit_code ?? '?'})`
+                  : s?.detalhe ?? '…'
+            const cor = l?.estado === 'falhou'
+              ? 'bg-rose-400'
+              : aguardando
+                ? 'bg-amber-400 animate-pulse'
+                : (l?.estado === 'concluido' || s?.tem_sessao)
+                  ? 'bg-emerald-400'
+                  : 'bg-slate-600'
+            return (
+              <div key={name} className="rounded-xl border border-slate-800/70 p-3 bg-slate-950/40">
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className={`w-2 h-2 rounded-full shrink-0 ${cor}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-slate-200">{s?.nome ?? name}</div>
+                    <div aria-live="polite" className="text-[13px] text-slate-500 truncate">{texto}</div>
+                  </div>
+                  {aguardando ? (
+                    <button onClick={() => pararLogin(name)} disabled={ocupado} className={btnDanger}>
+                      {ocupado
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Square className="w-3.5 h-3.5" />}
+                      Cancelar
+                    </button>
+                  ) : (
+                    <button onClick={() => logar(name)}
+                      disabled={ocupado || !!runs?.[name]?.running}
+                      className={btnPrimary}>
+                      {ocupado
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <LogIn className="w-3.5 h-3.5" />}
+                      {s?.tem_sessao ? 'Renovar' : 'Logar'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        )}
+      </div>
+
       <div className={cardCls}>
         <div className="flex items-center justify-between gap-3">
           <div className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">

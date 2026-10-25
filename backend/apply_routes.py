@@ -3,9 +3,20 @@ execução/stop dos bots, admin (config, IA, currículos). Movidas do main.py
 — corpos inalterados.
 """
 
+from pathlib import Path
+
 import apply_admin
 from app_log import get_app_logger
-from apply_runner import ApplyRunError, bot_log, list_bots, start_bot, stop_bot
+from apply_runner import (
+    ApplyRunError,
+    bot_log,
+    list_bots,
+    login_status,
+    start_bot,
+    start_login,
+    stop_bot,
+    stop_login,
+)
 from apply_service import ApplyDataError, apply_applications, apply_overview, resolve_apply_dir
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
@@ -96,6 +107,77 @@ async def api_apply_stop(request: Request):
         detail = str(exc)
         code = 404 if 'não encontrado' in detail else (409 if 'execução' in detail else 400)
         raise HTTPException(status_code=code, detail=detail)
+
+
+# ── Logins e status de sessão (botões "Logar" do cartão de logins) ────────
+
+def _status_sessoes(apply_dir: Path):
+    """Carrega apply/common/status_sessoes.py por caminho: o módulo é de
+    propósito independente (não importa a camada de browser — puxar
+    `common/__init__.py` arrastaria browser/LLM junto)."""
+    import importlib.util
+    cam = Path(apply_dir) / 'common' / 'status_sessoes.py'
+    spec = importlib.util.spec_from_file_location('trivor_status_sessoes', cam)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@router.get('/api/apply/sesoes')
+def api_apply_sesoes():
+    """Status de sessão dos 5 bots (sessão local / credenciais) — o cartão
+    de logins faz poll. Só existência e timestamps — nunca valor de PII."""
+    apply_dir = resolve_apply_dir()
+    if apply_dir is None:
+        raise HTTPException(status_code=404, detail="Projeto apply não encontrado. Defina APPLY_DIR no .env.")
+    return _status_sessoes(apply_dir).estados(apply_dir)
+
+
+@router.post('/api/apply/login')
+async def api_apply_login(request: Request):
+    """Inicia um login-só: o bot garante a sessão e encerra (não busca, não
+    candidata). O cartão faz poll em /api/apply/login/{bot} até concluir.
+    409: porta CDP ocupada por outro bot / login já em andamento."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    bot = data.get('bot')
+    if not isinstance(bot, str):
+        raise HTTPException(status_code=400, detail='Body deve ser {"bot": "gupy"}.')
+    try:
+        info = start_login(bot)
+    except ApplyRunError as exc:
+        msg = str(exc)
+        status = 409 if ('já' in msg or 'em uso' in msg) else 400
+        raise HTTPException(status_code=status, detail=msg)
+    logger.info(f"[APPLY] login-só {bot} iniciado (pid {info['pid']})")
+    return info
+
+
+@router.post('/api/apply/login/stop')
+async def api_apply_login_stop(request: Request):
+    """Para um login-só em andamento (só o PID específico — quem sobe, desce)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    bot = data.get('bot')
+    if not isinstance(bot, str):
+        raise HTTPException(status_code=400, detail='Body deve ser {"bot": "gupy"}.')
+    try:
+        return stop_login(bot)
+    except ApplyRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get('/api/apply/login/{bot}')
+def api_apply_login_status(bot: str):
+    """Estado do login-só: aguardando / concluido / falhou / indeterminado / inativo."""
+    try:
+        return login_status(bot)
+    except ApplyRunError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 # ── Admin do apply (Nível 3: config, IA, currículos) ────────────────────────

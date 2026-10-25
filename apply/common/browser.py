@@ -31,7 +31,9 @@ Sessões: com `profile="gupy"`, cada engine usa um user_data_dir persistente
 em apply/sessions/<profile>/<engine>/ — cookies/localStorage sobrevivem entre
 runs, substituindo gupy_session.json / solides_session.json / indeed_session.pkl.
 """
+import contextlib
 import json
+import os
 import random
 import tempfile
 import time
@@ -51,6 +53,25 @@ class BrowserUnavailable(RuntimeError):
         super().__init__('nenhuma engine disponível — ' + '; '.join(f'{n}: {r}' for n, r in tried))
 
 
+def aba_morta(page) -> bool:
+    """Detecta tab cravada — 'Target/Page crashed': em sessões longas o site
+    (anti-bot) pode matar a tab; o browser continua vivo, só a página morre."""
+    try:
+        return page.is_closed() or page.evaluate("1") != 1
+    except Exception:
+        return True
+
+
+def reabrir_aba(page):
+    """Reabre a tab no mesmo contexto após um crash — segue o fluxo sem
+    reiniciar o browser (login/sessão do perfil persistem)."""
+    nova = page.context.new_page()
+    nova.set_default_timeout(30000)
+    with contextlib.suppress(Exception):
+        page.close()
+    return nova
+
+
 class Browser:
     """Navegador com cadeia de fallback (engine que sobir primeiro vence)."""
 
@@ -59,7 +80,11 @@ class Browser:
                  timeout_ms: int = 60000, cdp_port: int | None = None):
         self.profile = profile
         self.headless = headless
-        self.engines = tuple(e for e in ENGINES if e in tuple(engines))
+        # Override de campo (teste/dry-run): TRIVOR_ENGINE="playwright" ou
+        # "patchright,playwright" restringe a cadeia; sem a var, segue o default.
+        pinned = os.environ.get("TRIVOR_ENGINE")
+        allowed = tuple(e.strip() for e in pinned.split(",")) if pinned else tuple(engines)
+        self.engines = tuple(e for e in ENGINES if e in allowed)
         self.channel = channel
         self.timeout_ms = timeout_ms
         self.cdp_port = cdp_port
