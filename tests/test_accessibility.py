@@ -5,7 +5,6 @@ Foca em problemas que afetam leitores de tela e navegação por teclado.
 import re
 from pathlib import Path
 
-import pytest
 
 _BASE = Path(__file__).parent.parent
 _FE = _BASE / "frontend" / "app"
@@ -63,21 +62,29 @@ class TestA11yStructure:
         assert not has_inline_onclick, "Evitar onclick inline — usar onClick do React"
 
     def test_buttons_have_accessibility_text(self):
-        """Botões devem ter texto visível ou aria-label."""
+        """Botões devem ter texto visível ou aria-label (WCAG 4.1.2).
+
+        A checagem é por botão: o bloco entre <button> e </button> precisa de
+        caracteres visíveis (não tags, não expressão JSX) OU um aria-label na
+        tag de abertura. Botão de ícone puro sem aria-label é violação —
+        antes isso era pytest.skip (marcador macio que escondia o defeito).
+        """
         content = read_file(_LAYOUT_COMP)
-        buttons = re.findall(r"<button[^>]*>", content, re.IGNORECASE)
-        aria_labels = re.findall(r"aria-label", content)
-        # Cada botão deve ter label visível ou aria-label
-        # Heurística: se não há aria-label, pelo menos os botões devem ter texto entre > e <
-        if buttons and not aria_labels:
-            # Verifica se os botões têm texto filho (label)
-            for btn in buttons:
-                # Botões com ícone puro (sem texto) devem ter aria-label
-                has_text = bool(re.search(r'<button[^>]*>[^<]+', btn))
-                if not has_text:
-                    pytest.skip(
-                        f"Botão sem texto visível detectado — adicione aria-label: {btn[:80]}"
-                    )
+        blocos = re.findall(r"<button\b[^>]*>.*?</button>", content, re.DOTALL)
+        violacoes = []
+        for bloco in blocos:
+            fim_tag = bloco.index(">")
+            abri = bloco[: fim_tag + 1]
+            corpo = bloco[fim_tag + 1 : -len("</button>")]
+            tem_aria = "aria-label" in abri
+            # tira tags aninhadas e a expressão JSX inteira → sobra só texto
+            sem_tags = re.sub(r"<[^>]*>", " ", corpo)
+            sem_expressao = re.sub(r"\{[^}]*\}", " ", sem_tags)
+            tem_texto = bool(re.search(r"[^ ]", sem_expressao.strip()))
+            if not (tem_aria or tem_texto):
+                violacoes.append(abri.strip()[:80])
+        assert not violacoes, \
+            "Botão sem texto acessível (adicione aria-label): " + " | ".join(violacoes)
 
 
 # ============================================================================

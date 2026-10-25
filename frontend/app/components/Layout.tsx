@@ -113,6 +113,7 @@ export default function Sidebar({ globalStatus = 'none', providerCount = 0, coll
 
         <div className="p-3 border-t border-slate-800/60">
           <button onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-all text-xs font-medium">
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
