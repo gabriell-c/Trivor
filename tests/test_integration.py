@@ -187,7 +187,7 @@ class TestAnalyzeCV:
         # do desenvolvedor (TRIVOR_IAS / OPENAI_API_KEY no .env).
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
-            patch("cv_routes._get_provider_for_tool", return_value=None),
+            patch("cv_helpers._get_provider_for_tool", return_value=None),
         ):
             r = client.post(
                 "/api/cv/analyze",
@@ -292,7 +292,7 @@ class TestAnalyzeCVTwoPasses:
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "sk-teste-1234567890", "TRIVOR_IAS": "[]"}),
             patch("cv_routes._extract_cv_text", return_value=(cv_text, "mock", False)),
-            patch("cv_routes.OpenAI") as mock_openai,
+            patch("cv_helpers.OpenAI") as mock_openai,
         ):
             mock_openai.return_value.chat.completions.create.side_effect = [
                 _FakeLLMResponse(passo1, 100, 200),
