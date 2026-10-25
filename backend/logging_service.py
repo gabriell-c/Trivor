@@ -4,6 +4,7 @@ Request Logger – registra todas as requisições de IA com métricas detalhada
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,13 +33,37 @@ CREATE TABLE IF NOT EXISTS api_logs (
 CREATE INDEX IF NOT EXISTS idx_api_logs_timestamp ON api_logs(timestamp);
 """
 
+# Conexões por thread (o event loop roda tudo em thread pool): cada thread
+# tem SUA conexão longa com WAL + synchronous=NORMAL. O custo medido de
+# connect+INSERT+COMMIT era ~124ms por request (banco num disco sob
+# sync do OneDrive); reutilizando a conexão a escrita cai pra milissegundos.
+_local = threading.local()
+
+
+def _conn(db_path: Path = LOGS_DB) -> sqlite3.Connection:
+    c = getattr(_local, "conn", None)
+    if c is not None:
+        # 'closed' não é atributo confiável do sqlite3 — sonda a conexão
+        try:
+            c.execute("SELECT 1")
+            return c
+        except sqlite3.Error:
+            pass
+    c = sqlite3.connect(str(db_path), check_same_thread=False, timeout=2.0)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA synchronous=NORMAL")
+    c.executescript(SCHEMA)
+    _local.conn = c
+    return c
+
 
 def init_logs_db(db_path: Path = LOGS_DB):
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.executescript(SCHEMA)
+    conn = _conn(db_path)
     conn.commit()
-    conn.close()
+    # Prune automático (mesma política de 90 dias da rota /api/logs/cleanup):
+    # a tabela não pode crescer para sempre entre restarts do backend
+    cleanup_logs(days_old=90)
 
 
 def log_request(
@@ -57,7 +82,7 @@ def log_request(
     log_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
 
-    conn = sqlite3.connect(LOGS_DB)
+    conn = _conn()
     conn.execute(
         """INSERT INTO api_logs
            (id, timestamp, endpoint, method, status_code, duration_ms,
@@ -75,7 +100,6 @@ def log_request(
         ),
     )
     conn.commit()
-    conn.close()
     return log_id
 
 
@@ -85,7 +109,7 @@ def get_logs(
     endpoint: str | None = None,
     error_only: bool = False,
 ) -> list[dict[str, Any]]:
-    conn = sqlite3.connect(LOGS_DB)
+    conn = _conn()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -106,12 +130,11 @@ def get_logs(
         (*params, limit, offset),
     )
     rows = c.fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 def get_logs_stats() -> dict[str, Any]:
-    conn = sqlite3.connect(LOGS_DB)
+    conn = _conn()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM api_logs")
     total = c.fetchone()[0]
@@ -133,7 +156,6 @@ def get_logs_stats() -> dict[str, Any]:
     c.execute("SELECT MAX(timestamp) FROM api_logs")
     last = c.fetchone()[0]
 
-    conn.close()
     return {
         "total": total,
         "errors": errors,
@@ -146,19 +168,18 @@ def get_logs_stats() -> dict[str, Any]:
 
 
 def clear_logs() -> int:
-    conn = sqlite3.connect(LOGS_DB)
+    conn = _conn()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM api_logs")
     count = c.fetchone()[0]
     c.execute("DELETE FROM api_logs")
     conn.commit()
-    conn.close()
     return count
 
 
 def cleanup_logs(days_old: int = 90) -> int:
     """Remove logs com mais de N dias. Retorna quantidade removida."""
-    conn = sqlite3.connect(LOGS_DB)
+    conn = _conn()
     c = conn.cursor()
     c.execute(
         "SELECT COUNT(*) FROM api_logs WHERE timestamp < ? OR timestamp IS NULL",
@@ -171,5 +192,4 @@ def cleanup_logs(days_old: int = 90) -> int:
             ((datetime.now() - timedelta(days=days_old)).isoformat(),)
         )
         conn.commit()
-    conn.close()
     return count
