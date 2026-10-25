@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
 ║              🤖 JOB HUNTER — SÓLIDES  v1.4                  ║
-║  Playwright · Groq/HuggingFace · Sessão salva               ║
+║  Playwright · LLM da UI · Sessão salva                      ║
 ╚══════════════════════════════════════════════════════════════╝
 
 CORREÇÕES v1.2 (patch sobre v1.1):
@@ -57,7 +57,6 @@ from common import dryrun, loginonly, pagelens, perfil
 from common.browser import aba_morta, reabrir_aba
 from common.relatorio import Relatorio
 from dotenv import load_dotenv
-from groq import Groq
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
 load_dotenv()
@@ -73,7 +72,6 @@ TZ               = ZoneInfo("America/Sao_Paulo")
 CANDIDATO        = CONFIG["candidato"]
 DIVERSIDADE      = CONFIG.get("diversidade", {})
 LOCALIZACAO      = CONFIG.get("localizacao", {})
-GROQ_MODEL       = CONFIG["groq"]["model"]
 MAX_POR_DIA      = CONFIG["automacao"]["max_candidaturas_por_dia"]
 DELAY_VAGAS      = CONFIG["automacao"]["delay_entre_vagas"]
 PALAVRAS_CHAVE   = CONFIG["busca"]["palavras_chave"]
@@ -85,7 +83,6 @@ RELATORIO_DIR = Path("relatorio")
 RELATORIO_DIR.mkdir(exist_ok=True)
 RELATORIO_FILE = RELATORIO_DIR / "candidaturas.json"
 
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Dados sensíveis do .env
 _DOC_CPF        = os.getenv("CANDIDATO_CPF", "")
@@ -148,7 +145,7 @@ def horario_ok() -> bool:
 #  IA — LLM GROQ + PERFIL + KILLER QUESTIONS (em solides_ia.py)
 # ═══════════════════════════════════════════════════════════════
 
-from solides_ia import *  # noqa: F403 — camada de IA (Groq/HF, PERFIL_COMPLETO, habilidades, killer)
+from solides_ia import *  # noqa: F403 — camada de IA (LLM via provedores da UI, PERFIL_COMPLETO, habilidades, killer)
 
 # ═══════════════════════════════════════════════════════════════
 #  SESSÃO

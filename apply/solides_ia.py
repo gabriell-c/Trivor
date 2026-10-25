@@ -1,7 +1,7 @@
-"""Camada de IA do bot Sólides — LLM Groq (fallback HF) + perfil do candidato.
+"""Camada de IA do bot Sólides — LLM via UI + perfil do candidato.
 
 Extraído de solides.py sem mudança de comportamento:
-  • Roteador chamar_llm (Groq) + _chamar_huggingface (fallback)
+  • Roteador chamar_llm: somente provedores cadastrados na UI (config.yaml → ia)
   • PERFIL_COMPLETO (perfil comum + extras Sólides)
   • Nível de habilidade (NIVEL_HABILIDADE + ia_nivel_habilidade)
   • Killer questions (radio/texto)
@@ -12,16 +12,14 @@ de solides.py seguem iguais para os call sites.
 """
 from __future__ import annotations
 
-import json
-import os
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import llm as _llm_lib
 from common import perfil
 from dotenv import load_dotenv
-from groq import Groq
 
 # ── Bootstrap autossuficiente (mesmo processo → mesmos valores do bot) ──
 load_dotenv()
@@ -33,10 +31,7 @@ TZ               = ZoneInfo("America/Sao_Paulo")
 CANDIDATO        = CONFIG["candidato"]
 DIVERSIDADE      = CONFIG.get("diversidade", {})
 LOCALIZACAO      = CONFIG.get("localizacao", {})
-GROQ_MODEL       = CONFIG["groq"]["model"]
 PALAVRAS_EXCLUIR = [p.lower() for p in CONFIG["busca"].get("palavras_excluir", [])]
-
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # ---------------------------------------------------------------------------
 # Logging (cópias exatas do bot — o bot re-importa via star)
@@ -55,15 +50,12 @@ def log_info(msg: str) -> None: log(msg, "ℹ️ ")
 def log_warn(msg: str) -> None: log(msg, "⚠️ ")
 
 __all__ = [
-    "GROQ_MODEL",
     "NIVEL_HABILIDADE",
     "PERFIL_COMPLETO",
-    "_chamar_huggingface",
     "_nivel_para_texto",
     "_now",
     "_perfil_extras_solides",
     "chamar_llm",
-    "groq_client",
     "ia_nivel_habilidade",
     "ia_responder_killer_question_radio",
     "ia_responder_killer_question_texto",
@@ -76,48 +68,20 @@ __all__ = [
 ]
 
 # ═══════════════════════════════════════════════════════════════
-#  GROQ — LLM
+#  LLM — somente provedores cadastrados na UI (config.yaml → ia)
 # ═══════════════════════════════════════════════════════════════
 
 def chamar_llm(prompt: str, max_tokens: int = 300, temperature: float = 0.1) -> str:
-    """Chama o Groq com fallback para HuggingFace."""
-    try:
-        resp = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as exc:
-        log_warn(f"  [Groq] erro: {exc} — tentando HuggingFace")
-        return _chamar_huggingface(prompt, max_tokens, temperature)
+    """LLM do Sólides: somente provedores cadastrados na UI (aba IA do Trivor).
 
-
-def _chamar_huggingface(prompt: str, max_tokens: int = 300, temperature: float = 0.1) -> str:
-    import urllib.error
-    import urllib.request
-    hf_key = os.getenv("HF_API_KEY", "")
-    if not hf_key:
-        raise RuntimeError("HF_API_KEY não configurada")
-
-    hf_model = CONFIG.get("huggingface", {}).get("model", "Qwen/Qwen2.5-72B-Instruct")
-    url = "https://router.huggingface.co/v1/chat/completions"
-    payload = json.dumps({
-        "model": hf_model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": max(0.01, temperature),
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        url, data=payload,
-        headers={"Authorization": f"Bearer {hf_key}", "Content-Type": "application/json"},
-        method="POST",
+    Sem cadastro, ou todos falharem, levanta LLMError — os chamadores
+    (nível de habilidade / killer questions) têm fallbacks determinísticos."""
+    return _llm_lib.chamar_ia(
+        CONFIG, prompt,
+        temperatura=temperature,
+        max_tokens=max_tokens,
+        log_info=lambda m: log_warn(m),
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -12,7 +12,7 @@ Mudanças v2.8:
     - Prompt direto: "A maioria dessas perguntas está em inglês? SIM ou NÃO"
     - Se a IA responder SIM → candidatura abortada imediatamente
     - Status registrado como "formulario_ingles"
-    - Aproveita chamar_llm() — mesmo roteador Groq/HuggingFace
+    - Aproveita chamar_llm() — somente provedores cadastrados na UI (aba IA)
     - Distingue inglês real de termos técnicos (React, API, deploy)
       que aparecem normalmente em formulários PT-BR
 
@@ -60,7 +60,6 @@ import yaml
 from common import dryrun, loginonly, pagelens, perfil
 from common.relatorio import Relatorio
 from dotenv import load_dotenv
-from groq import Groq
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
     ElementNotInteractableException,
@@ -88,7 +87,6 @@ TZ                = ZoneInfo("America/Sao_Paulo")
 CANDIDATO         = CONFIG["candidato"]
 DIVERSIDADE       = CONFIG["diversidade"]
 LOCALIZACAO       = CONFIG["localizacao"]
-GROQ_MODEL        = CONFIG["groq"]["model"]
 MAX_POR_DIA       = CONFIG["automacao"]["max_candidaturas_por_dia"]
 DELAY_VAGAS       = CONFIG["automacao"]["delay_entre_vagas"]
 CURRICULO_PDF     = str(Path(CONFIG["resumes"]["fullstack"]).resolve())
@@ -99,7 +97,6 @@ RELATORIO_DIR     = Path("relatorio")
 RELATORIO_DIR.mkdir(exist_ok=True)
 RELATORIO_FILE    = RELATORIO_DIR / "candidaturas.json"
 
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Dados sensíveis — lidos exclusivamente do .env, nunca do config.yaml
 _DOC_CPF = os.getenv("CANDIDATO_CPF", "")
@@ -1584,7 +1581,7 @@ def preencher_campos(
         gotas = pagelens.agente_rotulos(
             desc, ctx,
             chamar=lambda prompt, max_tokens=500: chamar_llm(
-                [{"role": "user", "content": prompt}],
+                prompt,
                 max_tokens=max_tokens, temperature=0.1,
             ),
             log=log_info,
@@ -1858,7 +1855,7 @@ def clicar_continuar(driver: Driver) -> bool:
                   "NUNCA 'Voltar', 'Back', 'Fechar', 'Cancel', 'Salvar e fechar' ou 'Ver mais'."),
         regras=perfil.perfil_compacta(CONFIG, limite=220),
         chamar=lambda prompt, max_tokens=260: chamar_llm(
-            [{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.05),
+            prompt, max_tokens=max_tokens, temperature=0.05),
         log=log_info,
     )
     if el is not None and _click(driver, el):
@@ -2176,7 +2173,7 @@ def _clicar_submit_com_retry(driver: Driver, tentativas: int = 3) -> bool:
                   "'Confirmar', 'Apply', 'Finalizar') — NUNCA 'Voltar', 'Back', "
                   "'Cancelar' ou 'Salvar e fechar'"),
         chamar=lambda prompt, max_tokens=260: chamar_llm(
-            [{"role": "user", "content": prompt}], max_tokens=max_tokens,
+            prompt, max_tokens=max_tokens,
         ),
         log=log_info,
     )
@@ -2401,7 +2398,7 @@ def _resgate_avancar(driver: Driver) -> str:
     if resumo:
         try:
             resp = chamar_llm(
-                [{"role": "user", "content": pagelens.montar_prompt_enviada(resumo)}],
+                pagelens.montar_prompt_enviada(resumo),
                 max_tokens=150,
             )
             if pagelens.parse_enviada(resp):
@@ -2415,7 +2412,7 @@ def _resgate_avancar(driver: Driver) -> str:
                   "(botão 'Continuar', 'Next', 'Enviar', 'Confirmar', 'Finalizar' "
                   "ou o campo pendente que impede o avanço — NUNCA 'Voltar'/'Cancelar'"),
         chamar=lambda prompt, max_tokens=260: chamar_llm(
-            [{"role": "user", "content": prompt}], max_tokens=max_tokens,
+            prompt, max_tokens=max_tokens,
         ),
         log=log_info,
     )
@@ -2535,7 +2532,7 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
             bloqueio = pagelens.tratar_bloqueio(
                 driver,
                 chamar=lambda prompt, max_tokens=300: chamar_llm(
-                    [{"role": "user", "content": prompt}],
+                    prompt,
                     max_tokens=max_tokens, temperature=0.05),
                 log=log_info,
             )

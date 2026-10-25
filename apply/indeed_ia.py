@@ -1,7 +1,8 @@
 """Camada de IA do bot Indeed — roteador LLM + prompts + detecção de inglês.
 
 Extraído de indeed.py (v2.8) sem mudança de comportamento:
-  • Roteador Groq primário / HuggingFace fallback (chamar_llm)
+  • Roteador LLM (chamar_llm): somente provedores cadastrados na UI
+    (config.yaml → ia, ativo em 1º, demais em ordem de cadastro)
   • Processamento de formulário (regras → agente → IA campo a campo)
   • Prompts do sistema + perfil resumido (PERFIL_RESUMIDO)
   • Detecção de descrição/formulário em inglês via IA (v2.7/v2.8)
@@ -13,12 +14,7 @@ de indeed.py seguem iguais para os call sites (mesmo padrão de indeed_regras).
 """
 from __future__ import annotations
 
-import datetime as _dt
-import json
-import os
 import re
-import threading
-import time
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -27,7 +23,6 @@ import yaml
 from common import llm as _llm_lib
 from common import pagelens, perfil
 from dotenv import load_dotenv
-from groq import Groq
 
 # ── Bootstrap autossuficiente (mesmo processo → mesmos valores do bot) ──
 load_dotenv()
@@ -39,9 +34,6 @@ TZ           = ZoneInfo("America/Sao_Paulo")
 CANDIDATO    = CONFIG["candidato"]
 DIVERSIDADE  = CONFIG["diversidade"]
 LOCALIZACAO  = CONFIG["localizacao"]
-GROQ_MODEL   = CONFIG["groq"]["model"]
-
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Engine de regras determinísticas (módulo extraído anterior)
 from indeed_regras import (
@@ -70,28 +62,17 @@ class _FormularioEmIngles(Exception):
     """Aborta a candidatura quando o formulário está predominantemente em inglês."""
 
 __all__ = [
-    "GROQ_MODEL",
-    "HF_API_KEY",
-    "HF_MODEL",
     "PERFIL_RESUMIDO",
     "_SYSTEM_FORM_TEMPLATE",
     "_FormularioEmIngles",
-    "_GroqLimiteDiario",
-    "_agendar_retorno_groq",
     "_build_perfil_resumido",
-    "_calcular_reset_groq",
-    "_chamar_groq",
-    "_chamar_huggingface",
     "_descricao_em_ingles",
     "_esta_em_ingles",
     "_formulario_em_ingles",
     "_get_system_form",
     "_ia_resolver_campo",
-    "_llm_state",
-    "_normalizar_messages_para_hf",
     "_now_str",
     "chamar_llm",
-    "groq_client",
     "ia_gerar_carta",
     "ia_processar_formulario",
     "log",
@@ -108,7 +89,7 @@ __all__ = [
 
 def _descricao_em_ingles(descricao: str) -> bool:
     """
-    Usa o LLM (Groq/HuggingFace via chamar_llm) para detectar se a
+    Usa o LLM (provedores da UI via chamar_llm) para detectar se a
     descrição da vaga está predominantemente em inglês.
 
     O modelo recebe os primeiros 800 caracteres da descrição e deve
@@ -134,7 +115,7 @@ def _descricao_em_ingles(descricao: str) -> bool:
 
     try:
         resposta = chamar_llm(
-            messages=[{"role": "user", "content": prompt}],
+            prompt,
             max_tokens=5,
             temperature=0.0,
         ).strip().upper()
@@ -225,7 +206,7 @@ def _formulario_em_ingles(labels: list[str]) -> bool:
 
     try:
         resposta = chamar_llm(
-            messages=[{"role": "user", "content": prompt}],
+            prompt,
             max_tokens=5,
             temperature=0.0,
         ).strip().upper()
@@ -474,7 +455,7 @@ def ia_processar_formulario(campos: list[dict], contexto_vaga: str) -> dict[str,
         campos_para_ia, contexto_vaga,
         regras=_get_system_form(),
         chamar=lambda prompt, max_tokens=900: chamar_llm(
-            [{"role": "user", "content": prompt}],
+            prompt,
             max_tokens=max_tokens, temperature=0.1),
     )
     if agente:
@@ -814,180 +795,23 @@ def ia_gerar_carta(titulo: str, empresa: str, descricao: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  LLM ROUTER — Groq primário / HuggingFace fallback
+#  LLM ROUTER — somente provedores cadastrados na UI (config.yaml → ia)
+#
+#  Roteador único: common.llm.chamar_ia (ativo em 1º, demais em ordem de
+#  cadastro). Sem cadastro, ou todos falharem → LLMError (subclasse de
+#  RuntimeError) — os chamadores mantêm seus fallbacks.
 # ═══════════════════════════════════════════════════════════════
 
 
-_HF_MODEL_LEGADO = "meta-llama/Meta-Llama-3-8B-Instruct"
-_hf_model_cfg    = CONFIG.get("huggingface", {}).get("model", "")
-HF_MODEL = (
-    _hf_model_cfg
-    if _hf_model_cfg and _hf_model_cfg != _HF_MODEL_LEGADO
-    else "Qwen/Qwen2.5-72B-Instruct"
-)
-HF_API_KEY = os.getenv("HF_API_KEY", "")
+def chamar_llm(prompt: str, max_tokens: int = 400, temperature: float = 0.1) -> str:
+    """LLM do Indeed: somente provedores cadastrados na UI (config.yaml → ia).
 
-_llm_state = {
-    "provedor":      "groq",
-    "groq_reset_em": None,
-    "lock":          threading.Lock(),
-}
-
-
-def _agendar_retorno_groq(reset_utc: _dt.datetime) -> None:
-    def _voltar():
-        agora  = _dt.datetime.now(_dt.UTC)
-        espera = max(0, (reset_utc - agora).total_seconds()) + 15
-        log_info(f"  [LLM] HuggingFace ativo. Groq volta em {int(espera/60)}min "
-                 f"({reset_utc.astimezone(TZ).strftime('%H:%M')} horário local)")
-        time.sleep(espera)
-        with _llm_state["lock"]:
-            _llm_state["provedor"]      = "groq"
-            _llm_state["groq_reset_em"] = None
-        log_ok("  [LLM] Groq reativado automaticamente!")
-
-    t = threading.Thread(target=_voltar, daemon=True)
-    t.start()
-
-
-_calcular_reset_groq = _llm_lib.calcular_reset_groq
-
-
-def _normalizar_messages_para_hf(messages: list[dict]) -> list[dict]:
-    """
-    O HuggingFace Inference API frequentemente ignora mensagens com role='system'.
-    Esta função mescla qualquer system prompt no início da primeira mensagem user,
-    garantindo que o contexto seja sempre respeitado.
-    """
-    if not messages:
-        return messages
-
-    system_parts: list[str] = []
-    user_messages: list[dict] = []
-
-    for msg in messages:
-        if msg.get("role") == "system":
-            system_parts.append(msg["content"])
-        else:
-            user_messages.append(msg)
-
-    if not system_parts:
-        return messages  # sem system, nada a fazer
-
-    system_text = "\n\n".join(system_parts)
-
-    if not user_messages:
-        # Só tinha system — converte para user
-        return [{"role": "user", "content": system_text}]
-
-    # Injeta o system no início da primeira mensagem user
-    resultado = []
-    primeiro_user_injetado = False
-    for msg in user_messages:
-        if msg.get("role") == "user" and not primeiro_user_injetado:
-            conteudo_combinado = (
-                f"[INSTRUÇÕES DO SISTEMA — SIGA RIGOROSAMENTE]\n"
-                f"{system_text}\n"
-                f"[FIM DAS INSTRUÇÕES DO SISTEMA]\n\n"
-                f"{msg['content']}"
-            )
-            resultado.append({"role": "user", "content": conteudo_combinado})
-            primeiro_user_injetado = True
-        else:
-            resultado.append(msg)
-
-    return resultado
-
-
-def _chamar_huggingface(
-    messages: list[dict],
-    max_tokens: int = 400,
-    temperature: float = 0.1,
-) -> str:
-    import urllib.error
-    import urllib.request
-
-    if not HF_API_KEY:
-        raise RuntimeError("HF_API_KEY não configurada no .env")
-
-    url = "https://router.huggingface.co/v1/chat/completions"
-
-    # HuggingFace ignora role='system' — mescla no user para garantir obediência
-    messages_hf = _normalizar_messages_para_hf(messages)
-
-    payload = json.dumps({
-        "model":       HF_MODEL,
-        "messages":    messages_hf,
-        "max_tokens":  max_tokens,
-        "temperature": max(0.01, temperature),
-        "stream":      False,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {HF_API_KEY}",
-            "Content-Type":  "application/json",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"].strip()
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"HuggingFace HTTP {e.code}: {body[:300]}") from e
-
-
-def _chamar_groq(
-    messages: list[dict],
-    max_tokens: int = 400,
-    temperature: float = 0.1,
-    tentativas: int = 4,
-) -> str:
-    def _log(msg: str) -> None:
-        log_info(f"  [Groq] {msg}")
-
-    return _llm_lib.chamar_groq(
-        messages,
-        model=GROQ_MODEL,
-        api_key=groq_client.api_key,
-        log_info=_log,
+    O roteador (common.llm.chamar_ia) tenta o provedor ativo e os demais em
+    ordem de cadastro; sem cadastro, ou todos falharem, levanta LLMError."""
+    return _llm_lib.chamar_ia(
+        CONFIG, prompt,
+        temperatura=temperature,
         max_tokens=max_tokens,
-        temperature=temperature,
-        tentativas=tentativas,
+        log_info=lambda m: log_info(m),
     )
-
-
-_GroqLimiteDiario = _llm_lib.GroqLimiteDiario
-
-
-def chamar_llm(
-    messages: list[dict],
-    max_tokens: int = 400,
-    temperature: float = 0.1,
-) -> str:
-    with _llm_state["lock"]:
-        provedor = _llm_state["provedor"]
-
-    if provedor == "groq":
-        try:
-            return _chamar_groq(messages, max_tokens, temperature)
-        except _GroqLimiteDiario:
-            reset_utc = _calcular_reset_groq()
-            with _llm_state["lock"]:
-                _llm_state["provedor"]      = "huggingface"
-                _llm_state["groq_reset_em"] = reset_utc
-            log_err("  [LLM] Groq: limite diário atingido → trocando para HuggingFace")
-            _agendar_retorno_groq(reset_utc)
-
-    try:
-        resultado = _chamar_huggingface(messages, max_tokens, temperature)
-        log_info(f"  [LLM] HuggingFace respondeu ({len(resultado)} chars)")
-        return resultado
-    except Exception as exc:
-        raise RuntimeError(f"HuggingFace também falhou: {exc}") from exc
 

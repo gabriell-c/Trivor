@@ -3,16 +3,9 @@ infojobs.py — Automação completa do InfoJobs
 Fluxo: Login → Buscar vagas → Fechar modal → Responder killer questions → Candidatar
 
 VERSÃO v1.5:
-  - LLM router Groq → Gemini → Mistral → fallback local
-    · Groq rate limit curto (< 5min): aguarda e retenta automaticamente
-    · Groq rate limit diário: troca para Gemini até meia-noite
-    · Gemini 2.0 Flash: 1.000 req/dia, sem crédito mensal expirável
-    · Mistral Small: ~1 bilhão tokens/mês, praticamente ilimitado
-    · Fallback local como último recurso (zero API)
-  - Variáveis de ambiente necessárias:
-    · GROQ_API_KEY    — console.groq.com
-    · GEMINI_API_KEY  — aistudio.google.com
-    · MISTRAL_API_KEY — console.mistral.ai
+  - LLM: somente provedores cadastrados na UI do Trivor (config.yaml → ia,
+    ativo em 1º, demais em ordem de cadastro) — sem chaves LLM no .env
+    · Nenhum cadastrado, ou todos falharem → fallback local (zero API)
 
 VERSÃO v1.4:
   - Salvamento de respostas e carta de apresentação no relatório
@@ -27,11 +20,9 @@ VERSÃO v1.1/1.2:
 """
 
 import contextlib
-import datetime as _dt
 import json
 import os
 import re
-import threading
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -74,146 +65,28 @@ def esperar(page: Page, segundos: float | None = None):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  LLM ROUTER — Groq → Gemini → Mistral → fallback local
+#  LLM ROUTER — somente provedores cadastrados na UI (config.yaml → ia)
 #
-#  Cascata:
-#    1. Groq          — primário, rápido, sem crédito mensal (só rate limit diário)
-#       · Rate limit curto (< 5min) → aguarda e retenta automaticamente (até 4x)
-#       · Rate limit diário         → passa para Gemini até meia-noite UTC
-#    2. Gemini Flash  — 1.000 req/dia, sem crédito expirável
-#    3. Mistral Small — ~1 bilhão tokens/mês no free tier
-#    4. Fallback local — zero API, regras estáticas
-#
-#  Variáveis de ambiente (.env):
-#    GROQ_API_KEY    — console.groq.com
-#    GEMINI_API_KEY  — aistudio.google.com
-#    MISTRAL_API_KEY — console.mistral.ai
-#
-#  Log de diagnóstico:
-#    [LLM Groq]    ✅ → Groq respondeu OK
-#    [LLM Gemini]  ✅ → Gemini respondeu OK
-#    [LLM Mistral] ✅ → Mistral respondeu OK
-#    [LLM] ⚡       → rate limit curto Groq, aguardando e retentando
-#    [LLM] 🔴       → limite diário Groq, trocando para Gemini
-#    [LLM] ❌       → provedor falhou, tentando próximo
+#  Roteador: common.llm.chamar_ia — ativo em 1º, demais em ordem de
+#  cadastro. Nenhum cadastrado ou todos falharem → None (fallback local).
 # ══════════════════════════════════════════════════════════════════════════════
 
-GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
-GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
-_llm_state = {
-    "provedor":      "groq",   # "groq" | "gemini" | "mistral"
-    "groq_reset_em": None,
-    "lock":          threading.Lock(),
-}
+def _chamar_llm(prompt: str, config: dict, contexto: str = "",
+                temperatura: float = 0.4) -> str | None:
+    """Roteador LLM: somente provedores cadastrados na UI (aba IA do Trivor).
 
-
-_GroqLimiteDiario = _llm_lib.GroqLimiteDiario
-_calcular_reset_groq = _llm_lib.calcular_reset_groq
-
-
-def _agendar_retorno_groq(reset_utc: "_dt.datetime") -> None:
-    def _voltar():
-        agora  = _dt.datetime.now(_dt.UTC)
-        espera = max(0, (reset_utc - agora).total_seconds()) + 15
-        log(f"    [LLM] Groq volta em {int(espera / 60)}min "
-            f"({reset_utc.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')} local)")
-        time.sleep(espera)
-        with _llm_state["lock"]:
-            _llm_state["provedor"]      = "groq"
-            _llm_state["groq_reset_em"] = None
-        log("    [LLM] ✅ Groq reativado automaticamente!")
-    threading.Thread(target=_voltar, daemon=True).start()
-
-
-def _chamar_groq(prompt: str, config: dict, temperatura: float, tentativas: int = 4) -> str:
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY não configurada")
-    return _llm_lib.chamar_groq(
-        [{"role": "user", "content": prompt}],
-        model=config["groq"]["model"],
-        api_key=GROQ_API_KEY,
-        log_info=lambda m: log(f"    [LLM] ⚡ {m}"),
-        max_tokens=None,
-        temperature=temperatura,
-        tentativas=tentativas,
-    )
-
-
-def _chamar_gemini(prompt: str, temperatura: float, tentativas: int = 4) -> str:
-    """
-    Gemini 2.5 Flash-Lite via REST.
-    Plano free: 1.000 req/dia, 15 RPM.
-
-    Trata dois tipos de 429:
-      - RPM excedido : espera 4s * tentativa e retenta (ate `tentativas` vezes)
-      - Cota diaria  : levanta RuntimeError imediatamente, sem retry
-    """
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY nao configurada")
-
-    texto = _llm_lib.chamar_gemini(
-        prompt,
-        api_key=GEMINI_API_KEY,
-        log_info=lambda m: log(f"    [LLM] ⚡ {m}"),
-        temperatura=temperatura,
-        tentativas=tentativas,
-    )
-    log(f"    [LLM Gemini] ✅ ({len(texto)} chars)")
-    return texto
-
-
-def _chamar_mistral(prompt: str, temperatura: float) -> str:
-    if not MISTRAL_API_KEY:
-        raise RuntimeError("MISTRAL_API_KEY não configurada")
-
-    texto = _llm_lib.chamar_mistral(
-        prompt,
-        api_key=MISTRAL_API_KEY,
-        temperatura=temperatura,
-        max_tokens=600,
-    )
-    log(f"    [LLM Mistral] ✅ (resposta: {texto!r})")
-    return texto
-
-
-def _chamar_llm(prompt: str, config: dict, contexto: str = "", temperatura: float = 0.4) -> str | None:
-    """Roteador LLM: Groq → Gemini → Mistral → None (fallback local)."""
-    sufixo = f" ({contexto})" if contexto else ""
-
-    with _llm_state["lock"]:
-        provedor = _llm_state["provedor"]
-
-    # ── 1. Groq ───────────────────────────────────────────────────────────────
-    if provedor == "groq":
-        try:
-            resultado = _chamar_groq(prompt, config, temperatura)
-            log(f"    [LLM Groq] ✅{sufixo} ({len(resultado)} chars)")
-            return resultado
-        except _GroqLimiteDiario:
-            reset_utc = _calcular_reset_groq()
-            with _llm_state["lock"]:
-                _llm_state["provedor"]      = "gemini"
-                _llm_state["groq_reset_em"] = reset_utc
-            log(f"    [LLM] 🔴 Groq limite diário{sufixo} → trocando para Gemini")
-            _agendar_retorno_groq(reset_utc)
-        except Exception as exc:
-            log(f"    [LLM] ❌ Groq erro{sufixo}: {exc} → tentando Gemini")
-
-    # ── 2. Gemini ─────────────────────────────────────────────────────────────
+    Nenhum cadastrado ou todos falharem → None (fallback local)."""
     try:
-        return _chamar_gemini(prompt, temperatura)
-    except Exception as exc:
-        log(f"    [LLM] ❌ Gemini falhou{sufixo}: {exc} → tentando Mistral")
-
-    # ── 3. Mistral ────────────────────────────────────────────────────────────
-    try:
-        return _chamar_mistral(prompt, temperatura)
-    except Exception as exc:
-        log(f"    [LLM] ❌ Mistral falhou{sufixo}: {exc} → usando fallback local")
-
-    return None
+        return _llm_lib.chamar_ia(
+            config, prompt,
+            contexto=contexto,
+            temperatura=temperatura,
+            log_info=lambda m: log(m),
+        )
+    except _llm_lib.LLMError as exc:
+        log(f"    [LLM] ❌ {exc} → usando fallback local")
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1195,16 +1068,13 @@ def main():
 
     config = carregar_config()
 
-    if not GROQ_API_KEY:
-        print("❌ GROQ_API_KEY não configurada no .env!")
+    # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
+    if not _llm_lib.providers_ativos(config):
+        print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
         return
     if not os.environ.get("INFOJOBS_SENHA"):
         print("❌ INFOJOBS_SENHA não configurada no .env!")
         return
-    if not GEMINI_API_KEY:
-        print("⚠️  GEMINI_API_KEY não configurada — Gemini desativado como fallback")
-    if not MISTRAL_API_KEY:
-        print("⚠️  MISTRAL_API_KEY não configurada — Mistral desativado como fallback")
 
     ja_candidatados = links_ja_candidatados()
     print(f"  📋 Links já candidatados na blacklist: {len(ja_candidatados)}")

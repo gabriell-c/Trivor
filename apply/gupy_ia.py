@@ -1,7 +1,8 @@
 """Camada de IA do bot Gupy — roteador LLM + fallbacks locais + geradores.
 
 Extraído de gupy.py sem mudança de comportamento:
-  • Roteador Groq → Gemini → Mistral → None (providores da UI vencem a cadeia)
+  • Roteador: somente provedores cadastrados na UI (config.yaml → ia) →
+    None (fallbacks locais)
   • Fallbacks locais determinísticos (pergunta aberta / apresentação / habilidades)
   • Geradores LLM (responder_pergunta_aberta, gerar_apresentacao,
     selecionar_habilidades_relevantes)
@@ -13,10 +14,7 @@ O bot re-importa tudo via star import — os call sites do gupy.py seguem intact
 """
 from __future__ import annotations
 
-import datetime as _dt
 import os
-import threading
-import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -29,21 +27,11 @@ load_dotenv()  # idempotente — garante o .env antes de DADOS_PESSOAIS
 
 __all__ = [
     "DADOS_PESSOAIS",
-    "GEMINI_API_KEY",
-    "GROQ_API_KEY",
-    "MISTRAL_API_KEY",
-    "_GroqLimiteDiario",
-    "_agendar_retorno_groq",
-    "_calcular_reset_groq",
-    "_chamar_gemini",
-    "_chamar_groq",
     "_chamar_llm",
-    "_chamar_mistral",
     "_fallback_local_apresentacao",
     "_fallback_local_habilidades",
     "_fallback_local_pergunta_aberta",
     "_limpar_markdown",
-    "_llm_state",
     "_perfil_ctx",
     "carregar_config",
     "gerar_apresentacao",
@@ -111,157 +99,31 @@ def log(msg: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  LLM ROUTER — Groq → Gemini → Mistral → fallback local
+#  LLM ROUTER — somente provedores cadastrados na UI (config.yaml → ia)
 #
-#  Cascata:
-#    1. Groq          — primário, rápido, sem crédito mensal (só rate limit diário)
-#       · Rate limit curto (< 5min) → aguarda e retenta automaticamente (até 4x)
-#       · Rate limit diário         → passa para Gemini até meia-noite UTC
-#    2. Gemini 2.5 Flash-Lite — 1.000 req/dia, 15 RPM, retry automático de RPM
-#    3. Mistral Small — ~1 bilhão tokens/mês no free tier
-#    4. None          — fallback local (funções estáticas)
-#
-#  Variáveis de ambiente (.env):
-#    GROQ_API_KEY    — console.groq.com
-#    GEMINI_API_KEY  — aistudio.google.com
-#    MISTRAL_API_KEY — console.mistral.ai
+#  O roteador é o common.llm.chamar_ia: ativo em 1º, demais em ordem de
+#  cadastro. Sem cadastro (ou todos falharem) → None → fallbacks locais.
 # ══════════════════════════════════════════════════════════════════════════════
-
-GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
-GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-
-_llm_state = {
-    "provedor":      "groq",
-    "groq_reset_em": None,
-    "lock":          threading.Lock(),
-}
-
-
-_GroqLimiteDiario = _llm_lib.GroqLimiteDiario
-_calcular_reset_groq = _llm_lib.calcular_reset_groq
-
-
-def _agendar_retorno_groq(reset_utc: _dt.datetime) -> None:
-    def _voltar():
-        agora  = _dt.datetime.now(_dt.UTC)
-        espera = max(0, (reset_utc - agora).total_seconds()) + 15
-        log(f"  [LLM] Groq volta em {int(espera / 60)}min "
-            f"({reset_utc.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')} local)")
-        time.sleep(espera)
-        with _llm_state["lock"]:
-            _llm_state["provedor"]      = "groq"
-            _llm_state["groq_reset_em"] = None
-        log("  [LLM] ✅ Groq reativado automaticamente!")
-    threading.Thread(target=_voltar, daemon=True).start()
-
 
 _limpar_markdown = _llm_lib.limpar_markdown
 
 
-def _chamar_groq(prompt: str, config: dict, temperatura: float = 0.5,
-                 max_tokens: int = 500, tentativas: int = 4) -> str:
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY não configurada")
-    return _llm_lib.limpar_markdown(_llm_lib.chamar_groq(
-        [{"role": "user", "content": prompt}],
-        model=config["groq"]["model"],
-        api_key=GROQ_API_KEY,
-        log_info=lambda m: log(f"  [LLM] ⚡ {m}"),
-        max_tokens=max_tokens,
-        temperature=temperatura,
-        tentativas=tentativas,
-    ))
-
-
-def _chamar_gemini(prompt: str, temperatura: float = 0.5,
-                   max_tokens: int = 500, tentativas: int = 4) -> str:
-    """
-    Gemini 2.5 Flash-Lite via REST.
-    Plano free: 1.000 req/dia, 15 RPM.
-    429 RPM → retry progressivo. 429 cota diária → abandona imediatamente.
-    """
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY não configurada")
-
-    texto = _llm_lib.limpar_markdown(_llm_lib.chamar_gemini(
-        prompt,
-        api_key=GEMINI_API_KEY,
-        log_info=lambda m: log(f"  [LLM] ⚡ {m}"),
-        modelo="gemini-2.0-flash",
-        temperatura=temperatura,
-        max_output_tokens=max_tokens,
-        tentativas=tentativas,
-    ))
-    log(f"  [LLM Gemini] ✅ ({len(texto)} chars)")
-    return texto
-
-
-def _chamar_mistral(prompt: str, temperatura: float = 0.5,
-                    max_tokens: int = 500) -> str:
-    """Mistral Small via API oficial. Plano free: ~1 bilhão tokens/mês."""
-    if not MISTRAL_API_KEY:
-        raise RuntimeError("MISTRAL_API_KEY não configurada")
-
-    texto = _llm_lib.chamar_mistral(
-        prompt,
-        api_key=MISTRAL_API_KEY,
-        temperatura=temperatura,
-        max_tokens=max_tokens,
-    )
-    log(f"  [LLM Mistral] ✅ (resposta: {texto[:60]!r})")
-    return texto
-
-
 def _chamar_llm(prompt: str, config: dict, contexto: str = "",
                 temperatura: float = 0.5, max_tokens: int = 500) -> str | None:
-    """Roteador LLM: provedores da UI (config → ia) → Groq → Gemini → Mistral → None."""
-    sufixo = f" ({contexto})" if contexto else ""
+    """Roteador LLM: somente provedores da UI (aba IA do Trivor).
 
-    with _llm_state["lock"]:
-        provedor = _llm_state["provedor"]
-
-    # ── 0. Provedores configurados pela UI do Trivor (config.yaml → ia) ─────
-    # Vencem a cadeia antiga: quem define base_url + api_key + modelo no
-    # painel escolhe o LLM. A cadeia .env abaixo segue como fallback.
-    from common import llm as llm_ui
-    for prov in llm_ui.providers_ativos(config):
-        try:
-            resultado = llm_ui.chat(prov, prompt, temperatura, max_tokens)
-            log(f"  [LLM {prov.get('nome', prov.get('id'))}] ✅{sufixo} ({len(resultado)} chars)")
-            return resultado
-        except Exception as exc:
-            log(f"  [LLM] ❌ Provedor {prov.get('id')} falhou{sufixo}: {exc}")
-
-    # ── 1. Groq ───────────────────────────────────────────────────────────────
-    if provedor == "groq":
-        try:
-            resultado = _chamar_groq(prompt, config, temperatura, max_tokens)
-            log(f"  [LLM Groq] ✅{sufixo} ({len(resultado)} chars)")
-            return resultado
-        except _GroqLimiteDiario:
-            reset_utc = _calcular_reset_groq()
-            with _llm_state["lock"]:
-                _llm_state["provedor"]      = "gemini"
-                _llm_state["groq_reset_em"] = reset_utc
-            log(f"  [LLM] 🔴 Groq limite diário{sufixo} → trocando para Gemini")
-            _agendar_retorno_groq(reset_utc)
-        except Exception as exc:
-            log(f"  [LLM] ❌ Groq erro{sufixo}: {exc} → tentando Gemini")
-
-    # ── 2. Gemini ─────────────────────────────────────────────────────────────
+    Nenhum cadastrado, ou todos falharem → None (fallback local)."""
     try:
-        return _chamar_gemini(prompt, temperatura, max_tokens)
-    except Exception as exc:
-        log(f"  [LLM] ❌ Gemini falhou{sufixo}: {exc} → tentando Mistral")
-
-    # ── 3. Mistral ────────────────────────────────────────────────────────────
-    try:
-        return _chamar_mistral(prompt, temperatura, max_tokens)
-    except Exception as exc:
-        log(f"  [LLM] ❌ Mistral falhou{sufixo}: {exc} → usando fallback local")
-
-    return None
+        return _llm_lib.chamar_ia(
+            config, prompt,
+            contexto=contexto,
+            temperatura=temperatura,
+            max_tokens=max_tokens,
+            log_info=lambda m: log(m),
+        )
+    except _llm_lib.LLMError as exc:
+        log(f"  [LLM] ❌ {exc} → usando fallback local")
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

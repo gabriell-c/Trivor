@@ -18,18 +18,12 @@ Fluxo:
   5. Salva relatório após cada candidatura
 
 VERSÃO v1.1:
-  - LLM router Groq → Gemini → Mistral → fallback local
-    · Groq rate limit curto (< 5min): aguarda e retenta automaticamente
-    · Groq rate limit diário: troca para Gemini até meia-noite
-    · Gemini 2.5 Flash-Lite: 1.000 req/dia, 15 RPM, com retry automático
-    · Mistral Small: ~1 bilhão tokens/mês, praticamente ilimitado
-    · Fallback local para perguntas abertas e apresentação
+  - LLM: somente provedores cadastrados na UI do Trivor (config.yaml → ia)
+    · Provedor ativo em 1º, demais em ordem de cadastro (fallback)
+    · Nenhum cadastrado ou todos falharem → fallbacks locais
+      para perguntas abertas e apresentação
   - Salvamento de respostas das perguntas e apresentação no relatório
   - .txt diário com append (não sobrescreve a cada vaga)
-  - Variáveis de ambiente necessárias:
-    · GROQ_API_KEY    — console.groq.com
-    · GEMINI_API_KEY  — aistudio.google.com
-    · MISTRAL_API_KEY — console.mistral.ai
 """
 
 import contextlib
@@ -1314,16 +1308,11 @@ def main():
 
     config = carregar_config()
 
-    # IA configurável pela UI do Trivor (config.yaml → ia) ou via .env legado
+    # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
     from common import llm as _llm
-    tem_ia_ui = bool(_llm.providers_ativos(config))
-    if not GROQ_API_KEY and not tem_ia_ui:
-        print("❌ Sem IA configurada: crie um provedor na aba IA do Trivor (ou defina GROQ_API_KEY no .env)")
+    if not _llm.providers_ativos(config):
+        print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
         return
-    if not GEMINI_API_KEY:
-        print("⚠️  GEMINI_API_KEY não configurada — Gemini desativado como fallback")
-    if not MISTRAL_API_KEY:
-        print("⚠️  MISTRAL_API_KEY não configurada — Mistral desativado como fallback")
 
     ja_candidatados = links_ja_candidatados_gupy()
     log(f"📋 {len(ja_candidatados)} vagas já candidatadas anteriormente")
