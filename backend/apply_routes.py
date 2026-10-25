@@ -8,6 +8,7 @@ from pathlib import Path
 import apply_admin
 from app_log import get_app_logger
 from apply_runner import (
+    APPLY_BOTS,
     ApplyRunError,
     bot_log,
     list_bots,
@@ -131,6 +132,28 @@ def api_apply_sesoes():
     if apply_dir is None:
         raise HTTPException(status_code=404, detail="Projeto apply não encontrado. Defina APPLY_DIR no .env.")
     return _status_sessoes(apply_dir).estados(apply_dir)
+
+
+@router.get('/api/apply/state')
+def api_apply_state(focus: str = ''):
+    """Estado consolidado da aba Executar: 1 request no lugar dos 4 polls
+    separados (runs + log do bot em destaque + sessões + logins ativos).
+    A UI compara o JSON com o último e só re-renderiza quando muda."""
+    estado: dict = {'runs': list_bots(), 'log': None, 'sesoes': None, 'logins': {}}
+    if focus:
+        try:
+            estado['log'] = bot_log(focus, 400)
+        except ApplyRunError:
+            estado['log'] = []
+    apply_dir = resolve_apply_dir()
+    if apply_dir is not None:
+        estado['sesoes'] = _status_sessoes(apply_dir).estados(apply_dir)
+        for bot in APPLY_BOTS:
+            try:
+                estado['logins'][bot] = login_status(bot)
+            except ApplyRunError:
+                estado['logins'][bot] = {'bot': bot, 'estado': 'inativo'}
+    return estado
 
 
 @router.post('/api/apply/login')

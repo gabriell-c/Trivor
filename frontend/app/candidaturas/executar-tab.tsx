@@ -26,75 +26,38 @@ export default function ExecutarTab() {
   const runningBot = runs ? Object.values(runs).find(r => r.running) : undefined
   const focus = runningBot && !runs?.[focusBot]?.running ? runningBot.bot : focusBot
 
-  /* status de todos os bots — mais rápido de poll enquanto algo roda */
+  /* poll único e consolidado: /api/apply/state devolve runs + log do bot em
+   * destaque + sessões + logins em 1 request (antes eram 4 intervals, até
+   * 4 HTTP por tick). O diff JSON só atualiza o estado (e o re-render)
+   * quando algo realmente mudou. */
+  const ultimaChaveRef = useRef('')
+  const aguardando = Object.values(logins).some(l => l?.estado === 'aguardando')
   useEffect(() => {
     let vivo = true
     const tick = async () => {
       try {
-        const d = await applyFetch<Record<string, BotRun>>('/api/apply/runs')
-        if (vivo) setRuns(d)
+        const d = await applyFetch<{
+          runs: Record<string, BotRun>
+          log: { lines?: string[] } | null
+          sesoes: BotSessao[] | null
+          logins: Record<string, LoginState>
+        }>(`/api/apply/state${focus ? `?focus=${focus}` : ''}`)
+        if (!vivo) return
+        const chave = JSON.stringify(d)
+        if (chave === ultimaChaveRef.current) return
+        ultimaChaveRef.current = chave
+        setRuns(d.runs)
+        setLog(d.log?.lines ?? [])
+        setSesoes(d.sesoes ? Object.fromEntries(d.sesoes.map(s => [s.bot, s])) : null)
+        setLogins(d.logins ?? {})
       } catch {
         // backend offline nesse tick — mantém o último estado conhecido
       }
     }
     tick()
-    const id = setInterval(tick, anyRunning ? 3000 : 8000)
+    const id = setInterval(tick, anyRunning || aguardando ? 3000 : 8000)
     return () => { vivo = false; clearInterval(id) }
-  }, [anyRunning])
-
-  /* log do bot em destaque (a UI mostra exatamente o passo a passo) */
-  useEffect(() => {
-    let vivo = true
-    const tick = async () => {
-      try {
-        const d = await applyFetch<{ lines?: string[] }>(`/api/apply/log/${focus}?lines=400`)
-        if (vivo) setLog(d.lines || [])
-      } catch {
-        // mantém o log último conhecido
-      }
-    }
-    tick()
-    const id = setInterval(tick, anyRunning ? 3000 : 8000)
-    return () => { vivo = false; clearInterval(id) }
-  }, [focus, anyRunning])
-
-  /* status de sessão dos 5 bots (cartão de Logins) — mesmo ritmo do poll de runs */
-  useEffect(() => {
-    let vivo = true
-    const tick = async () => {
-      try {
-        const d = await applyFetch<BotSessao[]>('/api/apply/sesoes')
-        if (vivo) setSesoes(Object.fromEntries(d.map(s => [s.bot, s])))
-      } catch {
-        // backend offline nesse tick — mantém o último estado conhecido
-      }
-    }
-    tick()
-    const id = setInterval(tick, anyRunning ? 3000 : 8000)
-    return () => { vivo = false; clearInterval(id) }
-  }, [anyRunning])
-
-  /* login-só em andamento → poll do estado até concluir/falhar */
-  const aguardandoChave = Object.entries(logins)
-    .filter(([, l]) => l?.estado === 'aguardando')
-    .map(([bot]) => bot).join(',')
-  useEffect(() => {
-    if (!aguardandoChave) return
-    let vivo = true
-    const tick = async () => {
-      for (const bot of aguardandoChave.split(',')) {
-        try {
-          const l = await applyFetch<LoginState>(`/api/apply/login/${bot}`)
-          if (vivo) setLogins(prev => ({ ...prev, [bot]: l }))
-        } catch {
-          // mantém o último estado — o próximo tick tenta de novo
-        }
-      }
-    }
-    tick()
-    const id = setInterval(tick, 4000)
-    return () => { vivo = false; clearInterval(id) }
-  }, [aguardandoChave])
+  }, [focus, anyRunning, aguardando])
 
   useEffect(() => {
     if (autoScroll && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
