@@ -1308,11 +1308,14 @@ def main():
 
     config = carregar_config()
 
-    # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
-    from common import llm as _llm
-    if not _llm.providers_ativos(config):
-        print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
-        return
+    # Botão "Logar" da UI (só-login): o que importa é a sessão — o check de
+    # IA vale para o fluxo de candidatura.
+    if not loginonly.ativo():
+        # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
+        from common import llm as _llm
+        if not _llm.providers_ativos(config):
+            print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
+            return
 
     ja_candidatados = links_ja_candidatados_gupy()
     log(f"📋 {len(ja_candidatados)} vagas já candidatadas anteriormente")
@@ -1323,6 +1326,8 @@ def main():
         b.start()
     except BrowserUnavailable as e:
         log("❌ Nenhum browser disponível — " + " | ".join(f"{n}: {r}" for n, r in e.tried))
+        if loginonly.ativo():
+            raise SystemExit(1)
         return
     page = b.page
     log(f"🌐 Engine no uso: {b.engine} (fallback tentado: {[n for n, _ in b.tried] or 'nenhum'})")

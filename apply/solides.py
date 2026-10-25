@@ -1877,6 +1877,18 @@ def main() -> None:
 ║              🤖 JOB HUNTER — SÓLIDES  v1.4                  ║
 ╚══════════════════════════════════════════════════════════════╝""")
 
+    # Botão "Logar" da UI: garante a sessão PRIMEIRO — os guards abaixo
+    # (horário/limite diário) só valem para o fluxo de candidatura.
+    # exit 0 só acontece com sessão salva; login mal-sucedido sai 1.
+    if loginonly.ativo():
+        with sync_playwright() as p:
+            context, browser, page = fazer_login(p)
+            log_info("✅ Sessão Sólides atualizada — modo só-login, encerrando")
+            page.close()
+            context.close()
+            browser.close()
+        return
+
     if not horario_ok():
         log_info("Fora do horário permitido (06h–23h).")
         return
@@ -1893,14 +1905,6 @@ def main() -> None:
 
     with sync_playwright() as p:
         context, browser, page = fazer_login(p)
-
-        # Botão "Logar" da UI: sessão salva/atualizada no fazer_login → para aqui
-        if loginonly.ativo():
-            log_info("✅ Sessão Sólides atualizada — modo só-login, encerrando")
-            page.close()
-            context.close()
-            browser.close()
-            return
 
         try:
             log_info("\n🔍 Coletando vagas...")

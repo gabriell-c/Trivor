@@ -84,3 +84,48 @@ def test_ramo_interativo_mantem_o_input_original(indeed_mod, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda msg: entradas.append(msg) or "x")
     assert indeed_mod._aguardar_login("pressione ENTER", lambda: None) is True
     assert entradas == ["pressione ENTER"]
+
+
+class _DriverFalso:
+    def quit(self):
+        pass
+
+
+def test_solo_login_nao_pula_por_hora_ou_limite(indeed_mod, monkeypatch):
+    """Regressão (indeed-login.log 01:41): o botão "Logar" fora do horário
+    permitido encerrava com exit 0 SEM fazer o login, e a UI mostrava
+    "login concluído — sessão atualizada" sem sessão nenhuma. No modo
+    login-só, os guards de negócio (horário/limite diário) não valem: o
+    login acontece de qualquer forma; exit 0 só com sessão salva."""
+    chamadas = {"fazer_login": 0}
+
+    def _fazer_login_falso():
+        chamadas["fazer_login"] += 1
+        return _DriverFalso()
+
+    monkeypatch.setattr(indeed_mod, "fazer_login", _fazer_login_falso)
+    monkeypatch.setattr(indeed_mod, "horario_ok", lambda: False)
+    monkeypatch.setattr(indeed_mod, "carregar_relatorio", lambda: {"ja_candidatado": []})
+    monkeypatch.setattr(indeed_mod, "candidaturas_hoje",
+                       lambda _rel: indeed_mod.MAX_POR_DIA)
+
+    indeed_mod.main()  # exit 0 com o login executado
+    assert chamadas["fazer_login"] == 1
+
+
+def test_hora_e_limite_valem_ainda_no_fluxo_normal(indeed_mod, monkeypatch):
+    """O guard de horário/limite segue valendo para o fluxo de
+    candidatura (sem TRIVOR_LOGIN_ONLY): fora do horário, não loga, não
+    busca — encerra quieto."""
+    monkeypatch.delenv("TRIVOR_LOGIN_ONLY")
+    chamadas = {"fazer_login": 0}
+
+    def _fazer_login_falso():
+        chamadas["fazer_login"] += 1
+        return _DriverFalso()
+
+    monkeypatch.setattr(indeed_mod, "fazer_login", _fazer_login_falso)
+    monkeypatch.setattr(indeed_mod, "horario_ok", lambda: False)
+
+    indeed_mod.main()
+    assert chamadas["fazer_login"] == 0

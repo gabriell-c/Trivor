@@ -2685,6 +2685,15 @@ def main() -> None:
 ║              🤖 JOB HUNTER — INDEED  v2.8                   ║
 ╚══════════════════════════════════════════════════════════════╝""")
 
+    # Botão "Logar" da UI: garante a sessão PRIMEIRO — os guards abaixo
+    # (horário/limite diário) só valem para o fluxo de candidatura.
+    # exit 0 só acontece com sessão salva; login mal-sucedido sai 1.
+    if loginonly.ativo():
+        driver = fazer_login()
+        log_info("✅ Sessão Indeed salva (pickles) — modo só-login, encerrando")
+        driver.quit()
+        return
+
     if not horario_ok():
         log_info("Fora do horário permitido (03h–22h).")
         return
@@ -2698,12 +2707,6 @@ def main() -> None:
         return
 
     driver = fazer_login()
-
-    # Botão "Logar" da UI: pickles de sessão já salvos no fazer_login → para aqui
-    if loginonly.ativo():
-        log_info("✅ Sessão Indeed salva (pickles) — modo só-login, encerrando")
-        driver.quit()
-        return
 
     try:
         ja_candidatado: set[str] = set(rel.get("ja_candidatado", []))

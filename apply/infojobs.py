@@ -1068,12 +1068,19 @@ def main():
 
     config = carregar_config()
 
-    # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
-    if not _llm_lib.providers_ativos(config):
-        print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
-        return
+    # Botão "Logar" da UI (só-login): o que importa é a sessão — o check de
+    # IA abaixo vale para o fluxo de candidatura.
+    if not loginonly.ativo():
+        # IA: somente provedores cadastrados na UI (config.yaml → ia, aba IA)
+        if not _llm_lib.providers_ativos(config):
+            print("❌ Sem IA configurada: cadastre um provedor na aba IA do Trivor")
+            return
+
     if not os.environ.get("INFOJOBS_SENHA"):
         print("❌ INFOJOBS_SENHA não configurada no .env!")
+        if loginonly.ativo():
+            print("    [só-login] sem credencial não dá para garantir a sessão — falha")
+            raise SystemExit(1)
         return
 
     ja_candidatados = links_ja_candidatados()

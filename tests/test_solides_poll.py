@@ -77,3 +77,56 @@ def test_poll_estoura_no_prazo_se_ninguem_loga(solides_mod, monkeypatch):
     # polling vivo; o número exato depende da estrutura interna, só precisa
     # de muitos giros
     assert page.polls >= 30
+
+
+class _ObjetoComClose:
+    def close(self):
+        pass
+
+
+class _PlaywrightFake:
+    """Context manager que finge sync_playwright() — devolve um p qualquer."""
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *_):
+        return False
+
+
+def test_solo_login_nao_pula_por_hora_ou_limite(solides_mod, monkeypatch):
+    """Regressão (mesmo caso do Indeed): o botão "Logar" fora do horário
+    (06h–23h) encerrava com exit 0 SEM garantir a sessão — a UI mostrava
+    "concluído" inventado. No modo login-só os guards de negócio não valem:
+    fazer_login roda de qualquer forma; exit 0 só com sessão salva."""
+    chamadas = {"fazer_login": 0}
+
+    def _fazer_login_falso(_p):
+        chamadas["fazer_login"] += 1
+        return _ObjetoComClose(), _ObjetoComClose(), _ObjetoComClose()
+
+    monkeypatch.setattr(solides_mod.loginonly, "ativo", lambda: True)
+    monkeypatch.setattr(solides_mod, "sync_playwright", _PlaywrightFake)
+    monkeypatch.setattr(solides_mod, "fazer_login", _fazer_login_falso)
+    monkeypatch.setattr(solides_mod, "horario_ok", lambda: False)
+    monkeypatch.setattr(solides_mod, "carregar_relatorio", lambda: {"ja_candidatado": []})
+    monkeypatch.setattr(solides_mod, "candidaturas_hoje",
+                        lambda _rel: solides_mod.MAX_POR_DIA)
+
+    solides_mod.main()
+    assert chamadas["fazer_login"] == 1
+
+
+def test_hora_e_limite_valem_ainda_no_fluxo_normal(solides_mod, monkeypatch):
+    """Sem login-only, fora do horário permitido main() encerra ANTES do
+    browser abrir — o guard segue valendo para o fluxo de candidatura."""
+    chamadas = {"fazer_login": 0}
+
+    def _fazer_login_falso(_p):
+        chamadas["fazer_login"] += 1
+        return _ObjetoComClose(), _ObjetoComClose(), _ObjetoComClose()
+
+    monkeypatch.setattr(solides_mod, "fazer_login", _fazer_login_falso)
+    monkeypatch.setattr(solides_mod, "horario_ok", lambda: False)
+
+    solides_mod.main()
+    assert chamadas["fazer_login"] == 0
