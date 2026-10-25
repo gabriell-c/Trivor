@@ -36,10 +36,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import dryrun, loginonly, pagelens, perfil
 from common import llm as _llm_lib
-from common import pagelens, perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PWTimeout
 
 load_dotenv()
 
@@ -526,6 +527,27 @@ def _llm_detectar_funcao(titulo: str, descricao: str, config: dict) -> str:
 #  LOGIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _fechar_modal_seguranca(page: Page) -> bool:
+    """Fecha o modal anti-bot (#nerdin-seguranca-modal, 'O Nerdin não cobra
+    qualquer valor para participar…') que aparece por cima do formulário de
+    login e intercepta cliques. True se fechou, False se não apareceu."""
+    try:
+        page.wait_for_selector("#nerdin-seguranca-modal", state="visible", timeout=6000)
+    except PWTimeout:
+        return False  # modal não apareceu — formulário livre
+    log("  🛡️ Modal de segurança do Nerdin detectado — fechando")
+    for seletor in ("#nerdin-seguranca-modal button", "#nerdin-seguranca-modal a"):
+        el = page.query_selector(seletor)
+        if el and el.is_visible():
+            el.click()
+            esperar(page, 2)
+            return True
+    page.keyboard.press("Escape")
+    esperar(page, 1)
+    log("  🛡️ Modal fechado via ESC")
+    return True
+
+
 def fazer_login(page: Page, config: dict) -> bool:
     log("🔐 Fazendo login no Nerdin...")
     email = os.environ.get("NERDIN_EMAIL")
@@ -538,12 +560,17 @@ def fazer_login(page: Page, config: dict) -> bool:
     try:
         page.goto(config["nerdin"]["url_login"], timeout=15000)
         esperar(page, 2)
+        _fechar_modal_seguranca(page)  # antecipa: modal cobre os campos de login
         page.fill('input[type="email"], input[name*="email" i]', email)
         esperar(page, 0.5)
         page.fill('input[type="password"]', senha)
         esperar(page, 0.5)
         page.click('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")')
         esperar(page, 3)
+        if _fechar_modal_seguranca(page):
+            # modal atrasado interceptou o submit — fechado; manda de novo
+            page.click('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")')
+            esperar(page, 3)
         if "login" in page.url.lower() and "menu" not in page.url.lower():
             log("❌ Falha no login. Verifique NERDIN_EMAIL e NERDIN_SENHA no .env")
             return False
@@ -560,7 +587,7 @@ def fazer_login(page: Page, config: dict) -> bool:
 
 def buscar_vagas_nerdin(page: Page, config: dict) -> list:
     palavras          = config["busca"]["palavras_chave"]
-    excluir           = [p.lower() for p in config["busca"]["palavras_excluir"]]
+    excluir           = config["busca"]["palavras_excluir"]
     vagas_encontradas = []
     links_vistos      = set()
 
@@ -581,7 +608,8 @@ def buscar_vagas_nerdin(page: Page, config: dict) -> list:
                         continue
 
                     texto_card = (card.inner_text() or "").lower()
-                    if any(ex in texto_card for ex in excluir):
+                    # fronteira de palavra: "java" não cai em "Javascript"
+                    if perfil.titulo_excluido(texto_card, excluir):
                         continue
 
                     btn = card.query_selector("a.btn-ver-vaga")
@@ -877,6 +905,11 @@ def candidatar_vaga_nerdin(page: Page, vaga: dict, config: dict) -> dict:
 
         _supervisar()  # overlay antes do formulário
 
+        if dryrun.ativo():
+            log("  [dry-run] formulário aberto (etapa 1 de 3) — parando antes de preencher (nada enviado)")
+            resultado["status"] = dryrun.STATUS
+            return resultado
+
         preencher_etapa1(page, config)
         preencher_etapa2(page, vaga["titulo"], descricao, config, respostas)
         preencher_etapa3(page, vaga["titulo"], descricao, arquivo_curriculo, config, respostas)
@@ -1074,6 +1107,16 @@ def main():
 
         if not fazer_login(page, config):
             browser.close()
+            if loginonly.ativo():
+                print("❌ [só-login] login Nerdin falhou — verifique NERDIN_EMAIL/NERDIN_SENHA no .env")
+                raise SystemExit(1)
+            return
+
+        # Botão "Validar credenciais" da UI: sem sessão persistente neste
+        # bot — o login por .env acabou de dar certo, isso é o status
+        if loginonly.ativo():
+            print("✅ Credenciais Nerdin validadas — modo só-login, encerrando")
+            browser.close()
             return
 
         vagas       = buscar_vagas_nerdin(page, config)
@@ -1088,6 +1131,12 @@ def main():
             for i, vaga in enumerate(vagas_novas, 1):
                 print(f"\n[{i}/{len(vagas_novas)}]")
                 resultado = candidatar_vaga_nerdin(page, vaga, config)
+                if dryrun.ativo():
+                    if resultado.get("status") == dryrun.STATUS:
+                        print("[dry-run] cheguei no formulário — parando sem salvar nada")
+                        break
+                    print(f"[dry-run] {resultado.get('status')} — sem chegar no formulário; tentando a próxima vaga")
+                    continue
                 candidaturas.append(resultado)
                 salvar_log([resultado])
                 time.sleep(config["automacao"]["delay_entre_vagas"])

@@ -49,6 +49,7 @@ import os
 import pickle
 import random
 import re
+import sys
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -58,8 +59,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import dryrun, loginonly, pagelens, perfil
 from common import llm as _llm_lib
-from common import pagelens, perfil
 from dotenv import load_dotenv
 from groq import Groq
 from selenium.common.exceptions import (
@@ -1949,6 +1950,42 @@ def _esta_logado_indeed(driver: Driver) -> bool:
     return False
 
 
+# ── Login sem bloquear o terminal ────────────────────────────────
+# Terminal interativo: o fluxo segue de ENTER (comportamento original).
+# Rodada em background: o bot fica POLANDO a janela do browser aberta —
+# o usuário só digita as senhas nela e o bot detecta e segue.
+# Obs.: isatty() não é confiável em Windows+Git-Bash (retorna True até
+# com stdin em /dev/null) — a rodada em background define TRIVOR_LOGIN_POLL=1.
+_INTERATIVO = sys.stdin.isatty() and not os.environ.get("TRIVOR_LOGIN_POLL")
+
+# Cookies que o Google só define após um login válido
+_GOOGLE_COOKIES_AUTH = {"SID", "HSID", "SSID", "__Secure-1PSID", "__Secure-3PSID", "__Host-GPW"}
+
+
+def _google_logado(driver: Driver) -> bool:
+    """Verifica se a sessão Google está ativa pelos cookies de auth."""
+    try:
+        return any(c["name"] in _GOOGLE_COOKIES_AUTH for c in driver.get_cookies())
+    except WebDriverException:
+        return False
+
+
+def _aguardar_login(mensagem_enter: str, detectar: Any, timeout_min: int = 50) -> bool:
+    """Interativo: espera ENTER. Não-interativo: polla `detectar()` a cada 5s
+    até o timeout — o login em si continua sendo feito pelo usuário na janela."""
+    if _INTERATIVO:
+        input(mensagem_enter)
+        return True
+    log_info(f"   (modo automático) faça o login na janela do browser — até {timeout_min} min")
+    prazo = time.time() + timeout_min * 60
+    while time.time() < prazo:
+        time.sleep(5)
+        with suppress(WebDriverException):
+            if detectar():
+                return True
+    return False
+
+
 def fazer_login() -> Driver:
     driver = _novo_driver()
 
@@ -1977,7 +2014,11 @@ def fazer_login() -> Driver:
 
     driver.uc_open_with_reconnect("https://accounts.google.com/", reconnect_time=3)
     esperar(2)
-    input("   Pressione ENTER após logar no Google... ")
+    if not _aguardar_login("   Pressione ENTER após logar no Google... ", lambda: _google_logado(driver)):
+        log_err("   Login no Google não detectado — reabra a janela, faça o login e rode de novo")
+        with suppress(Exception):
+            driver.quit()
+        raise SystemExit(1)
     esperar(1)
 
     # Salva cookies do Google imediatamente
@@ -2000,7 +2041,11 @@ def fazer_login() -> Driver:
         driver.uc_gui_click_captcha()
     esperar(2)
 
-    input("   Pressione ENTER após logar no Indeed... ")
+    if not _aguardar_login("   Pressione ENTER após logar no Indeed... ", lambda: _esta_logado_indeed(driver)):
+        log_err("   Login no Indeed não detectado — finalize o login na janela e rode de novo")
+        with suppress(Exception):
+            driver.quit()
+        raise SystemExit(1)
     esperar(2)
 
     # Salva tudo
@@ -2590,11 +2635,11 @@ def extrair_vagas(driver: Driver, url: str) -> list[dict]:
 
 
 def filtrar_vaga(titulo: str) -> bool:
+    excluida = perfil.titulo_excluido(titulo, PALAVRAS_EXCLUIR)
+    if excluida:
+        log_skip(f"Excluída ('{excluida}' no título): {titulo}")
+        return False
     t = titulo.lower()
-    for excluir in PALAVRAS_EXCLUIR:
-        if excluir in t:
-            log_skip(f"Excluída (palavra bloqueada): {titulo}")
-            return False
     termos_aceitos = [
         "desenvolvedor", "developer", "programador", "python", "react",
         "django", "php", "javascript", "frontend", "backend", "fullstack",
@@ -4105,6 +4150,11 @@ def candidatar_vaga(driver: Driver, vaga: dict) -> dict:
             resultado["status"] = "botao_nao_clicavel"
             return resultado
 
+        if dryrun.ativo():
+            log_info("  [dry-run] widget Indeed Apply carregado — parando antes de preencher (nada enviado)")
+            resultado["status"] = dryrun.STATUS
+            return resultado
+
         MAX_ITERACOES    = 20
         MAX_BLOQUEIO     = 3
         MAX_REVISAO      = 3
@@ -4291,6 +4341,12 @@ def main() -> None:
 
     driver = fazer_login()
 
+    # Botão "Logar" da UI: pickles de sessão já salvos no fazer_login → para aqui
+    if loginonly.ativo():
+        log_info("✅ Sessão Indeed salva (pickles) — modo só-login, encerrando")
+        driver.quit()
+        return
+
     try:
         ja_candidatado: set[str] = set(rel.get("ja_candidatado", []))
         fila: list[dict]         = []
@@ -4352,6 +4408,12 @@ def main() -> None:
 
             log(f"[{i}/{len(fila)}]")
             resultado = candidatar_vaga(driver, vaga)
+            if dryrun.ativo():
+                if resultado["status"] == dryrun.STATUS:
+                    log_info("[dry-run] cheguei no widget de candidatura — parando sem salvar nada")
+                    break
+                log_info(f"[dry-run] {resultado['status']} — sem chegar no widget; tentando a próxima vaga")
+                continue
             registrar_candidatura(resultado)
 
             status = resultado["status"]

@@ -82,6 +82,26 @@ def tech_excluida(tech: str, negativas: list[str]) -> bool:
     return False
 
 
+def titulo_excluido(titulo: str, negativas: list[str]) -> str | None:
+    """Decide se um título de vaga (ou texto de card) cai na lista negativa,
+    com fronteira de palavra: "java" exclui "Analista Java" mas NÃO exclui
+    "Analista Javascript". Retorna a palavra que excluiu (para log) ou None.
+
+    Os filtros de vaga de TODOS os bots passam por aqui — uma mudança na
+    semântica vale para os 5 provedores de uma vez.
+    """
+    t = re.sub(r'\s+', ' ', (titulo or '').lower())
+    for n in negativas or []:
+        nn = re.sub(r'\s+', ' ', (n or '').strip().lower())
+        if not nn:
+            continue
+        # (?<!\w)/(?!\w) em vez de \b: fronteira no caractere de "palavra",
+        # e acentuados contam (ex.: "sênior" casa com "Analista sênior")
+        if re.search(r'(?<!\w)' + re.escape(nn) + r'(?!\w)', t):
+            return n
+    return None
+
+
 def _idade(config: dict) -> str:
     bruto = str((config.get('candidato') or {}).get('data_nascimento') or '').strip()
     if not bruto:

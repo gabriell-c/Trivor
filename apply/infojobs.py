@@ -37,8 +37,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import dryrun, loginonly, pagelens, perfil
 from common import llm as _llm_lib
-from common import pagelens, perfil
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -828,7 +828,7 @@ def fazer_login(page: Page, config: dict) -> bool:
 
 def buscar_vagas_infojobs(page: Page, config: dict) -> list:
     palavras          = config["busca"]["palavras_chave"]
-    excluir           = [p.lower() for p in config["busca"]["palavras_excluir"]]
+    excluir           = config["busca"]["palavras_excluir"]
     vagas_encontradas = []
     links_vistos      = set()
     log("🔍 Buscando vagas no InfoJobs...\n")
@@ -843,7 +843,8 @@ def buscar_vagas_infojobs(page: Page, config: dict) -> list:
             for card in cards:
                 try:
                     texto_card = (card.inner_text() or "").lower()
-                    if any(ex in texto_card for ex in excluir):
+                    # fronteira de palavra: "java" não cai em "Javascript"
+                    if perfil.titulo_excluido(texto_card, excluir):
                         continue
                     link_el = card.query_selector(".js_cardLink") or card.query_selector("a[href*='vaga-de']")
                     if not link_el:
@@ -903,6 +904,28 @@ def fechar_modal_se_existir(page: Page):
             pass
 
 
+def fechar_banner_cookie(page: Page):
+    """Didomi: o banner de consentimento intercepta TODOS os cliques da página.
+
+    Sem fechá-lo, o primeiro clique no botão trava 30s com
+    'subtree intercepts pointer events' (#didomi-popup). Aceitar cookies
+    é inofensivo — não envia candidatura. O consent persiste em cookie,
+    então só aparece na primeira navegação de um perfil novo.
+    """
+    for seletor in ["#didomi-notice-agree-button",
+                    "#didomi-accept-button",
+                    "button.didomi-button--accept"]:
+        try:
+            el = page.query_selector(seletor)
+            if el and el.is_visible():
+                el.click()
+                log("  ✓ Banner de cookie fechado")
+                esperar(page, 0.8)
+                return
+        except Exception:
+            pass
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  CARTA — helper de envio
 # ══════════════════════════════════════════════════════════════════════════════
@@ -956,6 +979,7 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
         page.goto(vaga["link"], timeout=15000, wait_until="domcontentloaded")
         esperar(page, 2)
         fechar_modal_se_existir(page)
+        fechar_banner_cookie(page)
 
         btn_candidatar = None
         for seletor in ["a.js_btApplyVacancy", "a[data-iv]",
@@ -985,6 +1009,7 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
 
         fechar_modal_se_existir(page)
         esperar(page, 1)
+        fechar_banner_cookie(page)  # banner reaparece na página das perguntas
 
         descricao = ""
         try:
@@ -994,6 +1019,10 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
         except Exception:
             pass
 
+        if dryrun.ativo():
+            log("  [dry-run] formulário com perguntas carregado — parando antes de preencher (nada enviado)")
+            resultado["status"] = dryrun.STATUS
+            return resultado
         _, respostas_kq      = responder_killer_questions(page, config)
         resultado["respostas"] = respostas_kq
 
@@ -1216,6 +1245,16 @@ def main():
 
         if not fazer_login(page, config):
             browser.close()
+            if loginonly.ativo():
+                print("❌ [só-login] login InfoJobs falhou — verifique INFOJOBS_EMAIL/INFOJOBS_SENHA no .env")
+                raise SystemExit(1)
+            return
+
+        # Botão "Validar credenciais" da UI: sem sessão persistente neste
+        # bot — o login por .env acabou de dar certo, isso é o status
+        if loginonly.ativo():
+            print("✅ Credenciais InfoJobs validadas — modo só-login, encerrando")
+            browser.close()
             return
 
         vagas       = buscar_vagas_infojobs(page, config)
@@ -1230,6 +1269,12 @@ def main():
             for i, vaga in enumerate(vagas_novas, 1):
                 print(f"\n[{i}/{len(vagas_novas)}]")
                 resultado = candidatar_vaga_infojobs(page, vaga, config)
+                if dryrun.ativo():
+                    if resultado.get("status") == dryrun.STATUS:
+                        print("[dry-run] cheguei no formulário — parando sem salvar nada")
+                        break
+                    print(f"[dry-run] {resultado.get('status')} — sem chegar no formulário; tentando a próxima vaga")
+                    continue
                 candidaturas.append(resultado)
                 salvar_log([resultado])
                 time.sleep(config["automacao"]["delay_entre_vagas"])

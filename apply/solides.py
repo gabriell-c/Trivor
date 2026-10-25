@@ -51,10 +51,12 @@ import time
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import yaml
-from common import pagelens, perfil
+from common import dryrun, loginonly, pagelens, perfil
+from common.browser import aba_morta, reabrir_aba
 from dotenv import load_dotenv
 from groq import Groq
 from playwright.sync_api import BrowserContext, Page, sync_playwright
@@ -96,7 +98,10 @@ _END_NUMERO     = os.getenv("ENDERECO_NUMERO", "")
 # URLs
 URL_PORTAL = "https://vagas.solides.com.br"
 URL_LOGIN  = "https://auth.vagas.solides.com.br/sign-in"
-URL_BUSCA  = "https://vagas.solides.com.br/vagas?title={termo}&page={pagina}"
+# Busca: a Sólides virou SPA — o path antigo /vagas?title=... dá 404 e os
+# cards li.h-full someram. A busca agora é a API JSON do próprio board.
+URL_API_VAGAS = "https://vagas.solides.com.br/api/vacancies"
+URL_DETALHE   = "https://vagas.solides.com.br/vaga/{id}"
 URL_PERFIL = "https://perfil.vagas.solides.com.br"
 
 # Credenciais Sólides (lidas do .env)
@@ -468,6 +473,36 @@ def _fazer_login_automatico(page: Page) -> bool:
         return False
 
 
+def _aguardar_login_manual(page, limite_minutos: int = 50) -> bool:
+    """Login por polling na janela (modo só-login: a UI não tem TTY para
+    "pressione ENTER") — o usuário digita email/senha no browser aberto e o
+    bot detecta e salva a sessão sozinho (mesma abordagem do
+    TRIVOR_LOGIN_POLL do Indeed). O check definitivo (sessao_valida) só roda
+    depois que a tela de sign-in sai da URL, para não roubar a navegação
+    do usuário no meio da digitação."""
+    import time as _time
+    barra = "═" * 60
+    print(barra)
+    print("👆 CONCLUA O LOGIN NA JANELA DO BROWSER ABERTA")
+    print(f"   O bot verifica a cada 5s por até {limite_minutos} min e salva a sessão sozinho")
+    print(barra)
+    prazo = _time.monotonic() + limite_minutos * 60
+    ultimo_aviso = 0.0
+    while _time.monotonic() < prazo:
+        page.wait_for_timeout(5000)
+        if "sign-in" not in page.url.lower():
+            if sessao_valida(page):
+                log_ok("✅ Login no portal detectado!")
+                return True
+            continue  # tela intermediária — o check definitivo roda no próximo giro
+        agora = _time.monotonic()
+        if agora - ultimo_aviso >= 60:
+            restantes = int((prazo - agora) // 60)
+            log_info(f"   ⏳ Ainda na tela de login — restam ~{restantes} min…")
+            ultimo_aviso = agora
+    return False
+
+
 def fazer_login(p) -> tuple:
     cdp_port = int(CONFIG.get("automacao", {}).get("cdp_port", 9333))
     browser = p.chromium.launch(
@@ -514,6 +549,20 @@ def fazer_login(p) -> tuple:
     log_warn("Login automático falhou — abrindo browser para login manual...")
     page.goto(URL_LOGIN, timeout=15000)
 
+    if loginonly.ativo():
+        # Fluxo da UI não tem TTY ("ENTER após logar" não funciona) — em vez
+        # disso o bot POLA a janela aberta por até 50 min; quando o login
+        # completar (automático ou manual) a sessão é salva e sai com exit 0
+        if not _aguardar_login_manual(page, 50):
+            log_err("⏱️ Login não detectado em 50 min — encerrando")
+            page.close()
+            context.close()
+            browser.close()
+            raise SystemExit(1)
+        salvar_sessao(context)
+        log_ok("✅ Login concluído! Sessão salva.")
+        return context, browser, page
+
     print("\n" + "═" * 60)
     print("👆 LOGIN MANUAL NECESSÁRIO:")
     print("   1. Preencha email e senha no browser aberto")
@@ -538,14 +587,15 @@ def _filtrar_vaga(titulo: str, badges: list[str] | None = None) -> bool:
     SENIORIDADE_BADGE  = {"pleno", "sênior", "senior", "sênior/pleno"}
     SENIORIDADE_TITULO = {"sr", "sr.", " sr ", "(sr)", "- sr", "sênior", "senior"}
 
-    EXCLUIR_TITULO = [p for p in PALAVRAS_EXCLUIR
-                      if p.lower() not in SENIORIDADE_BADGE | SENIORIDADE_TITULO]
     EXCLUIR_NIVEL_BADGE = [p for p in PALAVRAS_EXCLUIR if p.lower() in SENIORIDADE_BADGE]
 
-    for excluir in EXCLUIR_TITULO:
-        if excluir in t:
-            log_skip(f"Excluída ('{excluir}' no título): {titulo}")
-            return False
+    # Fronteira de palavra: "java" não cai em "Javascript" (senioridades saem
+    # daqui — elas têm regras próprias nos loops abaixo)
+    excluida_titulo = perfil.titulo_excluido(t, [p for p in PALAVRAS_EXCLUIR
+                                                  if p.lower() not in SENIORIDADE_BADGE | SENIORIDADE_TITULO])
+    if excluida_titulo:
+        log_skip(f"Excluída ('{excluida_titulo}' no título): {titulo}")
+        return False
 
     for sn in SENIORIDADE_TITULO:
         if sn in t:
@@ -563,113 +613,100 @@ def _filtrar_vaga(titulo: str, badges: list[str] | None = None) -> bool:
     return True
 
 
-def buscar_vagas(page: Page) -> list[dict]:
+def _buscar_vagas_api(page: Page, termo: str, pagina: int) -> tuple[list, int]:
+    """Busca da Sólides via API JSON do board — retorna (items, total_pags).
+    O fetch roda na aba aberta na origem solides: mesmo host, cookies válidos,
+    nenhuma dependência nova."""
+    url = f"{URL_API_VAGAS}?page={pagina}&take=14&title={quote(termo)}&locations="
+    corpo = page.evaluate(
+        """async (url) => {
+            const r = await fetch(url, {headers: {'Accept': 'application/json'}});
+            if (!r.ok) return {erro: r.status};
+            return r.json();
+        }""",
+        url,
+    )
+    if not isinstance(corpo, dict) or "data" not in corpo:
+        log_warn(f"  API respondeu inválido (status {corpo.get('erro') if isinstance(corpo, dict) else '?'} — pulei)")
+        return [], 0
+    return corpo.get("data") or [], int(corpo.get("totalPages") or 0)
+
+
+def _buscar_pagina(page: Page, termo: str, pagina: int) -> tuple[list, int, Page]:
+    """Busca uma página do termo. Se a tab cravar (anti-bot), reabre no mesmo
+    contexto e repete a página uma vez — só falha de vez se repetir o erro."""
+    try:
+        items, total_pags = _buscar_vagas_api(page, termo, pagina)
+        return items, total_pags, page
+    except Exception as exc:
+        if not aba_morta(page):
+            log_warn(f"  Erro na API pág {pagina} de '{termo}': {exc}")
+            return [], 0, page
+        log_warn(f"  🔄 Aba cravou — reabrindo e repetindo a pág {pagina} de '{termo}'")
+        page = reabrir_aba(page)
+        try:
+            items, total_pags = _buscar_vagas_api(page, termo, pagina)
+            return items, total_pags, page
+        except Exception as exc2:
+            log_warn(f"  Erro na API pág {pagina} de '{termo}' (aba reaberta): {exc2}")
+            return [], 0, page
+
+
+def buscar_vagas(page: Page) -> tuple[list[dict], Page]:
     vagas: list[dict] = []
     links_vistos: set[str] = set()
 
+    # O fetch da API precisa rodar na origem solides — abre o board uma vez
+    page.goto(f"{URL_PORTAL}/vagas/todas", timeout=20000)
+    esperar(page, random.uniform(2, 3))
+
     for termo in PALAVRAS_CHAVE:
         log(f"\n🔍 Buscando: '{termo}'")
-
+        total_pags = 0
         for pagina in range(1, 6):
-            url = URL_BUSCA.format(
-                termo=termo.replace(" ", "+"),
-                pagina=pagina,
-            )
-            try:
-                page.goto(url, timeout=15000)
-                esperar(page, random.uniform(2, 4))
-                scroll_humano(page)
-
-                cards = page.query_selector_all("li.h-full")
-                if not cards:
-                    log_info(f"  Pág {pagina}: sem vagas")
-                    break
-
-                novas = 0
-                for card in cards:
-                    try:
-                        link_el = card.query_selector("a[href*='/vaga/']")
-                        if not link_el:
-                            continue
-
-                        href = link_el.get_attribute("href") or ""
-                        if not href:
-                            continue
-
-                        if href.startswith("/"):
-                            link = URL_PORTAL + href
-                        elif href.startswith("http"):
-                            link = href
-                        else:
-                            link = URL_PORTAL + "/" + href
-
-                        if link in links_vistos:
-                            continue
-
-                        titulo = (link_el.get_attribute("title") or link_el.inner_text()).strip()
-                        if not titulo:
-                            continue
-
-                        empresa = ""
-                        emp_el = card.query_selector("[data-cy='vacancy-company-name']")
-                        if emp_el:
-                            empresa = emp_el.inner_text().strip()
-
-                        local = ""
-                        loc_el = card.query_selector("p.flex.items-center")
-                        if loc_el:
-                            local = loc_el.inner_text().strip()
-
-                        badges = []
-                        with suppress(Exception):
-                            badges_raw = card.evaluate("""
-                                (el) => {
-                                    var result = [];
-                                    var divs = el.querySelectorAll('div[class*="bg-info-500"]');
-                                    divs.forEach(function(d) {
-                                        var inner = d.querySelector('div');
-                                        if (inner) result.push(inner.innerText.trim().toLowerCase());
-                                    });
-                                    return result;
-                                }
-                            """)
-                            if isinstance(badges_raw, list):
-                                badges = [b for b in badges_raw if b]
-
-                        log_info(f"    Vaga: {titulo[:50]} | badges: {badges}")
-
-                        if not _filtrar_vaga(titulo, badges):
-                            continue
-
-                        links_vistos.add(link)
-                        vagas.append({
-                            "titulo": titulo,
-                            "empresa": empresa,
-                            "local": local,
-                            "badges": badges,
-                            "link": link,
-                            "termo": termo,
-                            "data_coleta": datetime.now().isoformat(),
-                        })
-                        novas += 1
-
-                    except Exception:
-                        continue
-
-                log_info(f"  Pág {pagina}: +{novas} | total: {len(vagas)}")
-
-                btn_next = page.query_selector("[data-testid='pagination-next-page']:not([disabled])")
-                if not btn_next:
-                    break
-
-                esperar(page, random.uniform(2, 4))
-
-            except Exception as exc:
-                log_warn(f"  Erro na pág {pagina}: {exc}")
+            items, total_pags, page = _buscar_pagina(page, termo, pagina)
+            if not items:
                 break
 
+            novas = 0
+            for item in items:
+                try:
+                    link = URL_DETALHE.format(id=item.get("id"))
+                    if not link or link in links_vistos:
+                        continue
+
+                    titulo = (item.get("title") or "").strip()
+                    if not titulo:
+                        continue
+                    if not _filtrar_vaga(titulo, None):
+                        continue
+
+                    cidade = (item.get("city") or {}).get("name", "")
+                    estado = (item.get("state") or {}).get("code", "")
+                    local  = f"{cidade} - {estado}" if cidade else ("Remoto" if item.get("homeOffice") else "")
+
+                    links_vistos.add(link)
+                    vagas.append({
+                        "titulo": titulo,
+                        "empresa": (item.get("companyName") or "").strip(),
+                        "local": local,
+                        "badges": [],
+                        "link": link,
+                        "termo": termo,
+                        "data_coleta": datetime.now().isoformat(),
+                    })
+                    novas += 1
+                except Exception:
+                    continue
+
+            log_info(f"  Pág {pagina}: +{novas} | total: {len(vagas)}")
+            if total_pags and pagina >= total_pags:
+                break
+            time.sleep(random.uniform(2, 4))
+
     log(f"\n📊 Total de vagas coletadas: {len(vagas)}")
-    return vagas
+    # `page` pode ter sido reaberta num crash — quem chama precisa da tab viva
+    return vagas, page
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1604,6 +1641,12 @@ def candidatar_vaga(page: Page, vaga: dict) -> dict:
                 resultado["status"] = "sem_botao"
             return resultado
 
+        if dryrun.ativo():
+            botao_dry = "Candidatura rápida" if btn_rapida else "Candidatura revisada"
+            log_warn(f"  [dry-run] botão de candidatura detectado ({botao_dry}) — parando ANTES do clique: ele pode enviar direto, sem aba de preenchimento")
+            resultado["status"] = dryrun.STATUS
+            return resultado
+
         if btn_rapida:
             btn_rapida.scroll_into_view_if_needed()
             btn_rapida.click()
@@ -2103,9 +2146,19 @@ def main() -> None:
     with sync_playwright() as p:
         context, browser, page = fazer_login(p)
 
+        # Botão "Logar" da UI: sessão salva/atualizada no fazer_login → para aqui
+        if loginonly.ativo():
+            log_info("✅ Sessão Sólides atualizada — modo só-login, encerrando")
+            page.close()
+            context.close()
+            browser.close()
+            return
+
         try:
             log_info("\n🔍 Coletando vagas...")
-            vagas = buscar_vagas(page)
+            # Se a tab cravou durante a coleta, `page` volta reaberta — o loop de
+            # candidaturas continua nela
+            vagas, page = buscar_vagas(page)
 
             vagas_novas = [v for v in vagas if v["link"] not in ja_candidatado]
 
@@ -2141,7 +2194,16 @@ def main() -> None:
                     break
 
                 log(f"[{i}/{len(vagas_unicas)}]")
+                if aba_morta(page):
+                    log("  🔄 Aba cravou — reabrindo antes de abrir a vaga")
+                    page = reabrir_aba(page)
                 resultado = candidatar_vaga(page, vaga)
+                if dryrun.ativo():
+                    if resultado["status"] == dryrun.STATUS:
+                        log_info("[dry-run] cheguei na aba de candidatura — parando sem salvar nada")
+                        break
+                    log_info(f"[dry-run] {resultado['status']} — sem chegar na aba; tentando a próxima vaga")
+                    continue
                 registrar_candidatura(resultado)
 
                 status = resultado["status"]

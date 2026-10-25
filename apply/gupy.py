@@ -38,15 +38,23 @@ import json
 import os
 import random
 import re
+import sys
 import threading
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import yaml
+from common import dryrun, loginonly, pagelens, perfil
 from common import llm as _llm_lib
-from common import pagelens, perfil
-from common.browser import SESSIONS_DIR, Browser, BrowserUnavailable, find_adaptive
+from common.browser import (
+    SESSIONS_DIR,
+    Browser,
+    BrowserUnavailable,
+    aba_morta,
+    find_adaptive,
+    reabrir_aba,
+)
 from dotenv import load_dotenv
 from playwright.sync_api import Page
 
@@ -535,12 +543,15 @@ def fazer_login_manual(page, config: dict) -> None:
     else:
         log("  👆 Digite as credenciais manualmente no browser.")
 
-    for _ in range(120):
+    for _ in range(300):
         if "portal.gupy.io" in page.url or "app.gupy.io" in page.url:
             break
         time.sleep(1)
     else:
-        input("  ▶  Portal não carregou. Pressione ENTER quando carregar... ")
+        if sys.stdin.isatty():
+            input("  ▶  Portal não carregou. Pressione ENTER quando carregar... ")
+        else:
+            log("  ⏳ Espera do portal esgotada — seguindo (a verificação de sessão abaixo decide)")
 
     log("✅ Logado! (sessão fica guardada em apply/sessions/gupy/)")
 
@@ -766,20 +777,30 @@ Resposta:"""
 # ══════════════════════════════════════════════════════════════════════════════
 
 def filtrar_vaga(titulo: str, config: dict) -> bool:
-    titulo_lower = titulo.lower()
-    for palavra in config["busca"].get("palavras_excluir", []):
-        if palavra.lower() in titulo_lower:
-            return False
-    return True
+    negativas = config["busca"].get("palavras_excluir", [])
+    # fronteira de palavra: "java" não cai em "Javascript"
+    return perfil.titulo_excluido(titulo, negativas) is None
 
 
-def buscar_vagas_gupy(page: Page, config: dict) -> list:
+def buscar_vagas_gupy(page: Page, config: dict) -> tuple[list, Page]:
     vagas        = []
     links_vistos = set()
     termos       = config["busca"]["palavras_chave"]
 
+    # Em dry-run dá pra testar o fluxo num único termo (busca completa dura
+    # ~40min): TRIVOR_DRY_RUN_TERMO="analista de sistemas". Só em dry-run,
+    # a produção varre todos os termos.
+    if dryrun.ativo():
+        termo_unico = os.environ.get("TRIVOR_DRY_RUN_TERMO", "").strip()
+        if termo_unico and termo_unico in termos:
+            log(f"🧪 [dry-run] testando o fluxo só com '{termo_unico}'")
+            termos = [termo_unico]
+
     for termo in termos:
         log(f"\n🔍 Buscando: {termo}")
+        if aba_morta(page):
+            log("  🔄 Aba cravou — reabrindo para continuar a busca")
+            page = reabrir_aba(page)
         termo_url = termo.replace(" ", "%20")
         url = URL_BUSCA.format(termo=termo_url)
 
@@ -792,11 +813,19 @@ def buscar_vagas_gupy(page: Page, config: dict) -> list:
             max_pags  = 5
 
             while pagina <= max_pags:
-                cards = page.query_selector_all("a.sc-4d881605-1")
+                if aba_morta(page):
+                    log("  🔄 Aba cravou — reabrindo e voltando à página 1")
+                    page = reabrir_aba(page)
+                    page.goto(url, timeout=20000)
+                    esperar(page, 3)
+                    pagina = 1
+                    continue
+
+                cards = page.query_selector_all('a[href*="gupy.io/job/"]')
                 if not cards:
                     # Portal renomeou a classe → relocaliza o 1º card pelo
                     # seletor adaptativo (css → xpath estável salvo → texto)
-                    first = find_adaptive(page, "a.sc-4d881605-1", None, SPEC_DIR / "cards.json")
+                    first = find_adaptive(page, 'a[href*="gupy.io/job/"]', None, SPEC_DIR / "cards.json")
                     cards = [first] if first else []
                 log(f"  📄 Página {pagina}: {len(cards)} vagas encontradas")
 
@@ -844,7 +873,7 @@ def buscar_vagas_gupy(page: Page, config: dict) -> list:
             log(f"  ❌ Erro na busca por '{termo}': {e}")
 
     log(f"\n📊 Total de vagas encontradas: {len(vagas)}")
-    return vagas
+    return vagas, page
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1533,6 +1562,12 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
         esperar(nova_aba, 3)
         scroll_humano(nova_aba)
 
+        if dryrun.ativo():
+            log("  [dry-run] cheguei nas etapas da candidatura — parando antes de preencher (nada enviado)")
+            resultado["status"] = dryrun.STATUS
+            nova_aba.close()
+            return resultado
+
         # ── Loop de etapas ──────────────────────────────────────────────────
         max_etapas = 15
         etapa_num  = 0
@@ -1900,11 +1935,21 @@ def main():
         if not verificar_sessao_valida(page):
             log("❌ Login falhou. Encerrando.")
             b.close()
+            if loginonly.ativo():
+                raise SystemExit(1)
             return
     else:
         log("✅ Sessão válida!")
 
-    vagas       = buscar_vagas_gupy(page, config)
+    # Botão "Logar" da UI: sessão garantida → para aqui, sem buscar/candidatar
+    if loginonly.ativo():
+        log("✅ Sessão GUPY salva (perfil persistente) — modo só-login, encerrando")
+        b.close()
+        return
+
+    # Se a aba cravou durante a busca, `page` volta como a tab reaberta —
+    # o loop de candidatura continua nela (a sessão do perfil persiste)
+    vagas, page = buscar_vagas_gupy(page, config)
     vagas_novas = [v for v in vagas if v["link"] not in ja_candidatados]
 
     # Remove duplicatas
@@ -1949,6 +1994,12 @@ def main():
                 sessao_ok = True
 
             resultado = candidatar_vaga_gupy(page, vaga, config)
+            if dryrun.ativo():
+                if resultado.get("status") == dryrun.STATUS:
+                    log("[dry-run] cheguei na aba de preenchimento — parando sem salvar nada")
+                    break
+                log(f"[dry-run] {resultado.get('status')} — sem chegar no formulário; tentando a próxima vaga")
+                continue
             candidaturas.append(resultado)
             salvar_log(resultado)
 
