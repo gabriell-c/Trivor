@@ -5,7 +5,6 @@ Foca em problemas que afetam leitores de tela e navegação por teclado.
 import re
 from pathlib import Path
 
-
 _BASE = Path(__file__).parent.parent
 _FE = _BASE / "frontend" / "app"
 
