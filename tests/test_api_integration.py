@@ -185,7 +185,8 @@ class TestApplyLogins:
         # contrato: só existência/timestamp — nunca valor de PII
         for item in dados:
             assert set(item) == {
-                "bot", "nome", "tem_sessao", "detalhe", "ultima_atualizacao"}
+                "bot", "nome", "tem_sessao", "deslogavel", "detalhe",
+                "ultima_atualizacao"}
 
     def test_status_de_bot_desconhecido_da_404(self):
         r = requests.get(f"{BASE}/api/apply/login/naoexiste", timeout=5)

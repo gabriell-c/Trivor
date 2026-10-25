@@ -93,3 +93,66 @@ def test_credenciais_env(ss, tmp_path, bot, chaves):
 def test_env_parcial_nao_basta(ss, tmp_path):
     (tmp_path / ".env").write_text("INFOJOBS_EMAIL=a@b.c\n", encoding="utf-8")
     assert _estado_de(ss, tmp_path, "infojobs")["tem_sessao"] is False
+
+
+# ═══ deslogar (apaga só a sessão local; .env nunca é tocado) ═══
+
+def test_estados_marca_deslogavel_por_bot(ss, tmp_path):
+    for bot in ss.BOTS:
+        e = _estado_de(ss, tmp_path, bot)
+        assert e["deslogavel"] is (bot in ss.COM_SESSAO_LOCAL)
+
+
+def test_deslogar_gupy_apaga_os_perfis(ss, tmp_path):
+    for engine in ("chromium", "firefox"):
+        d = tmp_path / "sessions" / "gupy" / engine
+        d.mkdir(parents=True)
+        (d / "marker").write_text("x")
+    removidos = ss.deslogar(tmp_path, "gupy")
+    assert len(removidos) == 2
+    assert not any((tmp_path / "sessions" / "gupy").iterdir())
+    assert _estado_de(ss, tmp_path, "gupy")["tem_sessao"] is False
+
+
+def test_deslogar_indeed_apaga_pickles(ss, tmp_path):
+    (tmp_path / "indeed_session.pkl").write_bytes(b"\x80")
+    (tmp_path / "google_session.pkl").write_bytes(b"\x80")
+    removidos = ss.deslogar(tmp_path, "indeed")
+    assert removidos == ["indeed_session.pkl", "google_session.pkl"]
+    assert not (tmp_path / "indeed_session.pkl").exists()
+    assert not (tmp_path / "google_session.pkl").exists()
+
+
+def test_deslogar_indeem_parcial_so_apaga_o_que_existe(ss, tmp_path):
+    (tmp_path / "indeed_session.pkl").write_bytes(b"\x80")
+    removidos = ss.deslogar(tmp_path, "indeed")
+    assert removidos == ["indeed_session.pkl"]
+
+
+def test_deslogar_solides_apaga_storage_state(ss, tmp_path):
+    (tmp_path / "solides_session.json").write_text("[]")
+    removidos = ss.deslogar(tmp_path, "solides")
+    assert removidos == ["solides_session.json"]
+    assert not (tmp_path / "solides_session.json").exists()
+
+
+@pytest.mark.parametrize("bot", ["nerdin", "infojobs"])
+def test_deslogar_sem_sessao_local_recusa(ss, tmp_path, bot):
+    env = tmp_path / ".env"
+    chaves = ss._ENV_CREDENCIAIS[bot]
+    env.write_text("\n".join(f"{c}=segredo-fake" for c in chaves), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"credenciais no \.env"):
+        ss.deslogar(tmp_path, bot)
+    # .env nunca é tocado pelo deslogar
+    assert "segredo-fake" in env.read_text(encoding="utf-8")
+
+
+def test_deslogar_bot_desconhecido_recusa(ss, tmp_path):
+    with pytest.raises(ValueError, match="desconhecido"):
+        ss.deslogar(tmp_path, "xpto")
+
+
+def test_deslogar_idempotente_sem_nada_para_apagar(ss, tmp_path):
+    assert ss.deslogar(tmp_path, "gupy") == []
+    assert ss.deslogar(tmp_path, "indeed") == []
+    assert ss.deslogar(tmp_path, "solides") == []

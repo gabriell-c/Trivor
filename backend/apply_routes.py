@@ -134,6 +134,39 @@ def api_apply_sesoes():
     return _status_sessoes(apply_dir).estados(apply_dir)
 
 
+@router.post('/api/apply/sesoes/{bot}/logout')
+def api_apply_sesoes_logout(bot: str):
+    """Deslogar: apaga a sessão LOCAL do bot (gupy perfil / indeed pickles /
+    solides storage_state) — o próximo "Logar" será do zero. O .env nunca é
+    tocado. 400: bot desconhecido ou sem sessão local. 409: bot rodando ou
+    com login em andamento (sessão em uso)."""
+    apply_dir = resolve_apply_dir()
+    if apply_dir is None:
+        raise HTTPException(status_code=404, detail="Projeto apply não encontrado. Defina APPLY_DIR no .env.")
+    mod = _status_sessoes(apply_dir)
+    if bot not in mod.BOTS:
+        raise HTTPException(status_code=400, detail=f"Bot desconhecido '{bot}'.")
+    rodando = next((r for r in list_bots() if r['bot'] == bot), None)
+    if rodando and rodando.get('running'):
+        raise HTTPException(status_code=409, detail=f"{mod.NOMES[bot]} está rodando — pare o bot antes de deslogar.")
+    try:
+        if login_status(bot)['estado'] == 'aguardando':
+            raise HTTPException(status_code=409, detail=f"Login em andamento no {mod.NOMES[bot]} — cancele antes de deslogar.")
+    except ApplyRunError:
+        pass  # sem pidfile de login — nada em andamento
+    try:
+        removidos = mod.deslogar(apply_dir, bot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    logger.info(f"[APPLY] deslog {bot}: {removidos or 'sem sessão local para apagar'}")
+    return {
+        'bot': bot,
+        'removidos': removidos,
+        'mensagem': ('Sessão removida — o próximo Logar será do zero.'
+                     if removidos else 'Sem sessão local para remover.'),
+    }
+
+
 @router.get('/api/apply/state')
 def api_apply_state(focus: str = ''):
     """Estado consolidado da aba Executar: 1 request no lugar dos 4 polls

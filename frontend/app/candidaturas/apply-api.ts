@@ -69,8 +69,19 @@ export interface BotSessao {
   bot: string
   nome: string
   tem_sessao: boolean
+  /* botão "Deslogar" existe só onde há sessão local (gupy/indeed/solides) —
+   * nerdin/infojobs logam por credenciais do .env, que a UI nunca toca */
+  deslogavel: boolean
   detalhe: string
   ultima_atualizacao: string | null
+}
+
+/* Deslogar (POST /api/apply/sesoes/{bot}/logout) — apaga a sessão local do
+ * bot; o próximo "Logar" será do zero. */
+export interface DeslogResult {
+  bot: string
+  removidos: string[]
+  mensagem: string
 }
 
 /* Login-só (POST /api/apply/login + GET /api/apply/login/{bot}) — o processo
@@ -133,4 +144,7 @@ export const inputCls = 'w-full px-3 py-2 rounded-xl bg-slate-950/50 border bord
 export const labelCls = 'text-[13px] font-medium text-slate-400 uppercase tracking-wider'
 export const btnPrimary = 'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors disabled:opacity-50'
 export const btnDanger = 'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors disabled:opacity-50'
+/* ação neutra (ex.: Deslogar) — não compete com o azul primário nem o
+ * vermelho de perigo */
+export const btnGhost = 'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700/60 bg-slate-800/40 text-slate-300 hover:bg-slate-700/50 transition-colors disabled:opacity-50'
 export const cardCls = 'rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4'

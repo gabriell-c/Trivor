@@ -17,6 +17,7 @@ Onde cada bot guarda "logado":
 from __future__ import annotations
 
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,10 @@ NOMES = {
     "gupy": "GUPY", "indeed": "Indeed", "infojobs": "InfoJobs",
     "nerdin": "Nerdin", "solides": "Sólides",
 }
+
+# Bots com sessão LOCAL que o deslogar pode apagar (o .env nunca é tocado):
+# gupy → perfis de browser; indeed → pickles; solides → storage_state.
+COM_SESSAO_LOCAL = {"gupy", "indeed", "solides"}
 
 # Bots sem persistência de sessão: "logado" = credenciais presentes no .env
 _ENV_CREDENCIAIS = {
@@ -92,7 +97,48 @@ def estados(apply_dir: Path) -> list[dict]:
             "bot": bot,
             "nome": NOMES[bot],
             "tem_sessao": tem,
+            "deslogavel": bot in COM_SESSAO_LOCAL,
             "detalhe": detalhe,
             "ultima_atualizacao": ts,
         })
     return out
+
+
+def deslogar(apply_dir: Path, bot: str) -> list[str]:
+    """Apaga a sessão LOCAL do bot (o botão "Deslogar" da UI).
+
+    Só toca em arquivos de sessão do próprio bot — nunca .env,
+    credenciais ou qualquer outra coisa:
+      - gupy    → apaga os perfis de apply/sessions/gupy/<engine>/
+      - indeed  → apaga indeed_session.pkl + google_session.pkl
+      - solides → apaga solides_session.json
+
+    Nerdin/InfoJobs não têm sessão local (credenciais no .env) → ValueError.
+    Bot desconhecido → ValueError. Idempotente: sem sessão → lista vazia."""
+    apply_dir = Path(apply_dir)
+    if bot not in BOTS:
+        raise ValueError(f"Bot desconhecido '{bot}'.")
+    if bot not in COM_SESSAO_LOCAL:
+        raise ValueError(
+            f"{NOMES[bot]} não tem sessão local (credenciais no .env) — nada para deslogar.")
+
+    removidos: list[str] = []
+    if bot == "gupy":
+        base = apply_dir / "sessions" / "gupy"
+        perfis = sorted(base.iterdir()) if base.is_dir() else []
+        for perfil in perfis:
+            if perfil.is_dir():
+                shutil.rmtree(perfil)
+                removidos.append(f"sessions/gupy/{perfil.name}/")
+    elif bot == "indeed":
+        for nome in ("indeed_session.pkl", "google_session.pkl"):
+            arq = apply_dir / nome
+            if arq.exists():
+                arq.unlink()
+                removidos.append(nome)
+    else:  # solides
+        arq = apply_dir / "solides_session.json"
+        if arq.exists():
+            arq.unlink()
+            removidos.append(arq.name)
+    return removidos
