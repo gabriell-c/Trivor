@@ -114,17 +114,42 @@ def list_bots() -> dict:
     return {name: bot_status(name) for name in APPLY_BOTS}
 
 
-def bot_log(bot: str, lines: int = 200) -> dict:
-    """Últimas `lines` linhas úteis do log (a aba Executar do Trivor mostra em
-    tempo real o passo a passo do bot)."""
+def ler_log(bot: str, origem: str = 'execucao', lines: int = 200) -> dict:
+    """Últimas `lines` linhas úteis do log de `origem`:
+    'execucao' → <bot>.log | 'login' → <bot>-login.log. Sem arquivo →
+    linhas vazias. `total` conta as linhas devolvidas (após o corte)."""
     if bot not in APPLY_BOTS:
         raise ApplyRunError(f"Bot desconhecido '{bot}'. Use: {', '.join(APPLY_BOTS)}.")
+    arq = _login_logfile(bot) if origem == 'login' else _logfile(bot)
     out = []
-    lf = _logfile(bot)
-    if lf.is_file():
-        out = [ln for ln in lf.read_text(encoding='utf-8', errors='replace').splitlines()
+    if arq.is_file():
+        out = [ln for ln in arq.read_text(encoding='utf-8', errors='replace').splitlines()
                if ln.strip()][-lines:]
-    return {'bot': bot, 'lines': out, 'total': len(out)}
+    return {'bot': bot, 'origem': origem, 'lines': out, 'total': len(out)}
+
+
+def bot_log(bot: str, lines: int = 200) -> dict:
+    """Últimas `lines` linhas úteis do log de EXECUÇÃO (rota /api/apply/log
+    mantém o escopo de sempre; o painel da aba Executar escolhe a origem)."""
+    return ler_log(bot, 'execucao', lines)
+
+
+def origem_log_ativa(bot: str, estado_login: dict) -> str:
+    """Qual log o painel "em tempo real" deve exibir para o bot:
+    - login 'aguardando' → o log de LOGIN (ele é o vivo — a run completa
+      não roda em paralelo, o mesmo bot está bloqueado);
+    - senão, o arquivo MAIS RECENTE entre execução e login — a atividade
+      mais nova é a relevante (ex.: depois de um login concluído, o log
+      antigo de execução não agrega nada)."""
+    if estado_login.get('estado') == 'aguardando':
+        return 'login'
+    arq_exec, arq_login = _logfile(bot), _login_logfile(bot)
+    tem_exec, tem_login = arq_exec.is_file(), arq_login.is_file()
+    if not (tem_exec or tem_login):
+        return 'execucao'
+    if tem_exec != tem_login:
+        return 'login' if tem_login else 'execucao'
+    return 'login' if arq_login.stat().st_mtime >= arq_exec.stat().st_mtime else 'execucao'
 
 
 class ApplyRunError(Exception):

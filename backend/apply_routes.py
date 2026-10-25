@@ -11,8 +11,10 @@ from apply_runner import (
     APPLY_BOTS,
     ApplyRunError,
     bot_log,
+    ler_log,
     list_bots,
     login_status,
+    origem_log_ativa,
     start_bot,
     start_login,
     stop_bot,
@@ -171,13 +173,12 @@ def api_apply_sesoes_logout(bot: str):
 def api_apply_state(focus: str = ''):
     """Estado consolidado da aba Executar: 1 request no lugar dos 4 polls
     separados (runs + log do bot em destaque + sessões + logins ativos).
-    A UI compara o JSON com o último e só re-renderiza quando muda."""
+    A UI compara o JSON com o último e só re-renderiza quando muda.
+
+    `log` é a ORIGEM mais relevante do bot em foco: login 'aguardando' →
+    <bot>-login.log (o vivo); senão o arquivo mais recente entre execução
+    e login — sempre o log da atividade mais nova, nunca um fantasma."""
     estado: dict = {'runs': list_bots(), 'log': None, 'sesoes': None, 'logins': {}}
-    if focus:
-        try:
-            estado['log'] = bot_log(focus, 400)
-        except ApplyRunError:
-            estado['log'] = []
     apply_dir = resolve_apply_dir()
     if apply_dir is not None:
         estado['sesoes'] = _status_sessoes(apply_dir).estados(apply_dir)
@@ -186,6 +187,12 @@ def api_apply_state(focus: str = ''):
                 estado['logins'][bot] = login_status(bot)
             except ApplyRunError:
                 estado['logins'][bot] = {'bot': bot, 'estado': 'inativo'}
+        if focus:
+            try:
+                origem = origem_log_ativa(focus, estado['logins'].get(focus, {}))
+                estado['log'] = ler_log(focus, origem, 400)
+            except ApplyRunError:
+                estado['log'] = []
     return estado
 
 

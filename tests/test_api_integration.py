@@ -196,3 +196,30 @@ class TestApplyLogins:
         r = requests.post(
             f"{BASE}/api/apply/login", json={"bot": "xpto"}, timeout=5)
         assert r.status_code == 400
+
+
+# ============================================================================
+# Estado consolidado da aba Executar (GET /api/apply/state) — read-only
+# ============================================================================
+
+class TestApplyState:
+    def test_state_sem_focus_devolve_log_null(self):
+        r = requests.get(f"{BASE}/api/apply/state", timeout=5)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["log"] is None
+        assert set(d["logins"]) == {
+            "gupy", "indeed", "infojobs", "nerdin", "solides"}
+        for st in d["logins"].values():
+            assert st["estado"] in (
+                "inativo", "aguardando", "concluido", "falhou", "indeterminado")
+
+    def test_state_com_focus_devolve_log_da_origem_mais_relevante(self):
+        r = requests.get(
+            f"{BASE}/api/apply/state", params={"focus": "gupy"}, timeout=5)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["log"] is not None
+        assert d["log"]["bot"] == "gupy"
+        assert d["log"]["origem"] in ("execucao", "login")
+        assert isinstance(d["log"]["lines"], list)

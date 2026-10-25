@@ -211,3 +211,64 @@ def test_run_completa_bloqueia_login_do_mesmo_bot(fake_apply):
     finally:
         if ar.is_process_alive(info['pid']):
             os.kill(info['pid'], signal.SIGTERM)
+
+
+# ── Logs do painel (ler_log / origem_log_ativa) ───────────────────────────
+# O endpoint /api/apply/state devolve o log da ORIGEM mais relevante; estes
+# testes cobrem as regras de escolha (o endpoint em si é 1 chamada fina).
+
+def _runs(fake_apply):
+    d = fake_apply / 'relatorio' / 'runs'
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def test_ler_log_por_origem(fake_apply):
+    runs = _runs(fake_apply)
+    (runs / 'gupy.log').write_text('linha exec 1\n\nlinha exec 2\n', encoding='utf-8')
+    (runs / 'gupy-login.log').write_text('linha login 1\nlinha login 2\n', encoding='utf-8')
+    exec_ = ar.ler_log('gupy', 'execucao', 100)
+    login = ar.ler_log('gupy', 'login', 100)
+    assert exec_['lines'] == ['linha exec 1', 'linha exec 2']
+    assert login['lines'] == ['linha login 1', 'linha login 2']
+    assert login['origem'] == 'login'
+    # bot_log (rota /api/apply/log) continua lendo só a execução
+    assert ar.bot_log('gupy', 100)['lines'] == ['linha exec 1', 'linha exec 2']
+
+
+def test_ler_log_corta_para_lines_e_sem_arquivo_vazio(fake_apply):
+    runs = _runs(fake_apply)
+    (runs / 'gupy.log').write_text('\n'.join(f'linha {i}' for i in range(50)), encoding='utf-8')
+    r = ar.ler_log('gupy', 'execucao', 5)
+    assert r['lines'] == [f'linha {i}' for i in range(45, 50)]
+    assert r['total'] == 5
+    assert ar.ler_log('indeed', 'execucao', 10)['lines'] == []
+    with pytest.raises(ar.ApplyRunError, match='desconhecido'):
+        ar.ler_log('xpto')
+
+
+def test_origem_aguardando_sempre_login(fake_apply):
+    runs = _runs(fake_apply)
+    (runs / 'gupy.log').write_text('exec', encoding='utf-8')
+    (runs / 'gupy-login.log').write_text('login', encoding='utf-8')
+    assert ar.origem_log_ativa('gupy', {'estado': 'aguardando'}) == 'login'
+
+
+def test_origem_ganha_o_mais_recente_por_mtime(fake_apply):
+    runs = _runs(fake_apply)
+    (runs / 'gupy.log').write_text('exec', encoding='utf-8')
+    (runs / 'gupy-login.log').write_text('login', encoding='utf-8')
+    agora = time.time()
+    os.utime(runs / 'gupy.log', (agora, agora))
+    assert ar.origem_log_ativa('gupy', {'estado': 'concluido'}) == 'execucao'
+    os.utime(runs / 'gupy-login.log', (agora + 10, agora + 10))
+    assert ar.origem_log_ativa('gupy', {'estado': 'concluido'}) == 'login'
+
+
+def test_origem_somente_um_logou_quem_existe(fake_apply):
+    runs = _runs(fake_apply)
+    (runs / 'gupy-login.log').write_text('login', encoding='utf-8')
+    assert ar.origem_log_ativa('gupy', {'estado': 'inativo'}) == 'login'
+    # nada no disco → origem padrão 'execucao' (linhas vazias)
+    (runs / 'gupy-login.log').unlink()
+    assert ar.origem_log_ativa('gupy', {'estado': 'inativo'}) == 'execucao'

@@ -22,27 +22,28 @@ export default function ExecutarTab() {
   const [busyLogin, setBusyLogin] = useState<string | null>(null)
   const [busyDeslog, setBusyDeslog] = useState<string | null>(null)
   const preRef = useRef<HTMLPreElement>(null)
-  const anyRunning = !!runs && Object.values(runs).some(r => r.running)
 
   /* um bot começou a rodar e não é o escolhido → o painel de log acompanha
    * o bot em execução. É derivado no render (não setState dentro de effect,
    * que causaria render em cascata). */
   const runningBot = runs ? Object.values(runs).find(r => r.running) : undefined
   const focus = runningBot && !runs?.[focusBot]?.running ? runningBot.bot : focusBot
+  const [logOrigem, setLogOrigem] = useState<'execucao' | 'login'>('execucao')
+  const [backendOff, setBackendOff] = useState(false)
 
   /* poll único e consolidado: /api/apply/state devolve runs + log do bot em
-   * destaque + sessões + logins em 1 request (antes eram 4 intervals, até
-   * 4 HTTP por tick). O diff JSON só atualiza o estado (e o re-render)
-   * quando algo realmente mudou. */
+   * destaque (da origem mais relevante, escolhida no backend) + sessões +
+   * logins em 1 request. O diff JSON só atualiza o estado (e o re-render)
+   * quando algo realmente mudou. Intervalo fixo de 3s: a rota é local e
+   * barata, e o aviso "backend off" exige que o poll continue chegando. */
   const ultimaChaveRef = useRef('')
-  const aguardando = Object.values(logins).some(l => l?.estado === 'aguardando')
   useEffect(() => {
     let vivo = true
     const tick = async () => {
       try {
         const d = await applyFetch<{
           runs: Record<string, BotRun>
-          log: { lines?: string[] } | null
+          log: { lines?: string[]; origem?: 'execucao' | 'login' } | null
           sesoes: BotSessao[] | null
           logins: Record<string, LoginState>
         }>(`/api/apply/state${focus ? `?focus=${focus}` : ''}`)
@@ -50,18 +51,22 @@ export default function ExecutarTab() {
         const chave = JSON.stringify(d)
         if (chave === ultimaChaveRef.current) return
         ultimaChaveRef.current = chave
+        setBackendOff(false)
         setRuns(d.runs)
         setLog(d.log?.lines ?? [])
+        setLogOrigem(d.log?.origem ?? 'execucao')
         setSesoes(d.sesoes ? Object.fromEntries(d.sesoes.map(s => [s.bot, s])) : null)
         setLogins(d.logins ?? {})
       } catch {
-        // backend offline nesse tick — mantém o último estado conhecido
+        // backend fora no tick — mantém o último estado conhecido e avisa:
+        // sem o banner, o painel pareceria vivo com dados fantasma
+        setBackendOff(true)
       }
     }
     tick()
-    const id = setInterval(tick, anyRunning || aguardando ? 3000 : 8000)
+    const id = setInterval(tick, 3000)
     return () => { vivo = false; clearInterval(id) }
-  }, [focus, anyRunning, aguardando])
+  }, [focus])
 
   useEffect(() => {
     if (autoScroll && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
@@ -149,6 +154,11 @@ export default function ExecutarTab() {
             {msg.text}
           </div>
         )}
+        {backendOff && (
+          <div className="mt-3 text-xs rounded-xl px-3 py-2 border border-amber-500/30 bg-amber-500/10 text-amber-300">
+            ⚠ sem conexão com o backend — os status acima podem estar desatualizados
+          </div>
+        )}
         {carregando ? (
           <div className="mt-3 space-y-2">
             {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-16 rounded-xl bg-slate-800/40 animate-pulse" />)}
@@ -166,21 +176,27 @@ export default function ExecutarTab() {
               const ocupadoLogin = busyLogin === name
               const ocupadoDeslog = busyDeslog === name
 
-              /* status da sessão (o que a linha conta sobre "logado") */
+              /* status da sessão (o que a linha conta sobre "logado") —
+               * "login concluído" só vale enquanto a sessão existir: após
+               * Deslogar, tem_sessao é false e a linha volta a contar o
+               * detalhe real da sessão */
+              const loginConcluidoConta = l?.estado === 'concluido' && s?.tem_sessao
               const texto = aguardando
                 ? '⏳ janela do browser aberta — finalize o login nela'
-                : l?.estado === 'concluido'
-                  ? 'login concluído — sessão atualizada'
-                  : l?.estado === 'falhou'
-                    ? `login falhou (código ${l.exit_code ?? '?'})`
-                    : s?.detalhe ?? '…'
+                : l?.estado === 'concluido' && !s?.tem_sessao
+                  ? s?.detalhe ?? '…'
+                  : loginConcluidoConta
+                    ? 'login concluído — sessão atualizada'
+                    : l?.estado === 'falhou'
+                      ? `login falhou (código ${l.exit_code ?? '?'})`
+                      : s?.detalhe ?? '…'
               const cor = l?.estado === 'falhou'
                 ? 'bg-rose-400'
                 : aguardando
                   ? 'bg-amber-400 animate-pulse'
                   : isRunning
                     ? 'bg-emerald-400 animate-pulse'
-                    : (l?.estado === 'concluido' || s?.tem_sessao)
+                    : s?.tem_sessao
                       ? 'bg-emerald-400'
                       : 'bg-slate-600'
 
@@ -268,6 +284,11 @@ export default function ExecutarTab() {
             <span className="text-[13px] font-medium text-slate-400 uppercase tracking-wider">
               Log em tempo real · {nomeDoSite(focus, sesoes)}
             </span>
+            {logOrigem === 'login' && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                login
+              </span>
+            )}
             {runs?.[focus]?.running && (
               <span className="flex items-center gap-1.5 text-[13px] text-emerald-300">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> rodando
@@ -283,7 +304,7 @@ export default function ExecutarTab() {
         <pre ref={preRef}
           className="mt-3 h-[340px] overflow-y-auto rounded-xl bg-slate-950/70 border border-slate-800/70 p-3 text-[13px] leading-relaxed text-slate-300 font-mono whitespace-pre-wrap">
           {log.length === 0
-            ? 'Sem log ainda — inicie o site ou escolha outro na lista acima.'
+            ? 'Sem log ainda — inicie o site ou faça um login para ver o passo a passo.'
             : log.join('\n')}
         </pre>
       </div>
