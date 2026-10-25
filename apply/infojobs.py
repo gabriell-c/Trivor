@@ -1105,33 +1105,14 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
 #  LOG / RELATÓRIO
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _ler_json_candidaturas() -> tuple[list, list]:
-    arquivo = "relatorio/candidaturas.json"
-    if not os.path.exists(arquivo):
-        return [], []
-    with open(arquivo, encoding="utf-8") as f:
-        try:
-            dados = json.load(f)
-        except json.JSONDecodeError:
-            return [], []
-    if isinstance(dados, dict):
-        c  = dados.get("candidaturas", [])
-        jc = dados.get("ja_candidatado", [])
-        return (c if isinstance(c, list) else [], jc if isinstance(jc, list) else [])
-    if isinstance(dados, list):
-        c  = [x for x in dados if isinstance(x, dict)]
-        jc = [x["link"] for x in c if x.get("status") == "enviado" and "link" in x]
-        return c, jc
-    return [], []
-
-
-def links_ja_candidatados() -> set:
-    candidaturas, ja_candidatado = _ler_json_candidaturas()
-    links = set(ja_candidatado)
-    for c in candidaturas:
-        if isinstance(c, dict) and c.get("status") == "enviado" and "link" in c:
-            links.add(c["link"])
-    return links
+# Leitura crua compartilhada (common/relatorio.py) — os nomes locais
+# seguem iguais para os call sites.
+from common.relatorio import (
+    ler_json_candidaturas as _ler_json_candidaturas,
+)
+from common.relatorio import (
+    links_ja_candidatados,
+)
 
 
 def _formatar_respostas_txt(respostas: dict) -> str:

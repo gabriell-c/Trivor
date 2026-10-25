@@ -27,6 +27,12 @@ ignore = [
 # provider_id + campos de negócio); o limite de 5 é regra, não estilo.
 "**/main.py" = ["PLR0913"]
 "**/*_routes.py" = ["PLR0913"]
+# Bots re-importam módulos extraídos via star import (ex.: indeed_regras,
+# indeed_ia, solides_ia) para manter os call sites intactos — o
+# "may be undefined" é falso positivo.
+"apply/indeed.py" = ["F405"]
+"apply/solides.py" = ["F405"]
+"apply/gupy.py" = ["F405"]
 
 [lint.isort]
 known-first-party = ["backend"]
