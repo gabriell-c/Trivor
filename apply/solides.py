@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import os
 import random
+import sys
 import time
 from contextlib import suppress
 from datetime import datetime
@@ -66,17 +67,26 @@ load_dotenv()
 # ═══════════════════════════════════════════════════════════════
 
 with open("config.yaml", encoding="utf-8") as _f:
-    CONFIG: dict = yaml.safe_load(_f)
+    CONFIG: dict = yaml.safe_load(_f) or {}
 
 TZ               = ZoneInfo("America/Sao_Paulo")
+if not CONFIG.get("candidato"):
+    # Sem a seção 'candidato' o bot não sabe em nome de quem aplica —
+    # falha limpa com motivo legível no log, não traceback de import.
+    raise SystemExit("config.yaml sem a seção 'candidato' — edite a aba Perfil do Trivor")
 CANDIDATO        = CONFIG["candidato"]
-DIVERSIDADE      = CONFIG.get("diversidade", {})
-LOCALIZACAO      = CONFIG.get("localizacao", {})
-MAX_POR_DIA      = CONFIG["automacao"]["max_candidaturas_por_dia"]
-DELAY_VAGAS      = CONFIG["automacao"]["delay_entre_vagas"]
-PALAVRAS_CHAVE   = CONFIG["busca"]["palavras_chave"]
-PALAVRAS_EXCLUIR = [p.lower() for p in CONFIG["busca"].get("palavras_excluir", [])]
-TECNOLOGIAS      = CONFIG.get("tecnologias", {})
+DIVERSIDADE      = CONFIG.get("diversidade") or {}
+LOCALIZACAO      = CONFIG.get("localizacao") or {}
+_AUTOMACAO       = CONFIG.get("automacao") or {}
+MAX_POR_DIA      = int(_AUTOMACAO.get("max_candidaturas_por_dia", 10))
+DELAY_VAGAS      = float(_AUTOMACAO.get("delay_entre_vagas", 1.5))
+_BUSCA           = CONFIG.get("busca") or {}
+# .get() com default em todas as seções: config sem um campo não derruba o
+# bot no import com traceback — a falha (se vier) aparece no fluxo, com
+# mensagem legível no log.
+PALAVRAS_CHAVE   = list(_BUSCA.get("palavras_chave") or [])
+PALAVRAS_EXCLUIR = [p.lower() for p in _BUSCA.get("palavras_excluir", [])]
+TECNOLOGIAS      = CONFIG.get("tecnologias") or {}
 
 SESSION_FILE  = Path("solides_session.json")
 RELATORIO_DIR = Path("relatorio")
@@ -343,13 +353,24 @@ def fazer_login(p) -> tuple:
         log_ok("✅ Login concluído! Sessão salva.")
         return context, browser, page
 
-    print("\n" + "═" * 60)
-    print("👆 LOGIN MANUAL NECESSÁRIO:")
-    print("   1. Preencha email e senha no browser aberto")
-    print("   2. Quando logado no portal, pressione ENTER aqui")
-    print("═" * 60)
-    input("   Pressione ENTER após logar... ")
-    page.wait_for_timeout(2000)
+    # Sem TTY (execução vinda do runner do Trivor): input() não existe no
+    # processo filho — POLA a janela aberta por até 50 min (mesmo
+    # mecanismo do loginonly) em vez de travar/quebrar o bot.
+    if sys.stdin and sys.stdin.isatty() and not os.environ.get("TRIVOR_LOGIN_POLL"):
+        print("\n" + "═" * 60)
+        print("👆 LOGIN MANUAL NECESSÁRIO:")
+        print("   1. Preencha email e senha no browser aberto")
+        print("   2. Quando logado no portal, pressione ENTER aqui")
+        print("═" * 60)
+        input("   Pressione ENTER após logar... ")
+        page.wait_for_timeout(2000)
+    else:
+        if not _aguardar_login_manual(page, 50):
+            log_err("⏱️ Login não detectado em 50 min — encerrando")
+            page.close()
+            context.close()
+            browser.close()
+            raise SystemExit(1)
 
     salvar_sessao(context)
     log_ok("Login manual concluído! Sessão salva.")

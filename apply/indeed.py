@@ -81,17 +81,30 @@ from seleniumbase import Driver
 load_dotenv()
 
 with open("config.yaml", encoding="utf-8") as _f:
-    CONFIG: dict = yaml.safe_load(_f)
+    CONFIG: dict = yaml.safe_load(_f) or {}
 
 TZ                = ZoneInfo("America/Sao_Paulo")
+if not CONFIG.get("candidato"):
+    # Sem a seção 'candidato' o bot não sabe em nome de quem aplica —
+    # falha limpa com motivo legível no log, não traceback de import.
+    raise SystemExit("config.yaml sem a seção 'candidato' — edite a aba Perfil do Trivor")
 CANDIDATO         = CONFIG["candidato"]
-DIVERSIDADE       = CONFIG["diversidade"]
-LOCALIZACAO       = CONFIG["localizacao"]
-MAX_POR_DIA       = CONFIG["automacao"]["max_candidaturas_por_dia"]
-DELAY_VAGAS       = CONFIG["automacao"]["delay_entre_vagas"]
-CURRICULO_PDF     = str(Path(CONFIG["resumes"]["fullstack"]).resolve())
-PALAVRAS_CHAVE    = CONFIG["busca"]["palavras_chave"]
-PALAVRAS_EXCLUIR  = [p.lower() for p in CONFIG["busca"]["palavras_excluir"]]
+# .get() com default em todas as seções: config sem um campo não derruba o
+# bot no import com traceback — a falha (se vier) aparece no fluxo, com
+# mensagem legível no log.
+DIVERSIDADE       = CONFIG.get("diversidade") or {}
+LOCALIZACAO       = CONFIG.get("localizacao") or {}
+_AUTOMACAO        = CONFIG.get("automacao") or {}
+MAX_POR_DIA       = int(_AUTOMACAO.get("max_candidaturas_por_dia", 10))
+DELAY_VAGAS       = float(_AUTOMACAO.get("delay_entre_vagas", 1.5))
+_resumes_cfg      = CONFIG.get("resumes") or {}
+_fullstack        = _resumes_cfg.get("fullstack")
+if not _fullstack:
+    raise SystemExit("config.yaml sem 'resumes.fullstack' — o bot precisa do PDF do currículo")
+CURRICULO_PDF     = str(Path(_fullstack).resolve())
+_BUSCA            = CONFIG.get("busca") or {}
+PALAVRAS_CHAVE    = list(_BUSCA.get("palavras_chave") or [])
+PALAVRAS_EXCLUIR  = [p.lower() for p in _BUSCA.get("palavras_excluir", [])]
 SESSION_FILE      = Path("indeed_session.pkl")
 RELATORIO_DIR     = Path("relatorio")
 RELATORIO_DIR.mkdir(exist_ok=True)

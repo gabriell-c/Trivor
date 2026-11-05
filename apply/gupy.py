@@ -27,13 +27,13 @@ VERSÃO v1.1:
 """
 
 import contextlib
-import json
 import os
 import random
 import re
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from common import dryrun, loginonly, pagelens, perfil
@@ -45,6 +45,8 @@ from common.browser import (
     find_adaptive,
     reabrir_aba,
 )
+from common.relatorio import Relatorio
+from common.relatorio import links_ja_candidatados as links_globais
 from dotenv import load_dotenv
 from playwright.sync_api import Page
 
@@ -65,6 +67,8 @@ from gupy_ia import *  # noqa: F403 — camada de IA (roteador Groq/Gemini/Mistr
 # descartado junto com ele. As specs de seletores estáveis também ficam lá.
 SPEC_DIR      = SESSIONS_DIR / "gupy" / "specs"
 RELATORIO_DIR = "relatorio"
+# Fonte única do histórico — escrita atômica + .bak em common.relatorio.
+RELATORIO_GUPY = Relatorio(arquivo=Path(RELATORIO_DIR) / "candidaturas.json", site="Gupy")
 URL_LOGIN     = "https://login.gupy.io/candidates/signin"
 URL_PORTAL    = "https://portal.gupy.io"
 URL_BUSCA     = "https://portal.gupy.io/job-search/term={termo}"
@@ -1209,18 +1213,12 @@ def candidatar_vaga_gupy(page: Page, vaga: dict, config: dict) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def links_ja_candidatados_gupy() -> set:
-    arquivo = f"{RELATORIO_DIR}/candidaturas.json"
-    if not os.path.exists(arquivo):
-        return set()
-    try:
-        with open(arquivo, encoding="utf-8") as f:
-            dados = json.load(f)
-        # Suporta tanto lista plana quanto formato {candidaturas: [...]}
-        if isinstance(dados, dict):
-            dados = dados.get("candidaturas", [])
-        return {c["link"] for c in dados if c.get("site") == "Gupy"}
-    except Exception:
-        return set()
+    """Blacklist global de links já ENVIADOS — fonte única (common.relatorio),
+    com fallback .bak: arquivo corrompido AVISA no log em vez de apagar o
+    histórico (o que deixava os bots re-candidatar vagas já enviadas).
+    Vagas com status 'enviado' só entram; as que erro não barram a próxima
+    tentativa."""
+    return links_globais(f"{RELATORIO_DIR}/candidaturas.json")
 
 
 def _formatar_respostas_txt(respostas: dict) -> str:
@@ -1248,22 +1246,12 @@ def salvar_log(candidatura: dict):
     os.makedirs(RELATORIO_DIR, exist_ok=True)
     hoje         = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d")
     data_hoje    = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
-    arquivo_json = f"{RELATORIO_DIR}/candidaturas.json"
 
-    # ── JSON ──────────────────────────────────────────────────────────────────
-    existentes = []
-    if os.path.exists(arquivo_json):
-        try:
-            with open(arquivo_json, encoding="utf-8") as f:
-                dados = json.load(f)
-            # Suporta ambos os formatos
-            existentes = dados.get("candidaturas", dados) if isinstance(dados, dict) else dados
-        except Exception:
-            existentes = []
-
-    existentes.append(candidatura)
-    with open(arquivo_json, "w", encoding="utf-8") as f:
-        json.dump(existentes, f, ensure_ascii=False, indent=2)
+    # ── JSON (contrato {candidaturas, ja_candidatado} — escrita atômica + .bak)
+    # O gupy não pode mais sobrescrever o arquivo com lista plana: apagar o
+    # campo ja_candidatado quebrava a dedup dos outros bots (infojobs/nerdin).
+    RELATORIO_GUPY.registrar(candidatura)
+    existentes = RELATORIO_GUPY.carregar()["candidaturas"]
 
     # ── TXT diário com append ─────────────────────────────────────────────────
     resumo   = f"{RELATORIO_DIR}/gupy_{hoje}.txt"
@@ -1370,7 +1358,13 @@ def main():
             vagas_unicas.append(v)
 
     max_dia      = config["automacao"].get("max_candidaturas_por_dia", 10)
-    vagas_unicas = vagas_unicas[:max_dia]
+    # A cota diária já conta as vagas enviadas hoje — sem isso, um bot que
+    # rodou mais cedo liberava a cota cheia de novo no mesmo dia.
+    enviadas_hoje = RELATORIO_GUPY.hoje(RELATORIO_GUPY.carregar())
+    restantes     = max(0, max_dia - enviadas_hoje)
+    if enviadas_hoje:
+        print(f"⏳ Gupy já enviou {enviadas_hoje} hoje — cota de {max_dia} deixa {restantes}")
+    vagas_unicas = vagas_unicas[:restantes]
 
     print(f"\n🎯 Vagas novas para candidatar: {len(vagas_unicas)}")
     print("=" * 50)

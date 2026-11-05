@@ -217,10 +217,18 @@ def ia_responder_killer_question_radio(pergunta: str) -> str:
     )
     try:
         r = chamar_llm(prompt, max_tokens=5, temperature=0.0).strip()
-        if "sim" in r.lower() or r.lower().startswith("s"):
-            return "Sim"
-        return "Não"
+        # Só a resposta EM SI decide: ^sim\b não casa com "simplifique",
+        # nem "sei" (a regra antiga startswith("s") virava Sim falso).
+        m = re.match(r"(?i)^\s*(sim|n[ãa]o|no)\b", r)
+        if m:
+            return "Sim" if m.group(1).lower() == "sim" else "Não"
+        log_warn(f"    [killer] resposta do LLM fora do formato ({r[:40]!r}) — regra de dúvida → Sim")
+        return "Sim"
     except Exception:
+        # LLM fora: mesma regra do prompt ("em dúvida → Sim, melhor tentar
+        # que desistir") — agora o fallback fica visível no log em vez de
+        # silencioso.
+        log_warn("    [killer] LLM indisponível na pergunta — regra de dúvida → Sim")
         return "Sim"
 
 
@@ -258,5 +266,9 @@ def ia_responder_killer_question_texto(pergunta: str, contexto_vaga: str = "") -
     try:
         return chamar_llm(prompt, max_tokens=200, temperature=0.4)
     except Exception:
-        return "Tenho disponibilidade imediata e interesse na vaga."
+        # LLM fora: fallback NEUTRO — não fabrica disponibilidade nem
+        # experiência que o candidato não declarou (a resposta antiga
+        # afirmava "disponibilidade imediata" do nada).
+        log_warn("    [killer] LLM indisponível na pergunta aberta — resposta neutra")
+        return "Gostaria de alinhar os detalhes da vaga em entrevista."
 

@@ -20,16 +20,17 @@ VERSÃO v1.1/1.2:
 """
 
 import contextlib
-import json
 import os
 import re
 import time
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
 from common import dryrun, loginonly, pagelens, perfil
 from common import llm as _llm_lib
+from common.browser import aba_morta, reabrir_aba
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
@@ -58,9 +59,15 @@ def carregar_config() -> dict:
 def log(msg: str):
     print(f"  {msg}")
 
+_esperas_cfg: dict | None = None  # delay padrão lido uma vez por run
+
 def esperar(page: Page, segundos: float | None = None):
-    config = carregar_config()
-    s = segundos or config["automacao"]["delay_entre_acoes"]
+    global _esperas_cfg
+    s = segundos
+    if s is None:
+        if _esperas_cfg is None:
+            _esperas_cfg = carregar_config()
+        s = (_esperas_cfg.get("automacao") or {}).get("delay_entre_acoes", 1.5)
     page.wait_for_timeout(int(s * 1000))
 
 
@@ -922,21 +929,27 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
         btn_concluir = page.query_selector("#btnKillerQuestionsAccept")
         if btn_concluir and btn_concluir.is_visible():
             btn_concluir.click()
-            esperar(page, 3)
 
+        # "enviado" exige a tela de confirmação do site — ter clicado no
+        # botão não prova envio (o formulário pode fechar sem enviar). A
+        # tela às vezes demora mais que 3 s fixos: se faz poll por até
+        # 15 s, para não contar "enviado" como "sem confirmação".
         confirmacao = None
-        for seletor in ["div.text-success h3", "h3:has-text('Você se candidatou')"]:
-            try:
-                confirmacao = page.query_selector(seletor)
-                if confirmacao:
-                    break
-            except Exception:
-                pass
+        for _ in range(15):
+            for seletor in ["div.text-success h3", "h3:has-text('Você se candidatou')"]:
+                try:
+                    confirmacao = page.query_selector(seletor)
+                    if confirmacao:
+                        break
+                except Exception:
+                    pass
+            if confirmacao:
+                break
+            page.wait_for_timeout(1000)
 
-        if confirmacao or btn_concluir:
+        if confirmacao:
             log("  ✅ Candidatura enviada!")
             resultado["status"] = "enviado"
-            esperar(page, 1)
             fechar_modal_se_existir(page)
             resultado["carta"] = tentar_enviar_carta(page, vaga["titulo"], descricao, config)
         else:
@@ -978,14 +991,12 @@ def candidatar_vaga_infojobs(page: Page, vaga: dict, config: dict) -> dict:
 #  LOG / RELATÓRIO
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Leitura crua compartilhada (common/relatorio.py) — os nomes locais
-# seguem iguais para os call sites.
-from common.relatorio import (
-    ler_json_candidaturas as _ler_json_candidaturas,
-)
-from common.relatorio import (
-    links_ja_candidatados,
-)
+# Fonte única do histórico (common/relatorio.py): leitor cru da blacklist
+# + escritor (atômico + .bak) — os nomes locais seguem iguais nos call
+# sites, a lógica vive no módulo compartilhado.
+from common.relatorio import Relatorio, links_ja_candidatados
+
+RELATORIO_INFOJOBS = Relatorio(arquivo=Path("relatorio") / "candidaturas.json", site="InfoJobs")
 
 
 def _formatar_respostas_txt(respostas: dict) -> str:
@@ -1019,19 +1030,22 @@ def _formatar_carta_txt(carta: str) -> str:
 def salvar_log(candidaturas_novas: list):
     os.makedirs("relatorio", exist_ok=True)
     hoje         = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d")
-    arquivo_json = "relatorio/candidaturas.json"
 
-    candidaturas_existentes, ja_candidatado_existente = _ler_json_candidaturas()
-    todas_candidaturas = candidaturas_existentes + candidaturas_novas
-
-    links_novos = {c["link"] for c in candidaturas_novas
-                   if isinstance(c, dict) and c.get("status") == "enviado" and "link" in c}
-    ja_candidatado_atualizado = sorted(set(ja_candidatado_existente) | links_novos)
-
-    with open(arquivo_json, "w", encoding="utf-8") as f:
-        json.dump({"candidaturas": todas_candidaturas,
-                   "ja_candidatado": ja_candidatado_atualizado},
-                  f, ensure_ascii=False, indent=2)
+    # ── JSON — contrato {candidaturas, ja_candidatado}, escrita atômica +
+    # .bak (Relatorio): se o arquivo travar na OneDrive, a versão anterior
+    # continua íntegra para os outros bots; a escrita direta antiga podia
+    # deixar o JSON cortado — e JSON cortado zerava a dedup global.
+    rel = RELATORIO_INFOJOBS.carregar()
+    for c in candidaturas_novas:
+        if not isinstance(c, dict):
+            continue
+        rel["candidaturas"].append(c)
+        if c.get("status") == "enviado" and c.get("link"):
+            if c["link"] not in rel["ja_candidatado"]:
+                rel["ja_candidatado"].append(c["link"])
+    RELATORIO_INFOJOBS.salvar(rel)
+    todas_candidaturas      = rel["candidaturas"]
+    ja_candidatado_atualizado = rel["ja_candidatado"]
 
     resumo   = f"relatorio/infojobs_{hoje}.txt"
     enviadas = [c for c in candidaturas_novas if c["status"] == "enviado"]
@@ -1089,7 +1103,7 @@ def main():
     cdp_port = int(config.get("automacao", {}).get("cdp_port", 9333))
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=config["automacao"]["headless"],
+            headless=(config.get("automacao") or {}).get("headless", False),
             args=[f"--remote-debugging-port={cdp_port}"],
         )
         # Leitor estrutural (crawl4ai anexa nesta porta e lê a página viva)
@@ -1117,7 +1131,16 @@ def main():
 
         vagas       = buscar_vagas_infojobs(page, config)
         vagas_novas = [v for v in vagas if v["link"] not in ja_candidatados]
-        vagas_novas = vagas_novas[:config["automacao"]["max_candidaturas_por_dia"]]
+
+        # Cota diária já desconta as vagas enviadas hoje — antes, um bot que
+        # rodou mais cedo no dia reabria a cota inteira.
+        automacao     = config.get("automacao") or {}
+        max_dia       = int(automacao.get("max_candidaturas_por_dia", 10))
+        enviadas_hoje = RELATORIO_INFOJOBS.hoje(RELATORIO_INFOJOBS.carregar())
+        restantes     = max(0, max_dia - enviadas_hoje)
+        if enviadas_hoje:
+            print(f"⏳ InfoJobs já enviou {enviadas_hoje} hoje — cota de {max_dia} deixa {restantes}")
+        vagas_novas = vagas_novas[:restantes]
 
         print(f"\n🎯 Vagas para candidatar: {len(vagas_novas)}")
         print("=" * 50)
@@ -1125,6 +1148,12 @@ def main():
         candidaturas = []
         try:
             for i, vaga in enumerate(vagas_novas, 1):
+                # Tab cravou (anti-bot do site): o browser segue vivo, só a
+                # página morreu — reabre no mesmo contexto (o login persiste)
+                # e continua: cada vaga navega pelo próprio link.
+                if aba_morta(page):
+                    print(f"⚠️ Tab travou — reabrendo e seguindo pela vaga {i}")
+                    page = reabrir_aba(page)
                 print(f"\n[{i}/{len(vagas_novas)}]")
                 resultado = candidatar_vaga_infojobs(page, vaga, config)
                 if dryrun.ativo():
@@ -1135,7 +1164,7 @@ def main():
                     continue
                 candidaturas.append(resultado)
                 salvar_log([resultado])
-                time.sleep(config["automacao"]["delay_entre_vagas"])
+                time.sleep((config.get("automacao") or {}).get("delay_entre_vagas", 1.5))
         finally:
             browser.close()
 

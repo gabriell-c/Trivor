@@ -7,12 +7,22 @@ Entrada: {vaga, link, local, site, status, data (dd/mm/aaaa), horario, curriculo
 Cada bot instancia um Relatorio com o próprio caminho/site/fuso e expõe
 wrappers locais dos 4 métodos — a lógica vive aqui (1 vez), os nomes no
 escopo do bot seguem iguais para os chamadores.
+
+Robustez (dedup global depende disso):
+- escrita ATÔMICA (.tmp + os.replace): crash no meio da gravação não deixa
+  o JSON truncado;
+- cópia .bak do último bom: arquivo corrompido (sync travado na OneDrive)
+  cai no backup em vez de "histórico vazio" — histórico vazio faz os bots
+  RE-CANDIDATAR vagas já enviadas;
+- toda falha de leitura IMPRIME aviso no log do bot (stderr) — nunca em
+  silêncio.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-from contextlib import suppress
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +32,14 @@ from zoneinfo import ZoneInfo
 RELATORIO_PADRAO = Path("relatorio") / "candidaturas.json"
 _TZ_PADRAO = ZoneInfo("America/Sao_Paulo")
 
+def _vazio() -> dict:
+    return {"candidaturas": [], "ja_candidatado": []}
+
+
+def _aviso(msg: str) -> None:
+    """Avisos de integridade vão para o log do bot (stderr → arquivo do runner)."""
+    print(f"[relatorio] {msg}", file=sys.stderr)
+
 
 @dataclass(frozen=True)
 class Relatorio:
@@ -29,24 +47,64 @@ class Relatorio:
     site: str = ""
     tz: ZoneInfo = _TZ_PADRAO
 
+    @property
+    def _bak(self) -> Path:
+        return self.arquivo.parent / (self.arquivo.name + ".bak")
+
+    @property
+    def _tmp(self) -> Path:
+        return self.arquivo.parent / (self.arquivo.name + ".tmp")
+
     def carregar(self) -> dict:
-        with suppress(Exception):
-            if self.arquivo.exists():
-                data = json.loads(self.arquivo.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    return {
-                        "candidaturas": data,
-                        "ja_candidatado": [
-                            c.get("link", "") for c in data if c.get("status") == "enviado"
-                        ],
-                    }
-                return data
-        return {"candidaturas": [], "ja_candidatado": []}
+        if not self.arquivo.exists():
+            return _vazio()
+        data = self._ler(self.arquivo)
+        if data is None:
+            # Falha no arquivo atual → última boa cópia (proteção contra
+            # sync truncado/corrompido). Histórico vazio significa
+            # re-candidatar vagas já enviadas — o backup é o freio.
+            _aviso(f"falha ao ler {self.arquivo} — tentando backup .bak")
+            data = self._ler(self._bak)
+            if data is None:
+                _aviso("SEM backup utilizável — recomeçando com histórico vazio (risco de re-candidatar)")
+                return _vazio()
+        if isinstance(data, list):
+            # formato legado do gupy (lista plana) — ressintetiza a blacklist
+            return {
+                "candidaturas": [c for c in data if isinstance(c, dict)],
+                "ja_candidatado": [
+                    c.get("link", "") for c in data
+                    if isinstance(c, dict) and c.get("status") == "enviado"
+                ],
+            }
+        data.setdefault("candidaturas", [])
+        data.setdefault("ja_candidatado", [])
+        return data
+
+    def _ler(self, caminho: Path) -> dict | list | None:
+        try:
+            return json.loads(caminho.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def salvar(self, rel: dict) -> None:
-        self.arquivo.write_text(
-            json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self.arquivo.parent.mkdir(parents=True, exist_ok=True)
+        texto = json.dumps(rel, ensure_ascii=False, indent=2)
+        # Escrita atômica: .tmp + os.replace (atômico no NTFS). A escrita
+        # direta antiga deixava o JSON cortado se o processo caísse no meio.
+        try:
+            self._tmp.write_text(texto, encoding="utf-8")
+            os.replace(self._tmp, self.arquivo)
+        except OSError as exc:
+            # O alvo pode estar travado pela OneDrive — o arquivo anterior
+            # continua íntegro; o erro sobe para o chamador decidir.
+            _aviso(f"falha ao salvar {self.arquivo}: {exc}")
+            raise
+        with contextlib.suppress(OSError):
+            # backup é insurance; o arquivo principal já foi gravado
+            self._bak.write_text(texto, encoding="utf-8")
 
     def registrar(self, entry: dict) -> None:
         rel = self.carregar()
@@ -62,7 +120,7 @@ class Relatorio:
         hoje = datetime.now(self.tz).strftime("%d/%m/%Y")
         return sum(
             1 for c in rel["candidaturas"]
-            if c.get("site") == self.site
+            if isinstance(c, dict) and c.get("site") == self.site
             and c.get("status") == "enviado"
             and c.get("data") == hoje
         )
@@ -75,15 +133,28 @@ class Relatorio:
 # e dict {"candidaturas", "ja_candidatado"} (escrito por Relatorio/salvar_log).
 # ---------------------------------------------------------------------------
 
+def _ler_caminho(caminho: str):
+    if not os.path.exists(caminho):
+        return None
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def ler_json_candidaturas(arquivo: str = "relatorio/candidaturas.json") -> tuple[list, list]:
-    """Retorna (candidaturas, ja_candidatado); vazio se arquivo inexistente/inválido."""
-    if not os.path.exists(arquivo):
-        return [], []
-    with open(arquivo, encoding="utf-8") as f:
-        try:
-            dados = json.load(f)
-        except json.JSONDecodeError:
-            return [], []
+    """Retorna (candidaturas, ja_candidatado); vazio se arquivo inexistente.
+
+    Arquivo corrompido → AVISO no log + fallback para o .bak do Relatorio
+    (escrita atômica mantém o .bak íntegro) — histórico vazio silencioso é
+    o que faz os bots RE-CANDIDATAR vagas já enviadas."""
+    dados = _ler_caminho(arquivo)
+    if dados is None and os.path.exists(arquivo):
+        _aviso(f"falha ao ler {arquivo} — tentando backup .bak")
+        dados = _ler_caminho(arquivo + ".bak")
+        if dados is None:
+            _aviso("sem backup utilizável — dedup vazio (risco de re-candidatar)")
     if isinstance(dados, dict):
         c  = dados.get("candidaturas", [])
         jc = dados.get("ja_candidatado", [])
