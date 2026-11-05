@@ -142,18 +142,22 @@ async def analyze_linkedin(
         try:
             data = json.loads(cleaned_content)
         except Exception:
-            data = {
-                "nota": 6.0,
-                "resumo_executivo": cleaned_content,
-                "pontos_fortes": ["Conteúdo extraído com sucesso"],
-                "diagnostico_por_secao": {},
-                "analise_ats": {
-                    "score_ats": 5.0,
-                    "palavras_chave_faltantes": [],
-                    "gargalos_formatacao": [],
-                    "veredito_robos": cleaned_content
-                }
-            }
+            # LLM não devolveu JSON interpretável: sem dict fantasma com nota
+            # 6.0/"extraído com sucesso" — 502 estático, detalhe só nos logs.
+            logger.exception("[LINKEDIN] falha ao interpretar o JSON da resposta da IA")
+            return error_response(
+                code="ANALYSIS_PARSE_ERROR",
+                message="Não foi possível interpretar a análise da IA. Tente novamente.",
+                status_code=502,
+            )
+        if not isinstance(data, dict):
+            # JSON válido mas não objeto (ex.: número/texto solto) — mesmo tratamento
+            logger.error(f"[LINKEDIN] resposta da IA não é um objeto JSON (type={type(data).__name__})")
+            return error_response(
+                code="ANALYSIS_PARSE_ERROR",
+                message="Não foi possível interpretar a análise da IA. Tente novamente.",
+                status_code=502,
+            )
 
         if hasattr(comp, 'usage') and comp.usage:
             data['uso_tokens'] = {
@@ -178,7 +182,10 @@ async def analyze_linkedin(
 
         return data
 
-    except Exception as e:
+    except Exception:
+        # Detalhe/stacktrace vão só para os logs — details nunca carrega a
+        # exceção crua para o cliente (contrato: envelope de erro estático).
+        logger.exception("[LINKEDIN] erro na análise do perfil")
         log_request(
             endpoint="/api/linkedin/analyze",
             method="POST",
@@ -190,6 +197,5 @@ async def analyze_linkedin(
         return error_response(
             code="ANALYSIS_ERROR",
             message="Erro na análise do LinkedIn",
-            details={"error": str(e)},
             status_code=500
         )

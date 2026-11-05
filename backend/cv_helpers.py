@@ -18,27 +18,29 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 from app_log import get_app_logger
-from docling.document_converter import DocumentConverter
 from fastapi import HTTPException
-from llm_core import _LLM_TIMEOUT, _get_provider_for_tool
+from llm_core import _LLM_TIMEOUT, _find_provider_by_id, _get_provider_for_tool
 from openai import OpenAI
 
 logger = get_app_logger(__name__)
 
 _md_cache: dict[str, str] = {}
-_ALLOWED_EXTS = {'.pdf', '.docx', '.doc', '.txt'}
+# L11: .doc (binário legacy) exige LibreOffice/docling e dava RuntimeError
+# crua → fora da lista; as mensagens de 400 usam _SUPPORTED_EXTS_MSG,
+# que é gerado desta lista (se um dia .doc voltar, é só reconstruir).
+_ALLOWED_EXTS = {'.pdf', '.docx', '.txt'}
 _MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def _format_exts(exts: set[str]) -> str:
-    """Monta a lista de extensões em PT-BR ('.doc, .docx, .pdf ou .txt') a partir do set."""
+    """Monta a lista de extensões em PT-BR ('.docx, .pdf ou .txt') a partir do set."""
     ordered = sorted(exts)
     if len(ordered) <= 1:
         return ordered[0] if ordered else ""
     return ", ".join(ordered[:-1]) + " ou " + ordered[-1]
 
 
-# Fonte única da lista de extensões permitidas (inclui .doc) para TODAS as mensagens 400
+# Fonte única da lista de extensões permitidas para TODAS as mensagens 400
 _SUPPORTED_EXTS_MSG = _format_exts(_ALLOWED_EXTS)
 
 def _extract_pdf_text_pymupdf(pdf_path: str) -> str:
@@ -338,30 +340,46 @@ def _detect_abbreviations(text: str) -> list[dict]:
 
 
 def _check_chronological_order(text: str) -> dict:
-    """Verifica se experiências estão em ordem cronológica reversa."""
-    # Extrair padrões de datas
-    date_patterns = [
+    """Verifica se experiências estão em ordem cronológica reversa.
+
+    Compara APENAS o ano de INÍCIO de cada período, em ordem de aparição.
+    Linhas com faixa ("2024-2026", "mar. de 2024 - dez. de 2026") viram
+    UM período — datas sobrepostas ou adjacentes (separadas por "-"/"a")
+    são mescladas, de modo que o fim da faixa não entra na sequência.
+    Antes cada padrão de regex alimentava a lista em série, então
+    "2024-2026" gerava [2024, 2026] e qualquer CV com datas em faixa
+    vira flag de "fora de ordem" mesmo em ordem correta.
+    """
+    date_patterns = (
         r'(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s+de\s+\d{4}',
-        r'\d{4}\s*[-–]\s*\d{4}',
-        r'(?:20\d{2}|19\d{2})\s*[-–]\s*(?:20\d{2}|19\d{2}|presente|atual)',
-    ]
+        r'\d{4}\s*[-–]\s*(?:\d{4}|presente|atual)',
+    )
+    year_re = re.compile(r'(?:20\d{2}|19\d{2})')
 
-    dates = []
-    for pattern in date_patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        dates.extend(matches)
+    seq: list[int] = []  # anos de início, em ordem de aparição no documento
+    for linha in text.splitlines():
+        cands: list[list[int]] = []  # [start, end, ano_inicio]
+        for pattern in date_patterns:
+            for m in re.finditer(pattern, linha, re.IGNORECASE):
+                anos = year_re.findall(m.group(0))
+                if anos:
+                    cands.append([m.start(), m.end(), int(anos[0])])
+        cands.sort(key=lambda c: c[0])
+        # Mescla datas do MESMO período: sobrepostas ou separadas por até
+        # 3 chars ("- ", " – ", " a")
+        periodos: list[list[int]] = []
+        for s, e, ano in cands:
+            if periodos and s - periodos[-1][1] <= 3:
+                periodos[-1][1] = max(periodos[-1][1], e)
+            else:
+                periodos.append([s, e, ano])
+        seq.extend(p[2] for p in periodos)
 
-    # Extrair anos das datas
-    years = []
-    for d in dates:
-        year_matches = re.findall(r'20\d{2}|19\d{2}', d)
-        years.extend(year_matches)
-
-    if len(years) < 2:
+    if len(seq) < 2:
         return {"cronologica": True, "problema": None}  # Poucas datas, não avaliar
 
-    # Verificar se está em ordem decrescente
-    is_reverse = all(int(years[i]) >= int(years[i+1]) for i in range(len(years)-1))
+    # Verificar se está em ordem decrescente (mais recente primeiro)
+    is_reverse = all(seq[i] >= seq[i+1] for i in range(len(seq) - 1))
 
     if is_reverse:
         return {"cronologica": True, "problema": None}
@@ -434,19 +452,36 @@ _STOPWORDS_PT = {
     'empresa', 'empresas', 'equipe', 'equipes', 'projeto', 'projetos',
     'sistema', 'sistemas', 'responsavel', 'responsável', 'gerencia', 'gerência',
     'pessoas', 'cliente', 'clientes', 'resultados', 'resultado',
+    # palavras de tempo/duração: '3 anos de experiência com X' não pode ser
+    # satisfeito por 'anos' (L10)
+    'ano', 'anos', 'mes', 'meses', 'dia', 'dias', 'tempo', 'periodo', 'durante',
 }
+
+# L10: token puramente numérico (com ou sem fração sufixo +): não é skill
+_RE_NUMERO_TERM = re.compile(r'^\d+(?:[.,]\d+)?\+?$')
 
 
 def _term_in_text(term: str, cv_norm: str) -> bool:
-    """Retorna True se o termo (ou todas as palavras relevantes dele) aparece no CV normalizado."""
+    """Retorna True se o termo (ou todas as palavras relevantes dele) aparece no CV normalizado.
+
+    L10: antes do all(), remove stopwords PT e palavras numéricas/de tempo;
+    sem nenhuma palavra relevante restante o requisito é INAVALIÁVEL (não
+    conta como coberto) — antes, '3 anos de experiência com X' passava só
+    porque 'anos' estava no CV."""
     norm = _norm_text(term)
     if not norm:
         return False
     if norm in cv_norm:
         return True
-    # Termo composto: cobre se TODAS as palavras relevantes (>3 letras) aparecerem no CV
-    words = [w for w in norm.split() if len(w) > 3]
-    return bool(words) and all(w in cv_norm for w in words)
+    # Termo composto: cobre se TODAS as palavras relevantes aparecerem no CV.
+    # Relevantes = >3 letras, fora do stopword set e não número.
+    palavras = [
+        w for w in norm.split()
+        if len(w) > 3 and w not in _STOPWORDS_PT and not _RE_NUMERO_TERM.match(w)
+    ]
+    if not palavras:
+        return False
+    return all(w in cv_norm for w in palavras)
 
 
 def _dedupe_keep_order(items: list) -> list:
@@ -560,10 +595,21 @@ def _extract_cv_text(temp_path: str, ext: str) -> tuple:
             fallback_used = True
             logger.info(f"[CV] pdfplumber: {len(markdown_text)} chars")
     else:
-        converter = DocumentConverter()
-        conversion_result = converter.convert(temp_path)
-        markdown_text = conversion_result.document.export_to_markdown()
-        extractor_used = "docling"
+        # docx/txt via docling. Import tardio: docling é pesado e só o
+        # requirements completo o traz — a API headless fica sem ele e
+        # este branch devolve texto vazio (a rota levanta 400 claro) em
+        # vez de 500 crua no import do módulo.
+        try:
+            from docling.document_converter import DocumentConverter
+            converter = DocumentConverter()
+            conversion_result = converter.convert(temp_path)
+            markdown_text = conversion_result.document.export_to_markdown()
+            extractor_used = "docling"
+        except Exception as exc:
+            logger.warning(f"[CV] docling indisponível ou falhou ({exc.__class__.__name__}): {exc}")
+            markdown_text = ""
+            extractor_used = "docling"
+            fallback_used = True
 
     if not markdown_text or not markdown_text.strip():
         logger.warning("[CV] Todos os extratores falharam!")
@@ -979,9 +1025,26 @@ def _montar_checklist_guia(temp_path: str, ext: str, filename: str,
 
 
 def _resolver_credenciais_llm(api_key: str | None, api_url: str | None,
-                              model_name: str | None) -> tuple[str, OpenAI, str]:
+                              model_name: str | None,
+                              provider_id: str | None = None) -> tuple[str, OpenAI, str]:
     """Chave do form, senão a do provedor 'curriculo' salvo na config;
-    sem chave nenhuma → HTTP 400. Devolve (key, client pronto, selected_model)."""
+    sem chave nenhuma → HTTP 400. Devolve (key, client pronto, selected_model).
+
+    L7: provider_id (quando vem do form) é usado EXATAMENTE — inexistente
+    → 404; não habilitado para a ferramenta → 400. O fallback implícito
+    para outro provider nunca mais tapa a escolha do usuário."""
+    if provider_id:
+        prov = _find_provider_by_id(provider_id)
+        if prov is None:
+            raise HTTPException(status_code=404, detail="Provider não encontrado.")
+        if prov.get('usedFor') in ('none', 'market'):
+            raise HTTPException(status_code=400, detail="Este provider não está habilitado para esta ferramenta.")
+        if not prov.get('apiKey'):
+            raise HTTPException(status_code=400, detail="O provider selecionado não tem chave de API configurada.")
+        api_key = prov['apiKey']
+        api_url = prov.get('apiUrl') or api_url
+        model_name = prov.get('modelName') or model_name
+
     key = api_key or os.getenv("OPENAI_API_KEY", "")
     if not key or key.strip() == "":
         prov = _get_provider_for_tool('curriculo')

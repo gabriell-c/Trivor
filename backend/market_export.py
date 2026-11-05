@@ -1,7 +1,17 @@
 """Market intelligence export functions - MD, PDF, DOCX"""
 
+import html
 from datetime import datetime
 from io import BytesIO
+
+
+def _esc(valor) -> str:
+    """Escapa valor de dados para XML-ish do reportlab (L12).
+
+    reportlab Paragraph trata o texto como mini-XML: um '&' solto
+    (ex.: skill 'C&B') quebra o parser (ExpatError). Escapa sempre o
+    DADO; as tags <b>/… intencionais montadas ao redor não passam por aqui."""
+    return html.escape(str(valor)) if valor is not None else ""
 
 
 def _median_display(stats: dict) -> str:
@@ -583,7 +593,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     if stats.get("required_technologies"):
         elements.append(Paragraph("Tecnologias Obrigatórias", section_style))
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Tecnologia", "Ocorrências", "%"]]
-        data = [[Paragraph(t["name"], body_style),
+        data = [[Paragraph(_esc(t["name"]), body_style),
                  Paragraph(str(t["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{t['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for t in stats["required_technologies"][:20]]
@@ -597,7 +607,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     if stats.get("desirable_technologies"):
         elements.append(Paragraph("Tecnologias Desejáveis", section_style))
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Tecnologia", "Ocorrências", "%"]]
-        data = [[Paragraph(t["name"], body_style),
+        data = [[Paragraph(_esc(t["name"]), body_style),
                  Paragraph(str(t["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{t['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for t in stats["desirable_technologies"][:15]]
@@ -625,7 +635,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     if stats.get("modalities"):
         elements.append(Paragraph("Modalidades", section_style))
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Modalidade", "Vagas", "%"]]
-        data = [[Paragraph(m["name"], body_style),
+        data = [[Paragraph(_esc(m["name"]), body_style),
                  Paragraph(str(m["count"]), ParagraphStyle('n', alignment=1)),
                  Paragraph(f"{m['percentage']}%", ParagraphStyle('p', alignment=1))]
                 for m in stats["modalities"]]
@@ -640,7 +650,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     if stats.get("top_soft_skills"):
         elements.append(Paragraph("Soft Skills mais pedidas", section_style))
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Skill", "Ocorrências"]]
-        data = [[Paragraph(sk["name"], body_style),
+        data = [[Paragraph(_esc(sk["name"]), body_style),
                  Paragraph(str(sk["count"]), ParagraphStyle('n', alignment=1))]
                 for sk in stats["top_soft_skills"][:15]]
         rows = [header, *data]
@@ -654,7 +664,7 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
     if stats.get("top_certifications"):
         elements.append(Paragraph("Certificações mais pedidas", section_style))
         header = [Paragraph(h, ParagraphStyle('h', fontName=bold_font, fontSize=7.5, textColor=colors.white)) for h in ["Certificação", "Ocorrências"]]
-        data = [[Paragraph(c["name"], body_style),
+        data = [[Paragraph(_esc(c["name"]), body_style),
                  Paragraph(str(c["count"]), ParagraphStyle('n', alignment=1))]
                 for c in stats["top_certifications"][:10]]
         rows = [header, *data]
@@ -683,30 +693,32 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
                 spaceAfter=2,
             )
             job_elements.append(Paragraph(
-                f"{i}. {job.get('title', 'N/A')} — {job.get('company', 'N/A')}",
+                f"{i}. {_esc(job.get('title', 'N/A'))} — {_esc(job.get('company', 'N/A'))}",
                 job_title_style
             ))
 
             # Meta info
-            info_text = f"Local: {job.get('location', 'N/A')}  |  Modalidade: {job.get('modality', 'N/A')}  |  Fonte: {job.get('source', 'N/A')}"
+            info_text = (f"Local: {_esc(job.get('location', 'N/A'))}  |  "
+                        f"Modalidade: {_esc(job.get('modality', 'N/A'))}  |  "
+                        f"Fonte: {_esc(job.get('source', 'N/A'))}")
             job_elements.append(Paragraph(info_text, meta_style))
 
             # Requirements
             reqs = job.get("requirements", [])
             if reqs:
-                job_elements.append(Paragraph("<b>Req. técnicas:</b> " + ", ".join(reqs), body_style))
+                job_elements.append(Paragraph("<b>Req. técnicas:</b> " + ", ".join(_esc(r) for r in reqs), body_style))
 
             nice = job.get("nice_to_have", [])
             if nice:
-                job_elements.append(Paragraph("<b>Nice-to-have:</b> " + ", ".join(nice), body_style))
+                job_elements.append(Paragraph("<b>Nice-to-have:</b> " + ", ".join(_esc(n) for n in nice), body_style))
 
             soft = job.get("soft_skills", [])
             if soft:
-                job_elements.append(Paragraph("<b>Soft skills:</b> " + ", ".join(soft), body_style))
+                job_elements.append(Paragraph("<b>Soft skills:</b> " + ", ".join(_esc(s) for s in soft), body_style))
 
             certs = job.get("certifications", [])
             if certs:
-                job_elements.append(Paragraph("<b>Certificações:</b> " + ", ".join(certs), body_style))
+                job_elements.append(Paragraph("<b>Certificações:</b> " + ", ".join(_esc(c) for c in certs), body_style))
 
             salary_min = job.get("salary_min")
             salary_max = job.get("salary_max")
@@ -717,11 +729,11 @@ def generate_market_pdf_export(report: dict, job_title: str, seniority: str, loc
                     parent=body_style,
                     textColor=colors.HexColor('#059669'),
                 )
-                job_elements.append(Paragraph(f"<b>Salário:</b> {currency or 'R$'} {salary_min} — {salary_max}", sal_style))
+                job_elements.append(Paragraph(f"<b>Salário:</b> {_esc(currency or 'R$')} {_esc(salary_min)} — {_esc(salary_max)}", sal_style))
 
             level = job.get("role_level")
             if level:
-                job_elements.append(Paragraph(f"<b>Nível:</b> {level}", body_style))
+                job_elements.append(Paragraph(f"<b>Nível:</b> {_esc(level)}", body_style))
 
             # Spacer after each job
             job_elements.append(Spacer(1, 3))

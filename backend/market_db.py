@@ -194,24 +194,40 @@ def _mask_jsearch_key(key: str) -> str:
     return f"…{key[-4:]}"
 
 
-def _update_jsearch_usage(db_file: Path, key: str, remaining: int):
-    """Atualiza o rate limit remaining de uma chave JSearch no DB.
+def _update_jsearch_usage(db_file: Path, key: str, remaining: int, limit: int | None = None):
+    """Atualiza o rate limit de uma chave JSearch no DB.
     Persiste SOMENTE hash/prefixo + uso — nunca o texto puro da chave.
-    Chamado depois do fetch: falha aqui não pode derrubar a análise, então loga e segue."""
+    Chamado depois do fetch: falha aqui não pode derrubar a análise, então loga e segue.
+
+    `limit` (quando presente) é o rate_limit_total real do header da resposta;
+    sem ele, mantemos o total conhecido na linha atual — só uma linha nova
+    assume o default de 200 (antes o upsert sobrescrevia o total para 200,
+    apagando o valor real lido da API)."""
     try:
         key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
         # Prefixo é apenas um preview mascarado — para chaves curtas, só o sufixo
         key_prefix = (key[:8] + "…" + key[-4:]) if len(key) > 12 else _mask_jsearch_key(key)
         conn = _connect_market_db(db_file)
         try:
-            conn.execute('''
-                INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
-                VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, 'ok', '')
-                ON CONFLICT(key_hash) DO UPDATE SET
-                    key_prefix = excluded.key_prefix,
-                    last_tested = CURRENT_TIMESTAMP,
-                    rate_limit_remaining = excluded.rate_limit_remaining
-            ''', (key_hash, key_prefix, 200, remaining))
+            if limit:
+                conn.execute('''
+                    INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, 'ok', '')
+                    ON CONFLICT(key_hash) DO UPDATE SET
+                        key_prefix = excluded.key_prefix,
+                        last_tested = CURRENT_TIMESTAMP,
+                        rate_limit_total = excluded.rate_limit_total,
+                        rate_limit_remaining = excluded.rate_limit_remaining
+                ''', (key_hash, key_prefix, limit, remaining))
+            else:
+                conn.execute('''
+                    INSERT INTO jsearch_keys (key_hash, key_prefix, last_tested, rate_limit_total, rate_limit_remaining, status, last_error)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, 200, ?, 'ok', '')
+                    ON CONFLICT(key_hash) DO UPDATE SET
+                        key_prefix = excluded.key_prefix,
+                        last_tested = CURRENT_TIMESTAMP,
+                        rate_limit_remaining = excluded.rate_limit_remaining
+                ''', (key_hash, key_prefix, remaining))
             conn.commit()
         finally:
             conn.close()

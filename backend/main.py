@@ -228,4 +228,11 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, graceful_shutdown)
     signal.signal(signal.SIGINT, graceful_shutdown)
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Default: só localhost. 0.0.0.0 (rede local) exige opt-in explícito —
+    # sem TRIVOR_ALLOW_LAN, a API nunca fica visível fora da máquina.
+    host = "127.0.0.1"
+    if os.environ.get("TRIVOR_ALLOW_LAN") == "1":
+        host = "0.0.0.0"
+        logger.warning("[MAIN] TRIVOR_ALLOW_LAN=1 — backend exposto em 0.0.0.0 (acessível na rede local).")
+
+    uvicorn.run(app, host=host, port=8000)

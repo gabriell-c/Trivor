@@ -95,10 +95,17 @@ async def analyze_cv(
             with os.fdopen(temp_fd, 'wb') as f:
                 f.write(content)
 
-            # Extrair texto com fallback chain (helper reutilizado pelo /api/market/cv-fit)
+            # Extrair texto com fallback chain (helper reutilizado pelo /api/market/cv-fit).
+            # Falha total de extração NÃO segue para o LLM: o sentinela antigo
+            # ("Erro ao extrair texto do documento.") alimentava 2 chamadas de
+            # análise inventada — agora é 400 direto (o fit_com_vaga de :218
+            # continua tratando o sentinela por defensividade).
             markdown_text, extractor_used, _ = await run_in_threadpool(_extract_cv_text, temp_path, ext)
-            if not markdown_text:
-                markdown_text = "Erro ao extrair texto do documento."
+            if not markdown_text or not markdown_text.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Não foi possível extrair texto do arquivo. Tente outro PDF ou um .docx.",
+                )
 
             # Cache de markdown — chaveada pelo CONTEÚDO do texto:
             # o nome do mkstemp é único por request, então chave por path nunca acertaria.
@@ -130,8 +137,9 @@ async def analyze_cv(
             checklist_validacao = _montar_checklist_guia(
                 temp_path, ext, cv_file.filename or "", markdown_text, links_info, logger)
 
-            # Configurar cliente LLM (chave do form → provedor 'curriculo' salvo → env)
-            key, client, selected_model = _resolver_credenciais_llm(api_key, api_url, model_name)
+            # Configurar cliente LLM (provider_id exato → chave do form →
+            # provider 'curriculo' salvo → env)
+            key, client, selected_model = _resolver_credenciais_llm(api_key, api_url, model_name, provider_id)
 
             # Carregar prompts — análise em 2 passes (estrutura → qualidade).
             # O prompt monolítico cv_analysis_prompt.md continua em knowledge/
@@ -221,11 +229,10 @@ async def analyze_cv(
             analysis['_extractor_used'] = extractor_used
             analysis['_links'] = [link['url'] for link in links_info]
 
-            # Salvar log com texto extraído e prompt
+            # Salvar log com texto extraído e prompt — a sanitização anti-PII
+            # (hash + resumo) acontece na escrita em logging_service.log_request.
             llm_prompt = (f"SYSTEM (passo 1):\n{sys_prompt_estrut}\n\nUSER (passo 1):\n{user_content_estrut}\n\n"
                           f"SYSTEM (passo 2):\n{sys_prompt_qual}\n\nUSER (passo 2):\n{user_content_qual}")
-            extracted_truncated = markdown_text[:5000] if markdown_text else ""
-            prompt_truncated = llm_prompt[:8000] if llm_prompt else ""
             response_summary_json = json.dumps(analysis, ensure_ascii=False)
             log_request(
                 endpoint="/api/cv/analyze",
@@ -235,8 +242,8 @@ async def analyze_cv(
                 model=selected_model,
                 api_key_preview=_mask_key_preview(key),
                 response_summary=response_summary_json,
-                extracted_text=extracted_truncated,
-                llm_prompt=prompt_truncated,
+                extracted_text=markdown_text,
+                llm_prompt=llm_prompt,
             )
 
             return JSONResponse(content=analysis)
@@ -247,9 +254,11 @@ async def analyze_cv(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[CV] Erro: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao processar o currículo: {e!s}")
+    except Exception:
+        # Detalhe/stacktrace vão só para os logs — o cliente recebe mensagem
+        # genérica (nunca exceção crua ou conteúdo do CV).
+        logger.exception("[CV] Erro ao processar o currículo")
+        raise HTTPException(status_code=500, detail="Erro ao processar o currículo. Tente novamente.")
 
 
 # ---------------------------------------------------------------------------
@@ -708,7 +717,7 @@ Compare os dois textos seguindo rigorosamente o prompt de sistema e retorne o JS
                 {"requisitos": len(reqs_list), "sugestoes": len(sugg_list)},
                 ensure_ascii=False,
             ),
-            extracted_text=(cv_text[:5000] if cv_text else ""),
+            extracted_text=cv_text,
         )
 
         result: dict = {"analise": fit, "extractor_used": extractor_used}
@@ -847,7 +856,7 @@ Execute a simulação seguindo rigorosamente o prompt de sistema e retorne o JSO
                 {"veredito": sim.get('veredito'), "confianca": sim.get('confianca')},
                 ensure_ascii=False,
             ),
-            extracted_text=(cv_text[:5000] if cv_text else ""),
+            extracted_text=cv_text,
         )
 
         result: dict = {"analise": sim}
@@ -1030,7 +1039,7 @@ Escreva a cover letter seguindo rigorosamente o prompt de sistema e retorne o JS
                 {"formato": carta.get('formato'), "fatos_usados": len(carta.get('fatos_usados', []))},
                 ensure_ascii=False,
             ),
-            extracted_text=(cv_text[:5000] if cv_text else ""),
+            extracted_text=cv_text,
         )
 
         result: dict = {"carta": carta}
@@ -1186,7 +1195,7 @@ Compare as duas versões seguindo rigorosamente o prompt de sistema e retorne o 
                 },
                 ensure_ascii=False,
             ),
-            extracted_text=(texto_novo[:2500] + "\n---VERSÃO ANTIGA---\n" + texto_anterior[:2500]),
+            extracted_text=(texto_novo + "\n---VERSÃO ANTIGA---\n" + texto_anterior),
         )
 
         result: dict = {

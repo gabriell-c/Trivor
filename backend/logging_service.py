@@ -2,6 +2,7 @@
 Request Logger – registra todas as requisições de IA com métricas detalhadas.
 """
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -67,6 +68,19 @@ def init_logs_db(db_path: Path = LOGS_DB):
     cleanup_logs(days_old=90)
 
 
+# PII: o conteúdo integral do CV (extracted_text) e do prompt (llm_prompt)
+# não fica em claro no data/requests.log.db — a pasta é sincronizada pelo
+# OneDrive. Sanitização na ESCRITA (única porta de persistência): hash
+# sha256 (8 chars) + contagem + só o primeiro trecho de 200 chars. O
+# contrato de leitura (/api/logs → frontend/app/logs/page.tsx) se mantém:
+# a UI continua renderizando os campos, eles só encolhem.
+def _resumir_pii(texto: str | None) -> str | None:
+    if not isinstance(texto, str) or not texto:
+        return texto
+    h8 = hashlib.sha256(texto.encode("utf-8", "ignore")).hexdigest()[:8]
+    return f"[sha256:{h8}] {len(texto)} chars — {texto[:200]}"
+
+
 def log_request(
     endpoint: str,
     method: str,
@@ -96,8 +110,8 @@ def log_request(
             json.dumps(request_body) if request_body else None,
             response_summary,
             error,
-            extracted_text,
-            llm_prompt,
+            _resumir_pii(extracted_text),
+            _resumir_pii(llm_prompt),
         ),
     )
     conn.commit()

@@ -92,6 +92,7 @@ def is_process_alive(pid: int) -> bool:
     if os.name == 'nt':
         try:
             import ctypes
+            import ctypes.wintypes  # L14: usado explicitamente abaixo (DWORD) — o import transitivo de antes era frágil
             kernel = ctypes.windll.kernel32
             # PROCESS_QUERY_LIMITED_INFORMATION (0x0400)
             h = kernel.OpenProcess(0x0400, False, pid)

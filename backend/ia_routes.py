@@ -6,12 +6,14 @@ import os
 import time
 
 import httpx
+from app_log import get_app_logger
 from fastapi import APIRouter, Form, HTTPException, Request
 from llm_core import _LLM_TIMEOUT, _get_provider_for_tool
 from openai import OpenAI
 from rate_limit import limiter
 from starlette.concurrency import run_in_threadpool
 
+logger = get_app_logger(__name__)
 router = APIRouter()
 
 
@@ -103,5 +105,7 @@ async def analyze_ia(
                 "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             }
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na análise de IA: {e!s}")
+    except Exception:
+        # Detalhe/stacktrace vão só para os logs — o cliente recebe mensagem estática
+        logger.exception("[IA] Erro na análise de IA")
+        raise HTTPException(status_code=500, detail="Erro na análise de IA. Tente novamente.")

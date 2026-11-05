@@ -388,5 +388,102 @@ class TestReportsRetention:
         assert cur.execute("SELECT COUNT(*) FROM market_reports").fetchone()[0] == 3
 
 
+# ============================================================================
+# L5 — single-flight do pipeline (MarketPipelineRunningError)
+# ============================================================================
+
+class TestSingleFlight:
+    def test_parallel_run_raises(self, monkeypatch):
+        """Dois pipelines em paralelo: o segundo recebe MarketPipelineRunningError
+        (a rota converte p/ 409) — antes, o DELETE + re-coleta do segundo
+        apagava o estado do primeiro.
+        After the first run finishes, the lock must be released (try/finally)."""
+        import threading
+        import time
+
+        liberar = threading.Event()
+
+        def bloqueado(*a, **k):
+            liberar.wait(timeout=5)
+            return {"summary": {}}
+
+        monkeypatch.setattr(ms, "_executar_pipeline_mercado", bloqueado)
+        args = {"db_file": "/tmp/nao_usado.db", "client": None, "selected_model": "m",
+                "job_title": "x", "target_stack": "y", "seniority": "Pleno",
+                "location": "br", "time_window": "90 dias"}
+
+        t = threading.Thread(target=lambda: ms.run_market_analysis(**args))
+        t.start()
+        # Espera o primeiro run segurar a lock
+        deadline = time.time() + 5
+        while not ms._pipeline_em_andamento and time.time() < deadline:
+            time.sleep(0.01)
+        assert ms._pipeline_em_andamento
+
+        # O segundo run deve ser recusado na hora (sem fila)
+        with pytest.raises(ms.MarketPipelineRunningError):
+            ms.run_market_analysis(**args)
+
+        liberar.set()
+        t.join(timeout=5)
+        # Lock liberada após o termino — um novo pipeline roda normalmente
+        assert ms.run_market_analysis(**args) == {"summary": {}}
+        assert not ms._pipeline_em_andamento
+
+
+# ============================================================================
+# L8 — uso JSearch por chave real (market_db._update_jsearch_usage)
+# ============================================================================
+
+class TestJSearchUsage:
+    def test_sem_limit_manter_total_conhecido(self, tmp_path):
+        """Sem header x-ratelimit-limit real, o total conhecido na linha é
+        preservado — antes o upsert sobrescrevia sempre para 200."""
+        from market_db import _update_jsearch_usage
+        db = str(tmp_path / "u.db")
+        ms.init_market_db(db)
+        _update_jsearch_usage(db, "kk-a", 5, 100)
+        _update_jsearch_usage(db, "kk-a", 3)  # sem limit → mantém 100
+        conn = sqlite3.connect(db)
+        total, remaining = conn.execute(
+            "SELECT rate_limit_total, rate_limit_remaining FROM jsearch_keys").fetchone()
+        conn.close()
+        assert total == 100
+        assert remaining == 3
+
+    def test_linha_por_chave_real(self, tmp_path, no_jsearch_env, monkeypatch):
+        """Cada chave real ganha sua linha no DB — antes todo o uso era
+        atribuido a valid_keys[0]."""
+        import hashlib
+
+        import market_jsearch as mj
+
+        db = str(tmp_path / "u2.db")
+        ms.init_market_db(db)
+
+        def fake_fetch(q, **k):
+            jobs = [{"job_id": "j1", "title": "Dev", "company": "X",
+                    "location": "SP", "description": "x", "modality": "remoto",
+                    "source": "jsearch", "source_url": ""}]
+            return jobs, {"kk-a": (10, 100), "kk-b": (50, None)}
+
+        monkeypatch.setattr(mj, "_fetch_jsearch_jobs", fake_fetch)
+        monkeypatch.setattr(mj.time, "sleep", lambda s: None)  # sem delays de IP
+        mj.generate_mock_jobs_if_empty(db, "Dev", jsearch_api_keys=["kk-a", "kk-b"])
+
+        conn = sqlite3.connect(db)
+        linhas = {h: (t, r) for h, t, r in conn.execute(
+            "SELECT key_hash, rate_limit_total, rate_limit_remaining FROM jsearch_keys")}
+        conn.close()
+
+        def h(k):
+            return hashlib.sha256(k.encode()).hexdigest()[:16]
+
+        # 2 chaves → 2 linhas, cada uma com o seu uso
+        assert len(linhas) == 2
+        assert linhas[h("kk-a")] == (100, 10)
+        assert linhas[h("kk-b")][1] == 50
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

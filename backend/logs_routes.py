@@ -42,7 +42,9 @@ async def api_delete_logs():
 
 @router.post('/api/logs/cleanup')
 async def api_cleanup_logs(days: int = 90):
-    """Remove logs antigos (padrão 90 dias)."""
+    """Remove logs antigos (padrão 90 dias). days < 1 vira 1:
+    0/negativo apagara TODO o histórico — retenção mínima de 1 dia."""
     from logging_service import cleanup_logs
-    removed = await run_in_threadpool(cleanup_logs, days)
-    return {"success": True, "removed": removed}
+    dias = max(days, 1)
+    removed = await run_in_threadpool(cleanup_logs, dias)
+    return {"success": True, "removed": removed, "days": dias}

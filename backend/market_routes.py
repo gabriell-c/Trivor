@@ -8,6 +8,7 @@ apontar o DB via monkeypatch.
 
 import json
 import os
+import re
 import time
 import uuid
 
@@ -21,13 +22,22 @@ from market_export import (
     generate_market_markdown_export,
     generate_market_pdf_export,
 )
-from market_service import run_market_analysis
+from market_service import MarketPipelineRunningError, run_market_analysis
 from openai import OpenAI
 from rate_limit import limiter
 from starlette.concurrency import run_in_threadpool
 
 logger = get_app_logger(__name__)
 router = APIRouter()
+
+
+def _sanitizar_nome_arquivo(valor: str) -> str:
+    """Nome de arquivo do form para o Content-Disposition: remove CRLF,
+    aspas, backslash e espaços — impede header injection via fname/model.
+    (O nome segue sendo anexado a sufixo uuid do servidor, que é a parte
+    que realmente identifica o download.)"""
+    limpo = re.sub(r'[\r\n"\\\s]', '', valor).strip('/')
+    return limpo or "arquivo"
 
 
 @router.post('/api/market/analyze')
@@ -97,6 +107,10 @@ async def analyze_market(
         )
         elapsed = round(time.time() - start_time, 2)
         return {"success": True, "report": report, "model": selected_model, "elapsed_seconds": elapsed}
+    except MarketPipelineRunningError:
+        # Single-flight: outra análise em andamento — o DELETE + re-coleta do
+        # pipeline paralelo apagaria o relatório dela
+        raise HTTPException(status_code=409, detail="Já existe uma análise de mercado em andamento.")
     except Exception:
         # Detalhe vai só para os logs (com stacktrace); o cliente recebe mensagem genérica
         logger.exception("[MARKET ERROR] falha interna na análise de mercado")
@@ -116,7 +130,10 @@ async def export_analysis(
     data_json: str = Form(...)
 ):
     try:
-        data = json.loads(data_json)
+        try:
+            data = json.loads(data_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Campo data_json não é um JSON válido.")
         fname = filename or "curriculo.pdf"
         vaga = job_target or "Geral"
         model = model_name or "gpt-4o"
@@ -153,8 +170,10 @@ async def export_analysis(
             raise HTTPException(status_code=400, detail="Formato não suportado.")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {e!s}")
+    except Exception:
+        # Detalhe/stacktrace vão só para os logs — o cliente recebe mensagem estática
+        logger.exception("[EXPORT] erro na geração do arquivo (curriculo)")
+        raise HTTPException(status_code=500, detail="Erro na geração do arquivo. Tente novamente.")
 
 
 @router.post('/api/export/market')
@@ -168,12 +187,16 @@ async def export_market_analysis(
     report_json: str = Form(...)
 ):
     try:
-        report = json.loads(report_json)
-        fname = filename or "analise_mercado"
+        try:
+            report = json.loads(report_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Campo report_json não é um JSON válido.")
+        # fname/model entram no Content-Disposition → sanitar antes (S4)
+        fname = _sanitizar_nome_arquivo(filename or "analise_mercado")
         job = job_title or "Geral"
         senior = seniority or "Pleno"
         loc = location or "Remoto"
-        model = model_name or "gpt-4o"
+        model = _sanitizar_nome_arquivo(model_name or "gpt-4o")
 
         if format == 'md':
             content = generate_market_markdown_export(report, job, senior, loc, model)
@@ -200,5 +223,7 @@ async def export_market_analysis(
             raise HTTPException(status_code=400, detail="Formato não suportado. Use: md, docx, pdf")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na geração do arquivo: {e!s}")
+    except Exception:
+        # Detalhe/stacktrace vão só para os logs — o cliente recebe mensagem estática
+        logger.exception("[EXPORT] erro na geração do arquivo (mercado)")
+        raise HTTPException(status_code=500, detail="Erro na geração do arquivo. Tente novamente.")

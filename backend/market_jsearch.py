@@ -65,16 +65,20 @@ def _fetch_jsearch_jobs(
     api_keys: list[str] | None = None,
     date_posted: str = "all",
 ) -> tuple:
-    """Através JSearch API busca vagas reais, agregando resultados de TODAS as chaves."""
+    """Através JSearch API busca vagas reais, agregando resultados de TODAS as chaves.
+
+    Devolve (jobs, uso_por_chave): uso_por_chave é {chave: (remaining, total)}
+    lido dos headers x-ratelimit-* de CADA fetch — os dois podem ser None
+    (API não enviou os headers). Atribuir o uso de qualquer fetch a uma
+    única chave (o comportamento antigo) confundia os limites no painel."""
     if not api_keys:
-        return [], None, None
+        return [], {}
 
     params = urllib.parse.quote_plus(query)
     url_template = f"{_JSEARCH_API_URL}?query={params}&country={country}&language={language}&num_pages={num_pages}&date_posted={date_posted}"
 
     all_raw_jobs = []
-    last_remaining = None
-    last_total = None
+    uso_por_chave: dict[str, list] = {}  # chave -> [remaining, total] (últimos valores reais)
     keys_tried = []
     rate_limited_keys = set()  # chaves que já retornaram 429 nesta sessão
 
@@ -140,8 +144,11 @@ def _fetch_jsearch_jobs(
                 if skipped > 0:
                     logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} filtrou {skipped} vagas de país errado ({expected})")
                 all_raw_jobs.extend(filtered_raw)
-                last_remaining = int(remaining) if remaining else last_remaining
-                last_total = int(total) if total else last_total
+                # Uso lido dos headers desta chave específica — nunca de outra
+                if remaining:
+                    uso_por_chave.setdefault(api_key, [None, None])[0] = int(remaining)
+                if total:
+                    uso_por_chave.setdefault(api_key, [None, None])[1] = int(total)
             else:
                 logger.warning(f"[JSearch] Chave {_mask_jsearch_key(api_key)} retornou erro: {data.get('message', 'unknown')}")
         except urllib.error.HTTPError as e:
@@ -169,7 +176,7 @@ def _fetch_jsearch_jobs(
 
     jobs = _build_jobs_from_raw(all_raw_jobs, country)
     logger.info(f"[JSearch] Query {query!r}: {len(jobs)} vagas agregadas de {len(keys_tried)} chave(s)")
-    return jobs, last_remaining, last_total
+    return jobs, {k: tuple(v) for k, v in uso_por_chave.items()}
 
 
 def _build_jobs_from_raw(raw_jobs: list, default_country: str) -> list[dict]:
@@ -279,7 +286,9 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
 
         # Primeiro tenta JSearch com as chaves fornecidas (fallback automático)
         sample_jobs = []
-        used_key_remaining = None
+        # L8: uso consolidado por chave real {chave: [remaining, total]} —
+        # antes o remaining de QUALQUER fetch era atribuído a valid_keys[0]
+        uso_consolidado: dict[str, list] = {}
         valid_keys = [k.strip() for k in (jsearch_api_keys or []) if k and k.strip()]
         if env_key and env_key not in valid_keys:
             valid_keys.append(env_key)  # chave sintética do ambiente (id="env")
@@ -328,7 +337,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 all_jobs = {}
                 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-                def _fetch_single_query(q, keys_subset=None, date_posted="month"):
+                def _fetch_single_query(q, keys_subset=None, date_posted="all"):
                     """Executa uma query; aceita um subconjunto de chaves para distribuir a pressão de IP."""
                     keys = keys_subset if keys_subset else valid_keys
                     return _fetch_jsearch_jobs(q, country=country, language=language,
@@ -343,6 +352,15 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                     for i, k in enumerate(keys):
                         result[i % n].append(k)
                     return result
+
+                def _fundir_uso(novo):
+                    """L8: funde o uso {chave: (remaining, total)} de um fetch no
+                    consolidado global, preservando valores conhecidos de
+                    fetches anteriores (um header ausente não apaga o resto)."""
+                    for k, (rem, tot) in novo.items():
+                        destino = uso_consolidado.setdefault(k, [None, None])
+                        destino[0] = rem if rem is not None else destino[0]
+                        destino[1] = tot if tot is not None else destino[1]
 
                 key_subsets = _split_keys(valid_keys, 6)
 
@@ -364,16 +382,18 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                             # Cada query usa um subconjunto de chaves com deslocamento próprio, para distribuir ainda mais a pressão de IP
                             inner_offset = (batch_idx + i) % len(key_subsets)
                             inner_subset = key_subsets[inner_offset]
-                            futures[executor.submit(_fetch_single_query, q, inner_subset)] = q
+                            # L4: a janela escolhida na UI (date_posted) tem que
+                            # chegar no fetch — antes vinha o default "month"
+                            futures[executor.submit(_fetch_single_query, q, inner_subset, date_posted)] = q
 
                         for future in as_completed(futures):
                             q = futures[future]
                             try:
-                                jobs, rem, _ = future.result()
+                                jobs, uso = future.result()
                             except Exception as e:
                                 logger.error(f"[MARKET] Query {q!r} falhou: {e}")
                                 jobs = []
-                                rem = None
+                                uso = {}
                             logger.info(f"[MARKET] JSearch query {q!r}: {len(jobs)} vagas")
                             dup_before = len(all_jobs)
                             for j in jobs:
@@ -387,8 +407,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                                         .encode()).hexdigest()
                                 all_jobs[dedup_key] = j
                             logger.info(f"[MARKET] Query {q!r}: {len(jobs)} novas, {len(all_jobs)-dup_before} únicas")
-                            if rem is not None and valid_keys:
-                                used_key_remaining = rem
+                            _fundir_uso(uso)
                             # Registra a query falha (0 resultados) para o retry posterior
                             if len(jobs) == 0:
                                 failed_queries.append(q)
@@ -407,12 +426,12 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                         subset_offset = (retry_attempt + failed_queries.index(q)) % len(key_subsets)
                         subset = key_subsets[subset_offset]
                         try:
-                            jobs, rem, _ = _fetch_jsearch_jobs(q, country=country, language=language,
+                            jobs, uso = _fetch_jsearch_jobs(q, country=country, language=language,
                                                                   num_pages=6, api_keys=subset, date_posted=date_posted)
                         except Exception as e:
                             logger.error(f"[MARKET] Retry query {q!r} falhou: {e}")
                             jobs = []
-                            rem = None
+                            uso = {}
                         logger.info(f"[MARKET] Retry {retry_attempt} query {q!r}: {len(jobs)} vagas")
                         dup_before = len(all_jobs)
                         for j in jobs:
@@ -425,8 +444,7 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                                     .encode()).hexdigest()
                             all_jobs[dedup_key] = j
                         logger.info(f"[MARKET] Retry {retry_attempt} query {q!r}: {len(jobs)} novas, {len(all_jobs)-dup_before} únicas")
-                        if rem is not None and valid_keys:
-                            used_key_remaining = rem
+                        _fundir_uso(uso)
                         if len(jobs) == 0:
                             still_failed.append(q)
                     failed_queries = still_failed
@@ -436,9 +454,11 @@ def generate_mock_jobs_if_empty(db_file: Path, job_title: str = "Desenvolvedor B
                 sample_jobs = list(all_jobs.values())
                 retry_note = f"com {len(failed_queries)} queries ainda falhas" if failed_queries else "sem retry necessário"
                 logger.info(f"[MARKET] JSearch combinou {len(sample_jobs)} vagas únicas de {len(queries)} queries, {retry_note}")
-                # Atualiza uso no DB
-                if used_key_remaining is not None and valid_keys:
-                    _update_jsearch_usage(db_file, valid_keys[0], used_key_remaining)
+                # Atualiza uso no DB — uma linha por chave real (antes:
+                # todo o uso era atribuído a valid_keys[0])
+                for _k, (_rem, _tot) in uso_consolidado.items():
+                    if _rem is not None:
+                        _update_jsearch_usage(db_file, _k, _rem, _tot)
 
         # Se JSearch falhou ou não configurado, prossegue com lista vazia (sem dados fabricados)
         if not sample_jobs:

@@ -17,12 +17,26 @@ para main.py e a suíte de testes.
 import json
 import os
 import re
+import threading
 import time
 import traceback
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Single-flight do pipeline de mercado: o passo "DELETE + re-coleta" no
+# início de run_market_analysis apagaria o estado de outra análise que
+# esteja em andamento. Um pipeline por vez — corrida vira erro explícito
+# (a rota converte para 409), nunca um relatório fantasma.
+_PIPELINE_LOCK = threading.Lock()
+_pipeline_em_andamento = False
+
+
+class MarketPipelineRunningError(Exception):
+    """Lançada quando um pipeline de mercado tenta rodar sobre outro
+    já em andamento (single-flight). A rota /api/market/analyze a
+    converte para HTTP 409."""
 
 # Import logging service for AI call tracking
 from logging_service import log_request as log_ai_call
@@ -42,6 +56,9 @@ from market_keywords import (
     _MAX_JOBS_FOR_ANALYSIS,
     _detect_job_seniority,  # noqa: F401
     _is_garbage_requirement,  # noqa: F401
+    # Não é duplicado do _is_garbage local (em _sanitize_requirements): cada
+    # um opera em estágio diferente do pipeline (limpeza pós-extração vs.
+    # normalização final) e os padrões de cada um se complementam.
     _keyword_score,  # noqa: F401
     _parse_br_number,
     _pre_filter_jobs,
@@ -338,8 +355,12 @@ def _sanitize_requirements(item: dict[str, Any]) -> dict[str, Any]:
 
     # === REGRAS DE FILTRAGEM ===
 
-    def _is_garbage(term: str) -> bool:
-        """Retorna True se o termo for lixo (não skill)."""
+    def _is_garbage(term: Any) -> bool:
+        """Retorna True se o termo for lixo (não skill). Itens não-string
+        (ex.: dict vindo de resposta malformada da IA) são lixo por
+        definição — .strip() em objeto estranho derrubaria a análise."""
+        if not isinstance(term, str):
+            return True
         t = term.strip()
         if len(t) < 2 or len(t) > _SKILL_MAX_LEN:
             return True
@@ -425,6 +446,11 @@ def _sanitize_requirements(item: dict[str, Any]) -> dict[str, Any]:
         if field not in item or not isinstance(item[field], list):
             continue
         original = item[field]
+        nao_string = [t for t in original if not isinstance(t, str)]
+        if nao_string:
+            # Não loga o conteúdo bruto (PII da vaga) — só a contagem e os tipos
+            logger.warning(f"[MARKET] {field} com {len(nao_string)} item(ns) não-string "
+                           f"(tipos: {[type(t).__name__ for t in nao_string][:5]}) — descartados")
         cleaned = [term for term in original if not _is_garbage(term)]
         item[field] = cleaned
     return item
@@ -922,7 +948,37 @@ def run_market_analysis(
     negative_keywords: str = "",
     jsearch_api_keys: list[str] | None = None
 ) -> dict[str, Any]:
-    """Executa o pipeline completo de Inteligência de Mercado."""
+    """Executa o pipeline completo de Inteligência de Mercado (single-flight)."""
+    global _pipeline_em_andamento
+    # blocking=False: sem fila — uma análise em andamento já é motivo
+    # suficiente para recusar a segunda (409 na rota).
+    if not _PIPELINE_LOCK.acquire(blocking=False):
+        raise MarketPipelineRunningError(
+            "Já existe uma análise de mercado em andamento. Tente novamente em instantes.")
+    _pipeline_em_andamento = True
+    try:
+        return _executar_pipeline_mercado(
+            db_file, client, selected_model, job_title, target_stack,
+            seniority, location, time_window, negative_keywords, jsearch_api_keys)
+    finally:
+        # try/finally: o flag e a lock sempre liberam, mesmo em erro
+        _pipeline_em_andamento = False
+        _PIPELINE_LOCK.release()
+
+
+def _executar_pipeline_mercado(
+    db_file: Path,
+    client: OpenAI,
+    selected_model: str,
+    job_title: str,
+    target_stack: str,
+    seniority: str,
+    location: str,
+    time_window: str,
+    negative_keywords: str = "",
+    jsearch_api_keys: list[str] | None = None
+) -> dict[str, Any]:
+    """Corpo do pipeline (sempre chamado sob a guarda single-flight)."""
 
     # 1. Garante vagas de amostragem no DB (limpa buscas anteriores para evitar dados de outra área)
     init_market_db(db_file)
@@ -992,8 +1048,10 @@ def run_market_analysis(
             extracted_languages = _extract_languages(extracted)
             is_rel = extracted.get("is_relevant", False)
 
-            reqs_norm = sorted({normalize_skill(t) for t in extracted.get("requirements", []) if normalize_skill(t)})
-            nice_norm = sorted({normalize_skill(t) for t in extracted.get("nice_to_have", []) if normalize_skill(t)})
+            # normalize_skill().strip() quebra em item não-string (dict);
+            # o filtro de str acima é a defesa em ambos os pontos.
+            reqs_norm = sorted({normalize_skill(t) for t in extracted.get("requirements", []) if isinstance(t, str) and normalize_skill(t)})
+            nice_norm = sorted({normalize_skill(t) for t in extracted.get("nice_to_have", []) if isinstance(t, str) and normalize_skill(t)})
 
             # Debug: log first batch results
             if batch_start == 0 and idx < 3:

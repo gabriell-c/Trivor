@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 from app_log import get_app_logger
+from fastapi import HTTPException
 from openai import OpenAI
 
 logger = get_app_logger(__name__)
@@ -41,21 +42,34 @@ def _mask_key_preview(key: str) -> str:
     return f"…{key[-4:]}"
 
 
+def _find_provider_by_id(provider_id: str | None):
+    """Localiza um provider por id em TRIVOR_IAS (ou None se ausente/inválido).
+    Sem 'any provider' — a escolha explícita do usuário tem que bater em algo
+    concreto, senão a rota levanta 404 (veja _resolve_key_and_client)."""
+    if not provider_id:
+        return None
+    try:
+        providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
+        return next((p for p in providers if p.get('id') == provider_id), None)
+    except Exception:
+        return None
+
+
 def _get_provider_for_tool(tool: str):
-    """Retorna o melhor provider para uma ferramenta, ou None."""
+    """Retorna o melhor provider para uma ferramenta, ou None.
+    Considera apenas usedFor em ('all', tool) — um provider dedicado a OUTRA
+    ferramenta nunca entra como fallback (o fallback 'qualquer um com apiKey'
+    antes ignorava usedFor e podia usar, p.ex., a chave de 'market' para o
+    currículo)."""
     try:
         providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
         if not providers:
             return None
-        # Prioridade: all > tool-specific > qualquer outra
-        for priority in ['all', tool]:
+        # Prioridade: all > tool-specific
+        for priority in ('all', tool):
             for p in providers:
                 if p.get('usedFor') == priority and p.get('apiKey'):
                     return p
-        # fallback: qualquer um com apiKey
-        for p in providers:
-            if p.get('apiKey'):
-                return p
         return None
     except Exception:
         return None
@@ -97,22 +111,25 @@ def _resolve_key_and_client(provider_id: str | None, api_key: str | None,
     OPENAI_API_KEY → provider salvo de 'curriculo' (_get_provider_for_tool).
 
     Retorna (client, key, model, base_url). Sem chave em nenhum nível,
-    client vem None — o endpoint levanta 400."""
+    client vem None — o endpoint levanta 400. provider_id inexistente
+    levanta 404 na hora (não pode silenciosamente virar outra chave)."""
     resolved_key = api_key
     resolved_url = api_url
     resolved_model = model_name
 
     if provider_id:
-        try:
-            providers = json.loads(os.environ.get('TRIVOR_IAS', '[]'))
-            prov = next((p for p in providers if p.get('id') == provider_id), None)
-            if prov and prov.get('usedFor') not in ('none', 'market'):
-                resolved_key = prov['apiKey']
-                resolved_url = prov.get('apiUrl') or api_url
-                resolved_model = prov.get('modelName') or model_name
-        except Exception:
-            logger.warning(f"[PROVIDER] provider_id={provider_id} não resolvido "
-                          f"(TRIVOR_IAS inválida ou ausente); segue com fallback de chave.")
+        prov = _find_provider_by_id(provider_id)
+        if prov is None:
+            # Escolha explícita da UI que não bate com nenhum provider salvo:
+            # 404 honesto, nunca fallback para uma chave diferente
+            raise HTTPException(status_code=404, detail="Provider não encontrado.")
+        if prov.get('usedFor') in ('none', 'market'):
+            raise HTTPException(status_code=400, detail="Este provider não está habilitado para esta ferramenta.")
+        if not prov.get('apiKey'):
+            raise HTTPException(status_code=400, detail="O provider selecionado não tem chave de API configurada.")
+        resolved_key = prov['apiKey']
+        resolved_url = prov.get('apiUrl') or api_url
+        resolved_model = prov.get('modelName') or model_name
 
     key = resolved_key or os.getenv("OPENAI_API_KEY", "")
     if not key or key.strip() == "":

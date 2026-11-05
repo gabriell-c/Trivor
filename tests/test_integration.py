@@ -182,9 +182,11 @@ class TestAnalyzeCV:
         assert "10MB" in r.json().get("detail", "") or "detail" in r.json()
 
     def test_analyze_cv_pdf_accepted(self, client):
-        # PDF válido mas SEM API key — deve falhar com 400 (sem key), não 500.
+        # PDF de teste SEM API key e com extração de texto falha → 400 (nunca 500).
         # Isola o ambiente para não depender dos providers configurados na máquina
         # do desenvolvedor (TRIVOR_IAS / OPENAI_API_KEY no .env).
+        # Contrato novo (L2): a extração falha ANTES da resolução de chave,
+        # então a mensagem é de extração (não mais de "Chave de API").
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "", "TRIVOR_IAS": "[]"}),
             patch("cv_helpers._get_provider_for_tool", return_value=None),
@@ -195,7 +197,7 @@ class TestAnalyzeCV:
                 data={"job": "test"}
             )
         assert r.status_code == 400
-        assert "Chave de API" in r.json().get("detail", "")
+        assert "extrair texto" in r.json().get("detail", "")
 
     def test_analyze_cv_docx_accepted(self, client):
         r = client.post(

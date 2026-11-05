@@ -419,9 +419,15 @@ def map_time_window_to_date_posted(time_window: str) -> str:
     return 'all'
 
 
-def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "") -> str:
+def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "",
+                           job_location: str = "") -> str:
     """Detecta se uma vaga é nacional (BR) ou internacional.
-    Rigoroso: mesmo com job_country='br', verifica sinais de internacional no texto."""
+    Rigoroso: mesmo com job_country='br', verifica sinais de internacional no texto.
+
+    L9: sinais geográficos (países/territórios) valem SOMENTE no campo de
+    localização — regex com fronteira de palavra, quando o campo existe.
+    Antes as substrings ("usa ", " pr,") varriam a descrição inteira e
+    qualquer menção ao US/UK no texto derrubava vagas BR legítimas."""
     text_lower = job_text.lower()
     salary_lower = salary.lower()
 
@@ -487,18 +493,23 @@ def detect_job_nationality(job_text: str, job_country: str = "", salary: str = "
     if any(s in text_lower for s in english_patterns):
         return "internacional"
 
-    # --- Geografia/localização — verificar ANTES de idioma, pois lugar vence palavra ---
-    loc_country_signals = [
-        "puerto rico", "puerto", " pr,", " pr ",
-        "united states", "usa,", "usa ",
-        "united kingdom", "uk,", "uk ", "londres", "inglaterra",
-        "netherlands", "holanda", "mexico", "espanha",
-        "canadá", "canada", "portugal", "frança",
-        "trøndelag", "snåsa", "san german", "são tomé",
-    ]
-    for sig in loc_country_signals:
-        if sig in text_lower:
-            return "internacional"
+    # --- Geografia/localização — L9: só o CAMPO de localização entra aqui,
+    # com fronteira de palavra ("usa " e " pr," antes batiam na descrição
+    # inteira). Sem campo de localização, a checagem geográfica é pulada —
+    # os sinais de idioma/país (abaixo) seguem valendo.
+    if job_location and job_location.strip():
+        loc_lower = job_location.lower()
+        loc_country_terms = [
+            "puerto rico", "puerto", "pr",
+            "united states", "usa", "us",
+            "united kingdom", "uk", "londres", "inglaterra",
+            "netherlands", "holanda", "mexico", "espanha", "españa",
+            "canadá", "canada", "portugal", "frança", "france",
+            "trøndelag", "snåsa", "san german", "são tomé", "tomé",
+        ]
+        for term in loc_country_terms:
+            if re.search(r'\b' + re.escape(term) + r'\b', loc_lower):
+                return "internacional"
 
     # --- Português (só agora — depois de descartar espanhol/idiomas estrangeiros e geografia) ---
     # Agora podemos usar "vaga" e "emprego" com segurança porque espanhol e geografia já foram descartados
@@ -643,7 +654,8 @@ def _pre_filter_jobs(
 
         # NACIONALIDADE — rejeita vagas que não correspondem ao escopo
         if is_nacional or is_internacional:
-            job_nationality = detect_job_nationality(description, job_country_val, "")
+            # L9: o campo de localização (loc) também entra na análise
+            job_nationality = detect_job_nationality(description, job_country_val, "", loc)
             if is_nacional and job_nationality == "internacional":
                 continue
             if is_internacional and job_nationality == "nacional":
@@ -686,21 +698,35 @@ def _pre_filter_jobs(
         for j in raw_jobs[:max_jobs]:
             job_id, title, company, description, loc, mod, source, source_url = j
             job_text_lower = (title + " " + description).lower()
-            # Re-aplica filtro básico de localização/idioma no fallback
-            skip = False
-            _FALLBACK_SKIP = [
-                "puerto rico", "puerto ", " pr,", " pr ",
-                "united states", "usa,", "usa ",
-                "united kingdom", "uk,", "uk ", "londres", "inglaterra",
+            # Re-aplica filtro básico de localização/idioma no fallback.
+            # L9: sinais GEográficos batem word-boundary no campo de
+            # localização (quando existe) — nunca na descrição inteira
+            # (antes "usa " e " pr," varriam o texto e derrubavam vaga BR);
+            # sinais de IDIOMA (espanhol) continuam na descrição, mas com
+            # fronteira de palavra. "agendador" removido — é PT legítimo
+            # ("agendador de viagens"), não é spam espanhol.
+            loc_lower = (loc or "").lower()
+            _FALLBACK_SKIP_LOC = [
+                "puerto rico", "puerto", "pr",
+                "united states", "usa", "uk", "londres", "inglaterra",
                 "netherlands", "holanda", "mexico", "espanha",
                 "canadá", "canada", "portugal", "frança",
                 "trøndelag", "snåsa", "san german",
-                "español", "espanol", "trabajo", "agendador", "servicio",
             ]
-            for s in _FALLBACK_SKIP:
-                if s in job_text_lower:
-                    skip = True
-                    break
+            _FALLBACK_SKIP_IDIOMA = [
+                "español", "espanol", "trabajo", "servicio",
+            ]
+            skip = False
+            if loc_lower:
+                for s in _FALLBACK_SKIP_LOC:
+                    if re.search(r'\b' + re.escape(s) + r'\b', loc_lower):
+                        skip = True
+                        break
+            if not skip:
+                for s in _FALLBACK_SKIP_IDIOMA:
+                    if re.search(r'\b' + re.escape(s) + r'\b', job_text_lower):
+                        skip = True
+                        break
             if skip:
                 continue
             job_text = f"Título: {title}\nEmpresa: {company}\nLocalização: {loc}\nModalidade: {mod}\nDescrição:\n{description}"

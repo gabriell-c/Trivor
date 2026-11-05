@@ -112,7 +112,10 @@ def save_env(payload: dict) -> dict:
     """Mescla APENAS as chaves liberadas em apply/.env, preservando as
     demais linhas do arquivo tal como estão (chaves de IA etc.).
 
-    - valor vazio → a chave sai do arquivo
+    - ausente do payload (ou null) → mantém o valor atual
+      (a UI envia o form inteiro hoje, mas payload parcial — automação,
+      outro cliente — nunca apaga credencial que não citou)
+    - presente e vazio → a chave sai do arquivo (remover de propósito)
     - valor igual ao mask do que está salvo → mantém o real
       (a UI não digita a senha de novo só para salvar outra coisa)
     """
@@ -125,7 +128,10 @@ def save_env(payload: dict) -> dict:
     atual = _env_atual()
     merge: dict[str, str] = {}
     for k in APPLY_ENV_KEYS:
-        valor = payload.get(k, '')
+        valor = payload.get(k)
+        if valor is None:
+            merge[k] = atual[k]
+            continue
         if not isinstance(valor, str):
             raise ApplyAdminError(f"O valor de {k} deve ser texto.")
         valor = valor.strip()
@@ -288,9 +294,19 @@ def ia_update(pid: str, payload: dict) -> dict:
         'temperatura': _num(payload.get('temperatura', prov.get('temperatura', 0.5)), float, 'temperatura'),
         'max_tokens': _num(payload.get('max_tokens', prov.get('max_tokens', 500)), int, 'max_tokens'),
     }
-    # api_key: ausente ou vazio no payload → mantém a salva (a UI só envia
-    # a nova quando o usuário digita um novo valor).
-    nova['api_key'] = str(payload.get('api_key') or prov.get('api_key', ''))
+    # api_key: três casos —
+    # 1. ausente/vazia → mantém a salva (a UI só envia quando digita um novo valor);
+    # 2. igual à máscara da salva → mantém o valor REAL (a UI devolve o campo
+    #    mascarado sem alteração; sem este check, salvaria a máscara no lugar
+    #    da credêncial — mesma regra do save_env, que preservava o real);
+    # 3. novo valor → grava.
+    enviada = payload.get('api_key')
+    salva = prov.get('api_key', '')
+    if not enviada or (isinstance(enviada, str) and isinstance(salva, str) and salva
+                       and enviada.strip() == _mask(salva)):
+        nova['api_key'] = salva
+    else:
+        nova['api_key'] = str(enviada).strip()
     prov.clear()
     prov.update(nova)
     save_config(cfg)
