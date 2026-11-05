@@ -70,6 +70,27 @@ def gupy():
     return _load_bot("gupy")
 
 
+@pytest.fixture(scope="module")
+def solides():
+    return _load_bot("solides")
+
+
+# ---------------------------------------------------------------------------
+# solides.py — filtragem de vaga (título + badges)
+# ---------------------------------------------------------------------------
+class TestFiltrarVagaSolides:
+    def test_senior_no_titulo_sem_nivel_baixo_eh_excluido(self, solides):
+        # "Sênior" é token de senioridade no título + sem júnior/jr/estágio → sai
+        assert solides._filtrar_vaga("Analista de Sênior", None) is False
+
+    def test_titulo_neutro_sem_senioridade_eh_mantido(self, solides):
+        assert solides._filtrar_vaga("Analista de Dados", None) is True
+
+    def test_nivel_baixo_no_titulo_nao_eh_excluido(self, solides):
+        # "Júnior" não é token de senioridade (é nível baixo) → não cai no loop de título
+        assert solides._filtrar_vaga("Analista Júnior", None) is True
+
+
 # ---------------------------------------------------------------------------
 # indeed.py — detecção de campos de data (label)
 # ---------------------------------------------------------------------------
