@@ -71,7 +71,16 @@ A plataforma unifica **Engenharia de Prompt**, **Parsing Inteligente de Document
 - 5 bots de navegação automática (`gupy.py`, `indeed.py`, `infojobs.py`, `nerdin.py`, `solides.py`) que buscam vagas e enviam o CV nos portais; vivem em `apply/`.
 - Roteador de LLM local (Groq → Gemini → Mistral → local) decide o preenchimento de formulários.
 - Os bots gravam o histórico em `apply/relatorio/candidaturas.json`; a aba **Candidaturas** do Trivor lê esse arquivo e mostra resumo, portais e status (sucesso/parcial/falha) — sem escrever no diretório.
-- Setup: `pip install -r apply/requirements-apply.txt` + `playwright install`; copie `apply/config.example.yaml` → `apply/config.yaml` e preencha (o `config.yaml` real, sessões de login e relatórios ficam fora do git).
+- Setup: `pip install -r apply/requirements-apply.txt` e, como browsers, **patchright/camoufox** (não `playwright install` — as engines reais dos bots são o patchright e o camoufox; o playwright é só fallback/camada):
+  ```bash
+  patchright install chromium
+  camoufox fetch
+  ```
+  > **Workaround OneDrive (caminho não-ASCII)**: o pacote `indexed_zstd` falha ao abrir `fpgen/data/values.dat.zst` em caminho com "Área de Trabalho" — decomprima 1x para `values.dat` (o fpgen para de usar o `indexed_zstd`):
+  > ```bash
+  > venv/Scripts/python -c "import zstandard,pathlib; d=pathlib.Path('venv/Lib/site-packages/fpgen/data'); (d/'values.dat').write_bytes(zstandard.ZstdDecompressor().decompress((d/'values.dat.zst').read_bytes()))"
+  > ```
+- Copie `apply/config.example.yaml` → `apply/config.yaml` e preencha (o `config.yaml` real, sessões de login e relatórios ficam fora do git).
 
 ---
 
@@ -143,7 +152,11 @@ venv\Scripts\Activate.ps1
 # Linux/macOS:
 # source venv/bin/activate
 
-# Instalar dependências
+# Instalar dependências — escolha o escopo:
+#  (a) só a API (enxuto, sem torch/Crawl4AI/bots — o suficiente p/ subir o servidor):
+pip install -r backend/requirements-api.txt
+#  (b) API + ambiente dos bots do Job Hunter (lock completo do venv raiz;
+#  inclui torch/Crawl4AI/selenium/patchright/camoufox — é o que os .bat usam):
 pip install -r backend/requirements.txt
 
 # (Opcional) Configurar variáveis de ambiente — veja .env.example
@@ -154,6 +167,9 @@ cd backend
 python main.py
 ```
 > O backend estará rodando em `http://127.0.0.1:8000`.
+> **Caminho oficial no Windows**: `start_backend.bat` (backend) + `npm run dev` na pasta `frontend` (frontend, em outra janela). Os `.bat` usam o Python do **venv da raiz** (`venv\Scripts\python`) — não o global; se `venv/` ainda não existir, crie-o na raiz com `python -m venv venv` e instale as dependências acima.
+> **Exposição na rede**: por padrão o backend fica em `127.0.0.1:8000` (só a máquina local). Para expor na LAN (outros dispositivos acessarem), defina `TRIVOR_ALLOW_LAN=1` antes de subir o backend.
+> **`backend/pyproject.toml`**: é um manifest solto que ninguém usa — a fonte de verdade das dependências são os arquivos `requirements*` acima. Nunca use `pip install -e backend/` (as dependências declaradas nele estão defasadas em relação ao lock).
 > Chaves de IA: defina no `.env` (`OPENAI_API_KEY` / `TRIVOR_IAS`) ou pela aba de Configurações do app — sem chave, os endpoints de IA respondem com erro 400 claro.
 > **Busca de vagas reais (JSearch)**: opcional. Defina `JSEARCH_API_KEY` no `.env` (ou re-digite suas chaves na aba *Configurações → Busca de Vagas*). Sem chave, a análise de mercado segue com a heurística local (sem dados fabricados).
 > **Upgrade**: chaves JSearch antigas em texto puro foram removidas do banco por segurança — re-salve suas chaves na UI. O `.env` é carregado no boot via `load_dotenv()` (valores do ambiente já existentes têm prioridade).
@@ -195,6 +211,10 @@ Se preferir rodar toda a aplicação via containers Docker:
 ```bash
 docker-compose up --build -d
 ```
+
+> - **Docker = backend + frontend, SEM o Job Hunter**: a imagem não inclui a pasta `apply/` (bots + credenciais), então os endpoints de candidatura respondem 404 e a aba **Candidaturas** fica indisponível no container. O Job Hunter roda apenas no ambiente local (venv com `backend/requirements.txt`).
+> - **Porta do backend**: o frontend aponta para `http://localhost:8000` (`NEXT_PUBLIC_API_URL`) — a porta **8000 precisa estar visível/aberta pelo browser** (firewall da máquina).
+> - **Dados**: o banco de mercado e os logs de requisições persistem em `./data/` (`market.db` entra no container via symlink `/app/backend/market.db` → `/app/data/market.db`). O `.gitignore` cobre `data/*` e `*.db` — os dados nunca vão para o git.
 
 ---
 

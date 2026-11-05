@@ -30,9 +30,16 @@ test-backend: ## Roda testes do backend
 	@echo "   (pasta tests/ fica na raiz do projeto)"
 	python -m pytest tests/ -v
 
-test-frontend: ## Roda testes do frontend
-	@echo "🧪 Rodando testes do frontend..."
-	cd frontend && npm test
+test-frontend: ## Roda testes de frontend (E2E Playwright + acessibilidade)
+	@echo "🧪 Rodando testes de frontend (pytest + Playwright)..."
+	# Os testes de front são as suítes Playwright/Pytest da pasta tests/ (não há
+	# `npm test` no package.json). Pré-requisitos:
+	#  - chromium do Playwright instalado 1x: `playwright install chromium`
+	#  - test_e2e.py: servidor dev na 3000 — o fixture sobe o `next dev` sozinho
+	#    quando TRIVOR_FE_URL não está definido (ou aponte TRIVOR_FE_URL=...);
+	#    o backend na 8000 é esperado pelas rotas de API das páginas.
+	#  - test_accessibility.py roda offline (inspeção de fonte).
+	python -m pytest tests/test_e2e.py tests/test_accessibility.py -v
 
 # ============================================
 # Linting

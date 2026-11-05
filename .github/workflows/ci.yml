@@ -49,6 +49,12 @@ jobs:
   test-backend:
     name: Backend Tests
     runs-on: ubuntu-latest
+    env:
+      # Opt-in dos testes de browser (tests/test_apply_browser.py — engines
+      # headless). "0" por padrão: os browsers não são instalados e o guarda
+      # do próprio arquivo skipa a suíte. Para ligar: definir "1" aqui — o
+      # step condicional instala patchright/camoufox antes do pytest.
+      TRIVOR_BROWSER_TESTS: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -63,18 +69,38 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pytest
 
-      - name: Start backend server
+      - name: Install apply browser engines (opt-in TRIVOR_BROWSER_TESTS=1)
+        if: env.TRIVOR_BROWSER_TESTS == '1'
+        run: |
+          patchright install chromium
+          camoufox fetch
+
+      - name: Start backend + run pytest
+        # O servidor e o pytest vivem no MESMO step: um processo com `&` morre
+        # ao fim do `run:` em que foi iniciado — em steps separados, o pytest
+        # rodaria sem o backend (CI instável). Quem sobe, desce: o PID do
+        # uvicorn é encerrado no fim do próprio step.
+        # test_apply_browser.py só roda quando TRIVOR_BROWSER_TESTS=1 (env do
+        # job acima) — por padrão é skip, sem inflar o CI.
         run: |
           cd backend
-          python -m uvicorn main:app --host 127.0.0.1 --port 8000 &
-          # Aguarda o servidor responder
-          for i in $(seq 1 20); do
+          python -m uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          UVICORN_PID=$!
+          for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000/health > /dev/null && break
             sleep 1
           done
-
-      - name: Run pytest
-        run: pytest tests/ -v --tb=short --ignore=tests/test_e2e.py
+          if ! curl -sf http://127.0.0.1:8000/health > /dev/null; then
+            cat /tmp/uvicorn.log
+            exit 1
+          fi
+          cd ..
+          set +e
+          pytest tests/ -v --tb=short --ignore=tests/test_e2e.py
+          STATUS=$?
+          set -e
+          kill "$UVICORN_PID" 2>/dev/null || true
+          exit "$STATUS"
 
   # ------------------------------------------------------------------
   # Frontend build
@@ -146,26 +172,42 @@ jobs:
       - name: Install Node deps
         run: cd frontend && npm ci
 
-      - name: Start backend server
+      - name: Start servers + run E2E tests
+        # Backend e dev server de front vivem neste MESMO step: processo com
+        # `&` morre ao fim do `run:` — em steps separados, o pytest rodaria
+        # com os dois servidores descritos. Quem sobe, desce: os PIDs são
+        # encerrados ao final (e os filhos, por PID específico — nunca
+        # global). O `pytest-playwright` e o `playwright` vêm do requirements
+        # completo do backend (já instalado acima).
         run: |
-          cd backend
-          python -m uvicorn main:app --host 127.0.0.1 --port 8000 &
-          for i in $(seq 1 20); do
+          (cd backend && exec python -m uvicorn main:app --host 127.0.0.1 --port 8000) > /tmp/uvicorn.log 2>&1 &
+          UVICORN_PID=$!
+          (cd frontend && exec npx next dev --port 3000) > /tmp/next-dev.log 2>&1 &
+          NEXT_PID=$!
+          for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000/health > /dev/null && break
             sleep 1
           done
-
-      - name: Start frontend dev server
-        run: |
-          cd frontend
-          npx next dev --port 3000 &
-          for i in $(seq 1 30); do
+          if ! curl -sf http://127.0.0.1:8000/health > /dev/null; then
+            cat /tmp/uvicorn.log
+            exit 1
+          fi
+          for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:3000 > /dev/null 2>&1 && break
             sleep 1
           done
-
-      - name: Run E2E tests
-        run: pytest tests/test_e2e.py -v --tb=short
+          if ! curl -sf http://127.0.0.1:3000 > /dev/null 2>&1; then
+            cat /tmp/next-dev.log
+            exit 1
+          fi
+          set +e
+          pytest tests/test_e2e.py -v --tb=short
+          STATUS=$?
+          set -e
+          kill "$UVICORN_PID" "$NEXT_PID" 2>/dev/null || true
+          pkill -P "$UVICORN_PID" 2>/dev/null || true
+          pkill -P "$NEXT_PID" 2>/dev/null || true
+          exit "$STATUS"
 
       - name: Upload screenshots on failure
         if: failure()

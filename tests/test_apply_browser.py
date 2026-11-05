@@ -7,15 +7,27 @@ find_adaptive (css → xpath estável → texto) e o delay humano.
 
 Os browsers são headless e rodam contra um http.server local em 127.0.0.1 —
 nenhum acesso a portal real.
+
+OPT-IN (mesmo padrão de test_leitor_cdp.py): roda só com
+`TRIVOR_BROWSER_TESTS=1` — a suíte sobe browsers reais (patchright/camoufox),
+que exigem `patchright install chromium` e `camoufox fetch`. Sem a variável
+(o padrão local e de CI), todos os testes são skip: o CI normal não paga
+browsers.
 """
 import http.server
 import json
+import os
 import shutil
 import sys
 import threading
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("TRIVOR_BROWSER_TESTS") != "1",
+    reason="opt-in: defina TRIVOR_BROWSER_TESTS=1 (necessita `patchright install chromium` e `camoufox fetch`)",
+)
 
 APPLY_DIR = Path(__file__).parent.parent / "apply"
 sys.path.insert(0, str(APPLY_DIR))

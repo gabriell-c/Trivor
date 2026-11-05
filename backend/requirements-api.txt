@@ -1,0 +1,52 @@
+# Trivor — API enxuta (só o backend + testes offline/E2E de UI).
+# Derivado dos imports reais de backend/*.py e dos testes de tests/.
+# Versões espelham o lock completo (backend/requirements.txt, 2026-10-24).
+#
+# O que NÃO entra aqui (e por quê):
+# - torch/torchvision/docling-ibm-models: só viriam do extra [standard] do
+#   pacote `docling` — a API usa docling-slim (base) + docling-parse (ver
+#   notas abaixo).
+# - Crawl4AI, selenium/seleniumbase/undetected-chromedriver, patchright,
+#   camoufox, scrapling: é a camada dos bots do Job Hunter (apply/).
+# - groq: nunca importado — chamadas Groq rodam via endpoint OpenAI-compatível
+#   (openai).
+#
+# Uso (raiz do projeto):
+#   python -m venv venv
+#   venv/Scripts/pip install -r backend/requirements-api.txt   # Windows
+#   venv/bin/pip install -r backend/requirements-api.txt       # Linux/macOS
+# Ambiente completo (API + bots do Job Hunter):
+#   venv/Scripts/pip install -r backend/requirements.txt
+#
+# Notas das escolhas:
+# - docling-slim + docling-parse: cv_helpers.py importa DocumentConverter no
+#   topo do módulo. O metapacote `docling` puxa o extra [standard]
+#   (torch/torchvision/accelerate/huggingface) — desnecessário aqui: a
+#   extração de PDFs segue a cadeia PyMuPDF → pypdfium2 → docling_parse →
+#   pdfplumber, e docx/txt usa o pipeline code-based do docling (sem modelos).
+# - uvicorn[standard]: traz watchfiles p/ o --reload dos scripts dev.
+# - pytest-playwright: fornece o fixture `playwright` da suíte E2E
+#   (make test-frontend); depois `playwright install chromium`.
+
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn[standard]==0.52.1
+slowapi==0.1.10
+openai==3.1.0
+httpx==0.28.1
+pydantic==2.13.4
+python-dotenv==1.2.2
+requests==2.34.2
+PyYAML==6.0.3
+pymupdf==1.28.2
+pdfplumber==0.11.10
+pypdfium2==5.13.0
+reportlab==5.0.0
+python-docx==1.2.0
+docling-slim==2.142.1
+docling-parse==7.23.0
+
+# Testes (tests/ sem engines de browser)
+pytest==9.1.1
+hypothesis==6.170.5
+pytest-playwright==0.9.0

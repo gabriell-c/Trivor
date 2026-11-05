@@ -8,9 +8,16 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Persiste dados sem esconder o código da imagem (não montar ./backend inteiro)
+      # Persiste dados sem esconder o código da imagem (não montar ./backend inteiro).
+      # market.db também vive em ./data: o código resolve DB_FILE em
+      # backend/market_db.py como Path(__file__).parent/"market.db"
+      # (= /app/backend/market.db no container) e o Dockerfile aponta esse
+      # caminho p/ /app/data/market.db via symlink.
+      # O bind-mount antigo de arquivo (./backend/market.db) quebrava em clone
+      # limpo: com o arquivo inexistente no host (*.db é gitignored) o Docker
+      # criava um DIRETÓRIO no container, o SQLite não abria, /health nunca
+      # ficava ok e o frontend (service_healthy) nem subia.
       - ./data:/app/data
-      - ./backend/market.db:/app/backend/market.db
     environment:
       - PYTHONUNBUFFERED=1
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
