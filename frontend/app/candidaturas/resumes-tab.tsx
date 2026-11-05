@@ -5,8 +5,9 @@ import {
 } from 'lucide-react'
 import {
   applyFetch, applyMethod, applyUpload,
-  type ResumeItem, cardCls, btnPrimary, btnDanger, inputCls, labelCls,
+  type ResumeItem, cardCls, btnPrimary, inputCls, labelCls,
 } from './apply-api'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const EXT_OK = ['.pdf', '.docx']
 const MAX_KB = 5 * 1024
@@ -24,6 +25,7 @@ export default function ResumesTab() {
   const [editando, setEditando] = useState<ResumeItem | null>(null)
   const [edNome, setEdNome] = useState('')
   const [edDesc, setEdDesc] = useState('')
+  const [excluindo, setExcluindo] = useState<ResumeItem | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const recarregar = () =>
@@ -74,7 +76,6 @@ export default function ResumesTab() {
   }
 
   const excluir = async (item: ResumeItem) => {
-    if (!window.confirm(`Excluir "${item.nome || item.id}" da lista? O arquivo sai do apply/resumes.`)) return
     try {
       await applyMethod(`/api/apply/resumes/${item.id}`, 'DELETE')
       setOkMsg(`Currículo ${item.id} removido.`)
@@ -83,6 +84,12 @@ export default function ResumesTab() {
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao excluir.')
     }
+  }
+
+  const confirmarExclusao = async () => {
+    const alvo = excluindo
+    setExcluindo(null)
+    if (alvo) await excluir(alvo)
   }
 
   const salvarEdicao = async () => {
@@ -191,7 +198,9 @@ export default function ResumesTab() {
                       className="flex items-center gap-1 text-[13px] font-medium px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800/50 transition-colors">
                       <Pencil className="w-3 h-3" /> Editar
                     </button>
-                    <button onClick={() => excluir(item)}
+                    <button onClick={() => setExcluindo(item)}
+                      aria-label={`Excluir currículo ${item.nome || item.id}`}
+                      title="Excluir currículo"
                       className="flex items-center gap-1 text-[13px] font-medium px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 transition-colors">
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -230,6 +239,17 @@ export default function ResumesTab() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={excluindo !== null}
+        title={excluindo ? `Excluir "${excluindo.nome || excluindo.id}"?` : 'Excluir currículo?'}
+        message="O arquivo sai da pasta apply/resumes e a IA deixa de usá-lo. Não dá para desfazer."
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={confirmarExclusao}
+        onCancel={() => setExcluindo(null)}
+      />
     </div>
   )
 }

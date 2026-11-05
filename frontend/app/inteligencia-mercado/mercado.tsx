@@ -916,7 +916,9 @@ export default function MarketIntelligencePage() {
               <div>
                 <h2 className="text-sm font-bold text-white">Fit do seu CV × Vagas do Mercado</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Envie seu currículo e compare com os requisitos das vagas da sua última análise de mercado. Cálculo 100% determinístico — sem IA, instantâneo.
+                  Envie seu currículo e compare com os requisitos das vagas — busca nova de até 15 vagas
+                  na base de mercado (salva pelas suas análises), independente da sua última análise.
+                  Cálculo 100% determinístico — sem IA, instantâneo.
                 </p>
               </div>
             </div>
@@ -948,6 +950,24 @@ export default function MarketIntelligencePage() {
               </div>
             )}
           </div>
+
+          {/* Sem análise nesta sessão: a busca do fit usa a base de vagas
+              salva pelas análises — se estiver vazia, o backend devolve
+              "Base de mercado vazia. Rode uma análise de mercado primeiro". */}
+          {!result && !fitResult && (
+            <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-8 text-center space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto">
+                <Briefcase className="w-7 h-7 text-slate-500" />
+              </div>
+              <div>
+                <p className="text-slate-300 font-semibold text-sm">Nenhuma análise de mercado gerada ainda</p>
+                <p className="text-slate-500 text-xs mt-1">
+                  Faça uma análise de mercado primeiro — as vagas encontradas ficam salvas na base
+                  e é contra elas que o fit compara o seu currículo.
+                </p>
+              </div>
+            </div>
+          )}
 
           {fitResult && (
             <>

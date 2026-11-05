@@ -625,6 +625,7 @@ export default function ApiSettingsPage() {
   const [editingKeyId, setEditingKeyId] = useState<number | null>(null)
   const [editDesc, setEditDesc] = useState('')
   const [keysLoading, setKeysLoading] = useState(true)
+  const [keysError, setKeysError] = useState<string | null>(null)
 
   const meta = PROVIDER_THEME[newProv.providerType]
   const connectedCount = providers.filter((p) => p.status === 'connected' || p.status === 'slow').length
@@ -728,12 +729,16 @@ export default function ApiSettingsPage() {
 
   /* ──────── jsearch ──────── */
   const loadKeys = useCallback(async () => {
+    setKeysError(null)
     try {
       const res = await fetch(`${API_BASE_URL}/api/jsearch/keys`)
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status} ao carregar as chaves JSearch.`)
       const data = await res.json()
       setKeys(data.keys ?? [])
-    } catch {
-      setKeys([])
+    } catch (e) {
+      /* Backend fora não é "sem chaves" — expõe o erro na seção com
+       * "Tentar de novo" em vez de zerar a lista silenciosamente. */
+      setKeysError(e instanceof Error ? e.message : 'Falha ao carregar as chaves JSearch.')
     } finally {
       setKeysLoading(false)
     }
@@ -1413,9 +1418,11 @@ export default function ApiSettingsPage() {
           <div>
             <h2 className="text-xl font-bold text-white">Chaves JSearch</h2>
             <p className="text-sm text-slate-400 mt-1">
-              {keys.length === 0
-                ? 'Nenhuma chave cadastrada'
-                : `${keys.length} chave${keys.length > 1 ? 's' : ''} · ~${jsearchQuota} req/mês`}
+              {keysError
+                ? 'Falha ao carregar as chaves'
+                : keys.length === 0
+                  ? 'Nenhuma chave cadastrada'
+                  : `${keys.length} chave${keys.length > 1 ? 's' : ''} · ~${jsearchQuota} req/mês`}
             </p>
           </div>
           <motion.a
@@ -1445,6 +1452,25 @@ export default function ApiSettingsPage() {
                   />
                 </div>
               ))}
+            </div>
+          ) : keysError ? (
+            <div className="px-5 py-5">
+              <div className="flex items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3">
+                <XCircle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-rose-200">
+                    Não foi possível carregar as chaves JSearch
+                  </p>
+                  <p className="text-sm text-rose-300/90 mt-0.5">{keysError}</p>
+                  <button
+                    onClick={loadKeys}
+                    className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-rose-200 hover:text-white transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Tentar de novo
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             <>

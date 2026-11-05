@@ -7,6 +7,7 @@ import {
   applyFetch, applyMethod,
   type IaProvider, type IaState, type IaTestResult, cardCls, btnPrimary, btnDanger, inputCls, labelCls,
 } from './apply-api'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 interface IaForm {
   id?: string
@@ -40,6 +41,7 @@ export default function IATab() {
   const [testeDe, setTesteDe] = useState<string>('form')
   const [erro, setErro] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [excluindo, setExcluindo] = useState<IaProvider | null>(null)
 
   const recarregar = () => applyFetch<IaState>('/api/apply/ia').then(setIa).catch(e => setErro(msgErr(e)))
   useEffect(() => { recarregar() }, [])
@@ -85,7 +87,6 @@ export default function IATab() {
   }
 
   const excluir = async (p: IaProvider) => {
-    if (!window.confirm(`Excluir o provedor "${p.nome || p.id}"?`)) return
     setErro(null)
     try {
       await applyMethod(`/api/apply/ia/${p.id}`, 'DELETE')
@@ -95,6 +96,12 @@ export default function IATab() {
     } catch (e) {
       setErro(msgErr(e))
     }
+  }
+
+  const confirmarExclusao = async () => {
+    const alvo = excluindo
+    setExcluindo(null)
+    if (alvo) await excluir(alvo)
   }
 
   const ativar = async (p: IaProvider) => {
@@ -185,7 +192,7 @@ export default function IATab() {
                       : <Zap className="w-3.5 h-3.5" />}
                     Testar
                   </button>
-                  <button onClick={() => excluir(p)} className={btnDanger}>
+                  <button onClick={() => setExcluindo(p)} className={btnDanger}>
                     <Trash2 className="w-3.5 h-3.5" /> Excluir
                   </button>
                 </div>
@@ -278,6 +285,17 @@ export default function IATab() {
         {msg && <div className="mt-2 text-xs text-emerald-300">{msg}</div>}
         {erro && ia && <ErroBox text={erro} onRetry={recarregar} />}
       </div>
+
+      <ConfirmDialog
+        isOpen={excluindo !== null}
+        title={excluindo ? `Excluir o provedor "${excluindo.nome || excluindo.id}"?` : 'Excluir provedor?'}
+        message="O provedor sai da configuração de IA dos bots. Você pode recriá-lo depois com a mesma chave, mas isso não pode ser desfeito."
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={confirmarExclusao}
+        onCancel={() => setExcluindo(null)}
+      />
     </div>
   )
 }

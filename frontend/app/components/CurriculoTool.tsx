@@ -513,7 +513,7 @@ export default function CurriculoTool() {
             />
             <span className="relative w-2 h-2 rounded-full bg-indigo-400" />
           </span>
-          Resume Optimizer
+          Otimizador de Currículo
         </motion.span>
 
         <div className="flex items-center gap-4">
@@ -690,13 +690,13 @@ export default function CurriculoTool() {
                   <div className="px-5 pb-4 pt-1 grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     <TokenMetric label="Modelo" value={res.api_info?.model || '—'} mono tone="purple" />
                     <TokenMetric
-                      label="Input"
+                      label="Entrada"
                       value={formatTokens(res.uso_tokens?.prompt_tokens)}
                       mono
                       tone="indigo"
                     />
                     <TokenMetric
-                      label="Output"
+                      label="Saída"
                       value={formatTokens(res.uso_tokens?.completion_tokens)}
                       mono
                       tone="purple"

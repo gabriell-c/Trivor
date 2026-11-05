@@ -9,6 +9,7 @@ import {
   cardCls, btnPrimary, btnDanger, btnGhost,
 } from './apply-api'
 import { SiteIcon, nomeDoSite } from './site-icons'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 export default function ExecutarTab() {
   const [runs, setRuns] = useState<Record<string, BotRun> | null>(null)
@@ -30,6 +31,7 @@ export default function ExecutarTab() {
   const focus = runningBot && !runs?.[focusBot]?.running ? runningBot.bot : focusBot
   const [logOrigem, setLogOrigem] = useState<'execucao' | 'login'>('execucao')
   const [backendOff, setBackendOff] = useState(false)
+  const [deslogConfirm, setDeslogConfirm] = useState<string | null>(null)
 
   /* poll único e consolidado: /api/apply/state devolve runs + log do bot em
    * destaque (da origem mais relevante, escolhida no backend) + sessões +
@@ -134,6 +136,14 @@ export default function ExecutarTab() {
     }
   }
 
+  /* Confirmação antes de apagar a sessão local — custaria refazer o login
+   * no browser depois, se fosse um clique em falso. */
+  const confirmarDeslog = async () => {
+    const bot = deslogConfirm
+    setDeslogConfirm(null)
+    if (bot) await deslogar(bot)
+  }
+
   const carregando = runs === null || sesoes === null
 
   return (
@@ -222,7 +232,7 @@ export default function ExecutarTab() {
                     </div>
                     <span aria-hidden className={`w-2 h-2 rounded-full shrink-0 ${cor}`} />
                     {s?.deslogavel && (
-                      <button onClick={() => deslogar(name)}
+                      <button onClick={() => setDeslogConfirm(name)}
                         disabled={ocupadoDeslog || isRunning || aguardando}
                         className={btnGhost}
                         title="Apagar a sessão local — o próximo Logar será do zero">
@@ -308,6 +318,17 @@ export default function ExecutarTab() {
             : log.join('\n')}
         </pre>
       </div>
+
+      <ConfirmDialog
+        isOpen={deslogConfirm !== null}
+        title={deslogConfirm ? `Deslogar ${nomeDoSite(deslogConfirm, sesoes)}?` : 'Deslogar?'}
+        message="A sessão local deste site será apagada (perfis e storage do browser). O próximo Logar será do zero — você refaz o login na janela do browser."
+        confirmLabel="Deslogar"
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={confirmarDeslog}
+        onCancel={() => setDeslogConfirm(null)}
+      />
     </div>
   )
 }

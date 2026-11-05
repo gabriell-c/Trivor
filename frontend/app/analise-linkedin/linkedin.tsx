@@ -192,14 +192,24 @@ export default function LinkedinPage() {
   const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  /* Foto colada/arrastada vira Data URL (base64) para ser enviada ao backend
+   * como image_url — data URLs são aceitos por provedores vision
+   * OpenAI-compatíveis. Nenhum ObjectURL é criado, então não há o que revogar. */
+  const lerImagemComoDataUrl = (blob: Blob) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setImagePreview(reader.result)
+    }
+    reader.readAsDataURL(blob)
+  }
+
   const handlePasteImage = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
         const blob = items[i].getAsFile()
         if (blob) {
-          const url = URL.createObjectURL(blob)
-          setImagePreview(url)
+          lerImagemComoDataUrl(blob)
         }
         break
       }
@@ -211,8 +221,7 @@ export default function LinkedinPage() {
     setDragging(false)
     const file = e.dataTransfer.files[0]
     if (file && file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file)
-      setImagePreview(url)
+      lerImagemComoDataUrl(file)
     }
   }
 
@@ -234,7 +243,9 @@ export default function LinkedinPage() {
 
     const formData = new FormData()
     formData.set('text', text.trim())
-    if (imageUrl.trim()) formData.set('image_url', imageUrl.trim())
+    /* Foto colada/arrastada (já em Data URL) tem prioridade; senão, a URL digitada. */
+    const imagemParaEnviar = imagePreview || imageUrl.trim()
+    if (imagemParaEnviar) formData.set('image_url', imagemParaEnviar)
 
     const provider = getBestProvider(['curriculo'])
     if (provider) {
@@ -334,7 +345,7 @@ export default function LinkedinPage() {
             />
             <span className="relative w-2 h-2 rounded-full bg-blue-400" />
           </span>
-          LinkedIn Optimizer
+          Otimizador do LinkedIn
         </motion.span>
 
         <div className="flex items-center gap-4">
@@ -507,7 +518,7 @@ export default function LinkedinPage() {
                               Foto adicionada
                             </p>
                             <p className="text-xs text-slate-400 mt-0.5 truncate">
-                              Pronta para envio
+                              Enviada junto na análise (imagem codificada em base64)
                             </p>
                           </div>
                           <motion.button
@@ -893,13 +904,13 @@ export default function LinkedinPage() {
                   {res.uso_tokens && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <TokenCard
-                        label="Prompt"
+                        label="Entrada"
                         value={res.uso_tokens.prompt_tokens ?? 0}
                         icon={<Hash className="w-4 h-4 text-blue-300" />}
                         tone={TONE.blue}
                       />
                       <TokenCard
-                        label="Completion"
+                        label="Saída"
                         value={res.uso_tokens.completion_tokens ?? 0}
                         icon={<Hash className="w-4 h-4 text-cyan-300" />}
                         tone={TONE.cyan}

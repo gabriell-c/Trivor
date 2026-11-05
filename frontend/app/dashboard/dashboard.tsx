@@ -22,7 +22,10 @@ import type { LogEntry, LogStats } from '../types/analysis'
 import { API_BASE_URL } from '../lib/api'
 
 const EASE = [0.16, 1, 0.3, 1] as const
-const PAGE_SIZE = 100
+/* O backend /api/logs não tem teto em `limit` (SQL LIMIT direto) — 500 dá
+ * amostra maior p/ os gráficos sem pesar a rota. Os StatCards seguem usando
+ * o stats global; só os gráficos rodam sobre esta amostra (rotulado abaixo). */
+const PAGE_SIZE = 500
 
 /* ---------------- hooks ---------------- */
 function useCountUp(target: number, duration = 700) {
@@ -179,7 +182,9 @@ function VolumeChart({ logs, nowMs }: { logs: LogEntry[]; nowMs: number }) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-semibold text-white">Volume de requisições</h2>
-            <p className="text-sm text-slate-400 mt-0.5">Últimas 24 horas</p>
+            <p className="text-sm text-slate-400 mt-0.5">
+              Janela de 24h sobre os últimos {PAGE_SIZE} registros
+            </p>
           </div>
           <span className="text-sm text-slate-400 tabular-nums">
             {buckets.reduce((s, b) => s + b.total, 0).toLocaleString('pt-BR')} no período
@@ -189,7 +194,7 @@ function VolumeChart({ logs, nowMs }: { logs: LogEntry[]; nowMs: number }) {
       <div className="px-5 py-5">
         {!hasData ? (
           <div className="flex items-center justify-center h-[140px] text-sm text-slate-400">
-            Sem atividade nas últimas 24 horas
+            Sem atividade na janela de 24h (considerando os últimos {PAGE_SIZE} registros)
           </div>
         ) : (
           <div className="flex items-end gap-[3px] h-[140px]">
@@ -260,7 +265,7 @@ function StatusDistribution({ logs }: { logs: LogEntry[] }) {
       <div className="px-5 py-4 border-b border-slate-800">
         <h2 className="text-base font-semibold text-white">Distribuição de status</h2>
         <p className="text-sm text-slate-400 mt-0.5">
-          {logs.length.toLocaleString('pt-BR')} requisições analisadas
+          {logs.length.toLocaleString('pt-BR')} registros (amostra de até {PAGE_SIZE})
         </p>
       </div>
       <div className="px-5 py-5 space-y-4">
@@ -317,7 +322,9 @@ function LatencyPercentiles({ logs }: { logs: LogEntry[] }) {
     <div className="bg-slate-900 border border-slate-800 rounded-xl">
       <div className="px-5 py-4 border-b border-slate-800">
         <h2 className="text-base font-semibold text-white">Latência</h2>
-        <p className="text-sm text-slate-400 mt-0.5">Percentis de tempo de resposta</p>
+        <p className="text-sm text-slate-400 mt-0.5">
+          Percentis de tempo de resposta · até {PAGE_SIZE} registros
+        </p>
       </div>
       <div className="px-5 py-5 space-y-4">
         {rows.map((r, i) => {
@@ -374,7 +381,7 @@ function TopEndpoints({ logs }: { logs: LogEntry[] }) {
     <div className="bg-slate-900 border border-slate-800 rounded-xl">
       <div className="px-5 py-4 border-b border-slate-800">
         <h2 className="text-base font-semibold text-white">Endpoints mais acessados</h2>
-        <p className="text-sm text-slate-400 mt-0.5">Top 5 por volume</p>
+        <p className="text-sm text-slate-400 mt-0.5">Top 5 por volume · até {PAGE_SIZE} registros</p>
       </div>
       <div className="px-5 py-2">
         {items.length === 0 ? (
@@ -745,9 +752,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-white tracking-tight">Visão geral</h1>
           <p className="text-base text-slate-400 mt-1">
-            Visão geral do sistema
+            Monitoramento de requisições, latência e erros do sistema
             {lastUpdated && (
               <span className="text-slate-500">
                 {' · '}Atualizado às{' '}

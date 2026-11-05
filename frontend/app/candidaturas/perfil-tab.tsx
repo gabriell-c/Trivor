@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { applyFetch, applyMethod, cardCls, btnPrimary, inputCls, labelCls, type ApplyConfig } from './apply-api'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 /* A aba Perfil edita seções do config.yaml dos bots: dados do candidato,
  * localização, palavras de busca/negativas e pretensões. O backend grava o
@@ -138,6 +139,15 @@ export default function PerfilTab() {
    * (GET /api/apply/perfil-contexto), para conferir se a IA enxerga tudo. */
   const [ctxIa, setCtxIa] = useState<string | null>(null)
   const [ctxErro, setCtxErro] = useState<string | null>(null)
+  const [confirmaDescarte, setConfirmaDescarte] = useState(false)
+
+  const descartar = async () => {
+    setConfirmaDescarte(false)
+    setSujo(false)
+    setEnvSujo(false)
+    setSalvo(false)
+    carregar()
+  }
 
   const verContextoIa = () => {
     if (ctxIa !== null) { setCtxIa(null); return }
@@ -534,12 +544,22 @@ export default function PerfilTab() {
           Salvar perfil
         </button>
         {(sujo || envSujo) && (
-          <button onClick={() => { setSujo(false); setEnvSujo(false); setSalvo(false); carregar() }}
+          <button onClick={() => setConfirmaDescarte(true)}
             disabled={salvando}
             className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800/50 transition-colors">
             Descartar alterações
           </button>
         )}
+        <ConfirmDialog
+          isOpen={confirmaDescarte}
+          title="Descartar alterações?"
+          message="Todos os campos da aba voltam ao último valor salvo no config.yaml e no .env. O que você editou agora é perdido e não dá para desfazer."
+          confirmLabel="Descartar"
+          cancelLabel="Manter edições"
+          variant="danger"
+          onConfirm={descartar}
+          onCancel={() => setConfirmaDescarte(false)}
+        />
         <button onClick={verContextoIa}
           className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800/50 transition-colors">
           {ctxIa !== null ? 'Fechar contexto da IA' : 'Ver o contexto da IA'}

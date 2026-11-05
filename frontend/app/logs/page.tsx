@@ -10,6 +10,7 @@ import {
   Trash2,
   Eye,
   X,
+  XCircle,
   Cpu,
   ArrowDownUp,
   ShieldAlert,
@@ -138,12 +139,17 @@ export default function LogsPage() {
   const [offset, setOffset] = useState(0)
   const [showClearDialog, setShowClearDialog] = useState(false)
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
+  /* Erro explícito do fetch: mantém os dados anteriores (se houver) e mostra
+   * banner com "Tentar de novo" — não vira empty-state de sucesso. */
+  const [erro, setErro] = useState<string | null>(null)
+  const [erroClear, setErroClear] = useState<string | null>(null)
   const LIMIT = 100
 
   const debouncedFilter = useDebounce(filter, 300)
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
+    setErro(null)
     try {
       const params = new URLSearchParams({
         limit: String(LIMIT),
@@ -153,12 +159,13 @@ export default function LogsPage() {
       if (errorOnly) params.set('error_only', 'true')
 
       const res = await fetch(`${API_BASE_URL}/api/logs?${params}`)
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status} ao carregar os logs.`)
       const data = await res.json()
       setLogs(data.logs || [])
       setStats(data.stats || null)
-    } catch {
-      setLogs([])
-      setStats(null)
+    } catch (e) {
+      /* Mantém a última lista/stats conhecidas e expõe o erro no banner. */
+      setErro(e instanceof Error ? e.message : 'Falha ao carregar os logs.')
     } finally {
       setLoading(false)
     }
@@ -172,10 +179,17 @@ export default function LogsPage() {
   }, [fetchLogs])
 
   const handleClear = async () => {
-    await fetch(`${API_BASE_URL}/api/logs`, { method: 'DELETE' })
-    setLogs([])
-    setStats(null)
-    setShowClearDialog(false)
+    setErroClear(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/logs`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status} ao limpar os logs.`)
+      setLogs([])
+      setStats(null)
+      setShowClearDialog(false)
+    } catch (e) {
+      /* Falhou: mantém o diálogo aberto e mostra o erro dentro dele. */
+      setErroClear(e instanceof Error ? e.message : 'Falha ao limpar os logs.')
+    }
   }
 
   return (
@@ -303,12 +317,36 @@ export default function LogsPage() {
         confirmLabel="Limpar"
         cancelLabel="Cancelar"
         variant="danger"
+        error={erroClear}
         onConfirm={handleClear}
-        onCancel={() => setShowClearDialog(false)}
+        onCancel={() => { setErroClear(null); setShowClearDialog(false) }}
       />
 
+      {/* ──────── Erro de carga ──────── */}
+      {erro && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-5 py-4 flex items-start gap-3"
+        >
+          <XCircle className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-rose-200">Não foi possível carregar os logs</p>
+            <p className="text-sm text-rose-300/90 mt-0.5">{erro}</p>
+            <button
+              onClick={fetchLogs}
+              className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-rose-200 hover:text-white transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Tentar de novo
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {/* ──────── Tabela ──────── */}
-      {logs.length === 0 && !loading ? (
+      {logs.length === 0 && !loading && !erro ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -715,12 +753,12 @@ function LogDetailModal({ log, onClose }: { log: LogEntry; onClose: () => void }
                 <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
                   <div className="grid grid-cols-3 gap-3">
                     <TokenStat
-                      label="Input (prompt)"
+                      label="Entrada"
                       value={tokensInfo.prompt_tokens}
                       color="text-blue-300"
                     />
                     <TokenStat
-                      label="Output (completion)"
+                      label="Saída"
                       value={tokensInfo.completion_tokens}
                       color="text-purple-300"
                     />
