@@ -136,14 +136,14 @@ async def export_analysis(
                 headers={'Content-Disposition': f'attachment; filename="diagnostico_{uuid.uuid4().hex[:6]}.md"'}
             )
         elif format == 'docx':
-            buffer = generate_docx_export(data, fname, vaga, model)
+            buffer = await run_in_threadpool(generate_docx_export, data, fname, vaga, model)
             return Response(
                 content=buffer.getvalue(),
                 media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 headers={'Content-Disposition': f'attachment; filename="diagnostico_{uuid.uuid4().hex[:6]}.docx"'}
             )
         elif format == 'pdf':
-            buffer = generate_pdf_export(data, fname, vaga, model)
+            buffer = await run_in_threadpool(generate_pdf_export, data, fname, vaga, model)
             return Response(
                 content=buffer.getvalue(),
                 media_type='application/pdf',
@@ -183,14 +183,14 @@ async def export_market_analysis(
                 headers={'Content-Disposition': f'attachment; filename="{fname}_{model}_{uuid.uuid4().hex[:6]}.md"'}
             )
         elif format == 'docx':
-            buffer = generate_market_docx_export(report, job, senior, loc, model)
+            buffer = await run_in_threadpool(generate_market_docx_export, report, job, senior, loc, model)
             return Response(
                 content=buffer.getvalue(),
                 media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 headers={'Content-Disposition': f'attachment; filename="{fname}_{model}_{uuid.uuid4().hex[:6]}.docx"'}
             )
         elif format == 'pdf':
-            buffer = generate_market_pdf_export(report, job, senior, loc, model)
+            buffer = await run_in_threadpool(generate_market_pdf_export, report, job, senior, loc, model)
             return Response(
                 content=buffer.getvalue(),
                 media_type='application/pdf',

@@ -5,6 +5,7 @@ Request Logger – registra todas as requisições de IA com métricas detalhada
 import json
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -100,6 +101,7 @@ def log_request(
         ),
     )
     conn.commit()
+    _invalidar_stats_cache()
     return log_id
 
 
@@ -133,7 +135,18 @@ def get_logs(
     return [dict(r) for r in rows]
 
 
-def get_logs_stats() -> dict[str, Any]:
+# 7 queries em tabela cheia (COUNT/AVG/GROUP BY) — repetir a cada abertura
+# do painel de logs é caro. Cache com TTL de 30 s; qualquer escrita
+# (log_request/clear_logs/cleanup_logs) invalida o próximo cálculo.
+_STATS_TTL_S = 30.0
+_STATS_CACHE: dict = {}  # {"ts": float, "valor": dict}
+
+
+def _invalidar_stats_cache() -> None:
+    _STATS_CACHE.clear()
+
+
+def _computar_stats() -> dict[str, Any]:
     conn = _conn()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM api_logs")
@@ -167,6 +180,19 @@ def get_logs_stats() -> dict[str, Any]:
     }
 
 
+def get_logs_stats() -> dict[str, Any]:
+    """Stats com cache de 30 s — a UI abre o painel de logs e não espera
+    30 s por estatística aproximada. Qualquer escrita invalida o cache."""
+    valor = _STATS_CACHE.get("valor")
+    ts = _STATS_CACHE.get("ts", 0.0)
+    if valor is not None and (time.monotonic() - ts) < _STATS_TTL_S:
+        return valor
+    valor = _computar_stats()
+    _STATS_CACHE["valor"] = valor
+    _STATS_CACHE["ts"] = time.monotonic()
+    return valor
+
+
 def clear_logs() -> int:
     conn = _conn()
     c = conn.cursor()
@@ -174,6 +200,7 @@ def clear_logs() -> int:
     count = c.fetchone()[0]
     c.execute("DELETE FROM api_logs")
     conn.commit()
+    _invalidar_stats_cache()
     return count
 
 
@@ -192,4 +219,5 @@ def cleanup_logs(days_old: int = 90) -> int:
             ((datetime.now() - timedelta(days=days_old)).isoformat(),)
         )
         conn.commit()
+        _invalidar_stats_cache()
     return count

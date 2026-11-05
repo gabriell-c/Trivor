@@ -30,6 +30,43 @@ APPLY_BOTS = {
 
 LOG_TAIL_LINES = 12
 
+# ── Leitura/limitação dos logs de execução ────────────────────────────────
+# Os logs só crescem (append) e cada poll re-lê o arquivo inteiro. `_tail`
+# lê só o final (seek) — custo constante mesmo com log de MBs; `_rotate`
+# corta acima de 1 MB já no start, mantendo o fim que o painel mostra.
+LOG_MAX_BYTES = 1024 * 1024      # acima disso, o log é cortado no start
+LOG_KEEP_BYTES = 256 * 1024      # mantém as últimas 256 KB (cobre as 400 linhas do painel)
+_TAIL_READ_BYTES = 256 * 1024    # `_tail` só olha o final do arquivo
+
+
+def _tail(arq: Path, lines: int) -> list[str]:
+    """Últimas `lines` linhas não-vazias de `arq`, lendo só o final (seek) —
+    custo constante mesmo para log enorme. Arquivo inexistente → vazio."""
+    if not arq.is_file():
+        return []
+    size = arq.stat().st_size
+    with arq.open('rb') as f:
+        if size > _TAIL_READ_BYTES:
+            f.seek(size - _TAIL_READ_BYTES)
+        raw = f.read()
+    out = [ln for ln in raw.decode('utf-8', errors='replace').splitlines() if ln.strip()]
+    return out[-lines:]
+
+
+def _rotate(arq: Path) -> None:
+    """Limita o log antes de uma nova execução: acima de LOG_MAX_BYTES,
+    mantém só as últimas LOG_KEEP_BYTES (a front cortada é descartada na
+    quebra de linha seguinte). Só roda no start, quando o bot não escreve."""
+    if not arq.is_file() or arq.stat().st_size <= LOG_MAX_BYTES:
+        return
+    with arq.open('rb') as f:
+        f.seek(-LOG_KEEP_BYTES, os.SEEK_END)
+        fim = f.read()
+    nl = fim.find(b'\n')
+    if nl != -1:
+        fim = fim[nl + 1:]
+    arq.write_bytes(fim)
+
 
 def _runs_dir() -> Path:
     d = Path(resolve_apply_dir() or '') / 'relatorio' / 'runs'
@@ -92,14 +129,7 @@ def bot_status(bot: str) -> dict:
     """Estado atual de um bot: rodando? pid? início? últimas linhas do log?"""
     info = _read_pidfile(bot)
     running = bool(info and is_process_alive(int(info['pid'])))
-    tail = []
-    lf = _logfile(bot)
-    if lf.is_file():
-        try:
-            lines = lf.read_text(encoding='utf-8', errors='replace').splitlines()
-            tail = [ln for ln in lines[-LOG_TAIL_LINES:] if ln.strip()][-LOG_TAIL_LINES:]
-        except OSError:
-            pass
+    tail = _tail(_logfile(bot), LOG_TAIL_LINES)
     return {
         'bot': bot,
         'running': running,
@@ -121,10 +151,7 @@ def ler_log(bot: str, origem: str = 'execucao', lines: int = 200) -> dict:
     if bot not in APPLY_BOTS:
         raise ApplyRunError(f"Bot desconhecido '{bot}'. Use: {', '.join(APPLY_BOTS)}.")
     arq = _login_logfile(bot) if origem == 'login' else _logfile(bot)
-    out = []
-    if arq.is_file():
-        out = [ln for ln in arq.read_text(encoding='utf-8', errors='replace').splitlines()
-               if ln.strip()][-lines:]
+    out = _tail(arq, lines)
     return {'bot': bot, 'origem': origem, 'lines': out, 'total': len(out)}
 
 
@@ -177,6 +204,7 @@ def start_bot(bot: str) -> dict:
     env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
     # O bloco with fecha o handle do pai após o Popen — o processo mantém
     # o próprio, então nada de handle aberto vazando pro FastAPI.
+    _rotate(_logfile(bot))
     with open(_logfile(bot), 'a', encoding='utf-8') as log_f:
         proc = subprocess.Popen(
             [sys.executable, str(script)],
@@ -258,6 +286,7 @@ def start_login(bot: str) -> dict:
     # TRIVOR_LOGIN_POLL: login-só nunca tem TTY — quando o login precisa de
     # humano (Google do Indeed, sign-in do Sólides), o bot POLA a janela
     # aberta em vez de travar em input().
+    _rotate(_login_logfile(bot))
     with open(_login_logfile(bot), 'a', encoding='utf-8') as log_f:
         proc = subprocess.Popen(
             [sys.executable, str(script)],

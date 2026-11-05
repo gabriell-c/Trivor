@@ -25,6 +25,13 @@ _BUCKET_SUCESSO = {'enviado'}
 _BUCKET_PARCIAL = {'preenchido_sem_confirmacao'}
 _BUCKET_SKIP = {'ja_candidatado'}
 
+# Cache do parse de candidaturas.json (~2 MB) por mtime. Re-parsear a cada
+# request custava 5-15 ms; o arquivo só muda quando o apply grava, então o
+# cache invalida quando o st_mtime_ns muda. `apply_applications` faz .sort()
+# in-place, então o cache devolve sempre uma cópia superficial — a
+# reordenação nunca vaza para a lista guardada.
+_RECORDS_CACHE: dict = {}
+
 
 class ApplyDataError(Exception):
     """Arquivo do apply ausente/inlegível — o endpoint vira 502 com mensagem genérica."""
@@ -75,12 +82,23 @@ def _sort_key(reg: dict) -> tuple:
 
 
 def _load_records(apply_dir: Path) -> list[dict]:
-    """Lê relatorio/candidaturas.json e devolve os registros com bucket calculado."""
+    """Lê relatorio/candidaturas.json e devolve os registros com bucket calculado.
+
+    Cache por mtime: só re-parseia quando o arquivo foi gravado. Devolve uma
+    cópia da lista para o sort in-place do chamador não reordenar o cache."""
     raw = apply_dir / 'relatorio' / 'candidaturas.json'
     try:
-        payload = json.loads(raw.read_text(encoding='utf-8'))
+        mtime = raw.stat().st_mtime_ns
     except FileNotFoundError:
         raise ApplyDataError(f"arquivo não encontrado: {raw}")
+
+    key = str(apply_dir)
+    cached = _RECORDS_CACHE.get(key)
+    if cached and cached["mtime"] == mtime:
+        return list(cached["records"])
+
+    try:
+        payload = json.loads(raw.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError) as exc:
         raise ApplyDataError(f"leitura falhou: {exc}") from exc
 
@@ -92,7 +110,9 @@ def _load_records(apply_dir: Path) -> list[dict]:
         if not isinstance(reg, dict):
             continue
         reg['status_bucket'] = _status_bucket(str(reg.get('status', '')))
-    return records
+
+    _RECORDS_CACHE[key] = {"mtime": mtime, "records": records}
+    return list(records)
 
 
 def apply_overview() -> dict:

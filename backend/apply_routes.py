@@ -114,15 +114,27 @@ async def api_apply_stop(request: Request):
 
 # ── Logins e status de sessão (botões "Logar" do cartão de logins) ────────
 
+# Cache do módulo status_sessoes por caminho do apply. Recompilar a cada
+# request custava ~4 ms a cada tick de 3 s do painel (~1.200/h). A frescura
+# do .env não vem do import — `estados()` relê o arquivo a cada chamada —
+# então cachear o módulo não esconde mudança de credenciais.
+_STATUS_MODULES: dict = {}
+
+
 def _status_sessoes(apply_dir: Path):
-    """Carrega apply/common/status_sessoes.py por caminho: o módulo é de
-    propósito independente (não importa a camada de browser — puxar
-    `common/__init__.py` arrastaria browser/LLM junto)."""
+    """Carrega apply/common/status_sessoes.py por caminho (o módulo é de
+    propósito independente — não importa `common/__init__.py`, que puxaria
+    browser/LLM junto). Cache global por caminho do apply."""
     import importlib.util
+    key = str(Path(apply_dir))
+    mod = _STATUS_MODULES.get(key)
+    if mod is not None:
+        return mod
     cam = Path(apply_dir) / 'common' / 'status_sessoes.py'
     spec = importlib.util.spec_from_file_location('trivor_status_sessoes', cam)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    _STATUS_MODULES[key] = mod
     return mod
 
 
