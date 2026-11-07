@@ -881,13 +881,11 @@ export function CoverLetterSection({
   file,
   jobTitle,
   jobLevel,
-  area,
   analysisId,
 }: {
   file: File | null
   jobTitle: string
   jobLevel: string
-  area: string
   analysisId: number
 }) {
   const [carta, setCarta] = useState<CoverLetter | null>(null)

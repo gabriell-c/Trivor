@@ -541,7 +541,6 @@ export default function CurriculoTool() {
                   file={selectedFile}
                   jobTitle={jobTitle}
                   jobLevel={jobLevel}
-                  area={area}
                   analysisId={analysisId}
                 />
               </>
